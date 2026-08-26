@@ -1,0 +1,19 @@
+twist_to_go2_sport_bridge:
+  ros__parameters:
+    dry_run: true
+    default_armed: false
+    require_system_ready: true
+    system_ready_timeout: 0.5
+    system_ready_topic: /vlm_nav/system_ready
+    control_armed_topic: /vlm_nav/control_armed
+    sport_interface_ready_topic: /vlm_nav/go2_sport_interface_ready
+    max_vx: 0.20
+    max_vyaw: 0.40
+    cmd_timeout: 0.5
+    control_rate: 20.0
+    vy_epsilon: 0.0001
+    endpoint_loss_debounce: 1.0
+    cmd_vel_topic: /cmd_vel_bridge
+    sport_request_topic: /api/sport/request
+    debug_request_topic: /vlm_nav/go2_sport_request_debug
+    state_topic: /vlm_nav/go2_bridge_state

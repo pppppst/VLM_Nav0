@@ -1,0 +1,51 @@
+# FAIL-CLOSED TEMPLATE. The string TBD values deliberately prevent SPARK from
+# starting until scripts/render_go2_fastlio_config.py has validated a measured
+# calibration and rendered a numeric runtime file.
+/**:
+  ros__parameters:
+    common:
+      lid_topic: /utlidar/cloud
+      imu_topic: /utlidar/imu
+      lidar_frame: utlidar_lidar
+      imu_frame: utlidar_imu
+      map_frame: odom
+      base_frame: base_link
+      visualization_frame: base
+    preprocess:
+      lidar_type: 2
+      scan_line: TBD / requires measurement
+      scan_rate: TBD / requires measurement
+      timestamp_unit: TBD / requires measurement
+      blind: 0.1
+      blind_for_human_pilots: 0.1
+    mapping:
+      acc_cov: 0.5
+      gyr_cov: 0.3
+      b_acc_cov: 0.0001
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0
+      det_range: 80.0
+      extrinsic_est_en: false
+      # LiDAR -> /utlidar/imu IMU only. Never put base_link installation here.
+      extrinsic_T: TBD / requires measurement
+      extrinsic_R: TBD / requires measurement
+    gravity_alignment:
+      # Adopted Co-Nav historical profile; Gate 2 drift remains under review.
+      enable_gravity_alignment: false
+    publish:
+      path_en: true
+      scan_publish_en: true
+      dense_publish_en: false
+      scan_lidarframe_pub_en: true
+      scan_bodyframe_pub_en: false
+      scan_baseframe_pub_en: true
+    pcd_save:
+      pcd_save_en: false
+      interval: -1
+    verbose: false
+    extrinsics_timeout_s: 30.0
+    runtime_pos_log_enable: false
+    point_filter_num_for_preprocessing: 1
+    point_filter_num: 4
+    max_iteration: 4
+    cube_side_length: 1000.0

@@ -9,14 +9,18 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(diagnostic_msgs REQUIRED)
 find_package(diagnostic_updater REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rmw REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(unitree_api QUIET)
 find_package(PCL REQUIRED COMPONENTS filters)
 
 ament_python_install_package(${PROJECT_NAME})
@@ -54,18 +58,51 @@ target_link_libraries(obstacle_cloud_filter
   ${PCL_LIBRARIES}
 )
 
+if(unitree_api_FOUND)
+  add_executable(twist_to_go2_sport_bridge src/twist_to_go2_sport_bridge.cpp)
+  target_compile_features(twist_to_go2_sport_bridge PUBLIC cxx_std_17)
+  target_include_directories(twist_to_go2_sport_bridge
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  ament_target_dependencies(twist_to_go2_sport_bridge
+    geometry_msgs
+    rclcpp
+    std_msgs
+    std_srvs
+    unitree_api
+  )
+else()
+  message(WARNING
+    "unitree_api is unavailable: Ranger targets remain buildable, but the "
+    "Go2 Sport bridge will not be built. Import the pinned unitree_ros2 dependency."
+  )
+endif()
+
+set(vlm_nav_runtime_targets obstacle_cloud_filter)
+if(TARGET twist_to_go2_sport_bridge)
+  list(APPEND vlm_nav_runtime_targets twist_to_go2_sport_bridge)
+endif()
 install(
-  TARGETS obstacle_cloud_filter
+  TARGETS ${vlm_nav_runtime_targets}
   RUNTIME DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY include/ DESTINATION include)
 install(
   PROGRAMS
     scripts/fastlio_odom_adapter
+    scripts/go2_camera_preflight
+    scripts/go2_derive_candidates
+    scripts/go2_nav_supervisor
+    scripts/go2_readiness_waiter
+    scripts/go2_render_fastlio_config
+    scripts/go2_safety_supervisor
+    scripts/go2_sensor_preflight
     scripts/vlm_navigator
   DESTINATION lib/${PROJECT_NAME}
 )
 install(DIRECTORY launch config behavior_trees DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY docs DESTINATION share/${PROJECT_NAME})
+install(FILES go2_dependencies.repos DESTINATION share/${PROJECT_NAME})
 install(
   DIRECTORY scripts/
   DESTINATION share/${PROJECT_NAME}/scripts
@@ -88,6 +125,14 @@ if(BUILD_TESTING)
     )
   endif()
 
+  ament_add_gtest(test_go2_bridge_state test/test_go2_bridge_state.cpp)
+  if(TARGET test_go2_bridge_state)
+    target_compile_features(test_go2_bridge_state PUBLIC cxx_std_17)
+    target_include_directories(test_go2_bridge_state
+      PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+  endif()
+
   ament_add_pytest_test(test_arm_image_recorder test/test_arm_image_recorder.py)
   ament_add_pytest_test(test_easy_case_config test/test_easy_case_config.py)
   ament_add_pytest_test(test_exploration test/test_exploration.py)
@@ -98,6 +143,16 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_vlm_client test/test_vlm_client.py)
   ament_add_pytest_test(test_obstacle_chain_config test/test_obstacle_chain_config.py)
   ament_add_pytest_test(test_obstacle_cloud_filter_runtime test/test_obstacle_cloud_filter_runtime.py TIMEOUT 20)
+  ament_add_pytest_test(test_go2_profile test/test_go2_profile.py)
+  ament_add_pytest_test(test_go2_preflight test/test_go2_preflight.py)
+  ament_add_pytest_test(test_go2_readiness test/test_go2_readiness.py)
+  ament_add_pytest_test(test_go2_bridge_config test/test_go2_bridge_config.py)
+  if(TARGET twist_to_go2_sport_bridge)
+    ament_add_pytest_test(test_go2_bridge_runtime test/test_go2_bridge_runtime.py TIMEOUT 20)
+  endif()
+  ament_add_pytest_test(test_go2_operational_config test/test_go2_operational_config.py)
+  ament_add_pytest_test(test_go2_offline_tools test/test_go2_offline_tools.py)
+  ament_add_pytest_test(test_go2_docs test/test_go2_docs.py)
 endif()
 
 ament_package()

@@ -1,0 +1,59 @@
+candidate_only: true
+validated: false
+reason: >-
+  Historical candidate envelope derived from static evidence. The values were
+  human-reviewed and promoted to config/go2_preflight.yaml on 2026-08-26 after
+  stationary-bag review, dynamic yaw/roll/pitch direction review, and a passing
+  60 s formal preflight; this generated artifact remains candidate-only.
+observed:
+  cloud_rate_hz:
+  - 15.368631227262444
+  - 15.376051830520149
+  - 15.378985744999087
+  point_time_span_s:
+    minimum: 0.06079835072159767
+    median: 0.06276024132966995
+    maximum: 0.06598046883300412
+  all_point_nearest_imu_absolute_s:
+    maximum: 0.00475001335144043
+    median: 0.0004940032958984375
+    p95: 0.0014181137084960938
+    p99: 0.0018842220306396484
+  all_point_matched_count: 3353118
+  header_nearest_imu_jitter_s: 0.007622718811035156
+  imu:
+    gravity_norm_min_mps2: 10.123942366896493
+    gravity_norm_max_mps2: 10.60787279269065
+    gyro_norm_max_radps: 0.022968501654861605
+    acceleration_abs_max_mps2: 10.056909561157227
+    gyro_abs_max_radps: 0.020442096516489983
+    acceleration_jump_max_mps2: 0.48313159255434845
+lidar_timing:
+  validated: false
+  scan_line: 18
+  scan_line_source: Unitree point_lio_unilidar L1 configuration
+  scan_rate_hz: 16
+  scan_rate_tolerance_hz: 1.0
+  timestamp_unit: 0
+  point_time_span_min_s: 0.055
+  point_time_span_max_s: 0.071
+  lidar_imu_offset_jitter_max_s: 0.011
+imu_stationary_thresholds:
+  validated: false
+  gravity_min_mps2: 9.6
+  gravity_max_mps2: 11.2
+  stationary_gyro_max_radps: 0.05
+  acceleration_abs_max_mps2: 16.0
+  gyro_abs_max_radps: 0.07
+  acceleration_jump_max_mps2: 1.5
+sources:
+- path: /tmp/go2_point_time_all_points_60s.json
+  sha256: a43ab13e15b2b52f6769aa6b7b267629ea2d845e71467779352051a9ecc235d0
+- path: /tmp/go2_raw_diagnostics_synced.json
+  sha256: 338bf810050409726939f94544f2c030311819ee81610c25d895629beca071b5
+- path: /tmp/go2_raw_diagnostics_synced_repeat.json
+  sha256: 13c9a78ade2a5e31e2ef56b12fbf3842e4fd22f81d3eeab0e030d64156c158c7
+- path: /tmp/go2_direction_consistency_retry4.json
+  sha256: f4879a8ee003476c3d74cae4c40878c5c4aee1f6db4a6188b2f8471430171d5e
+- path: /tmp/go2_formal_preflight_60s_20260826.json
+  sha256: bfd2e6566d0196958b2fe11c228261d78df657ea5a25441a0ff3854566cb8c01

@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+from vlm_nav.go2_camera_preflight import main
+
+
+if __name__ == "__main__":
+    main()

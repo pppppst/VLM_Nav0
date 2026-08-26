@@ -1,0 +1,64 @@
+clock:
+  # Diagnostic only. A stable header.stamp-to-system_now offset is recorded but
+  # must never participate in healthy/SYSTEM_READY.
+  measurement_method: multi_frame_ros_header_offset_diagnostic
+  minimum_samples: 100
+
+lidar_timing:
+  validated: true
+  evidence: >-
+    Unitree unilidar_sdk v1.0.16 commit 1bd7d95; repeated 60 s point-time
+    probes on 2026-08-25; 59.390 s stationary bag and 79.417 s retry4
+    operator-assisted dynamic bag reviewed on 2026-08-26
+  point_time_semantics:
+    validated: true
+    header_stamp_reference: >-
+      scan start/cloud stamp; Unitree PointUnitree.time is relative to cloud
+      stamp and next_header-(header+max_time) was approximately +2.25 ms median
+    point_time_reference: positive offset from header.stamp to point acquisition
+    unit: seconds
+  lidar_imu_measurement_alignment:
+    validated: true
+    method: >-
+      static all-point nearest-IMU reconstruction plus dynamic retry4
+      yaw/roll/pitch direction review using identity-start raw-cloud ICP without
+      IMU deskew or IMU initialization
+    evidence: >-
+      2026-08-25 static probe matched 3353118 reconstructed points with 1.884 ms
+      absolute P99 and no header backward; 2026-08-26 retry4 direction agreement
+      was yaw 36/42 (85.7%), roll 31/38 (81.6%), and pitch 40/46 (87.0%), with
+      both signs observed and all three still passing for window shifts of +/-2 s
+  scan_line: 18
+  scan_rate_hz: 16
+  scan_rate_tolerance_hz: 1.0
+  timestamp_unit: 0
+  point_time_span_min_s: 0.055
+  point_time_span_max_s: 0.071
+  lidar_imu_offset_jitter_max_s: 0.011
+
+imu_stationary_thresholds:
+  validated: true
+  evidence: >-
+    2026-08-26 59.390 s stationary bag, SHA256
+    16bacac20155330ed4af3df1b160bc5d7f45e5322855b727ae3f07116b9cf1fe;
+    14793 finite IMU samples, gravity norm 10.081..10.539 m/s^2, gyro norm
+    maximum 0.0210 rad/s, maximum acceleration jump 0.655 m/s^2
+  gravity_min_mps2: 9.6
+  gravity_max_mps2: 11.2
+  stationary_gyro_max_radps: 0.05
+  acceleration_abs_max_mps2: 16.0
+  gyro_abs_max_radps: 0.07
+  acceleration_jump_max_mps2: 1.5
+
+qos:
+  validation_method: ros2 topic info -v plus subscriber reception
+  lidar_reliability: reliable
+  lidar_durability: volatile
+  imu_reliability: reliable
+  imu_durability: volatile
+  camera_color_reliability: reliable
+  camera_color_durability: volatile
+  camera_info_reliability: reliable
+  camera_info_durability: volatile
+  aligned_depth_reliability: reliable
+  aligned_depth_durability: volatile

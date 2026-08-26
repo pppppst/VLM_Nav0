@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    target_frame: base_link
+    transform_tolerance: 0.10
+    min_height: TBD / requires measurement
+    max_height: TBD / requires measurement
+    angle_min: -3.141592653589793
+    angle_max: 3.141592653589793
+    angle_increment: 0.008726646259972
+    scan_time: TBD / requires measurement
+    range_min: TBD / requires measurement
+    range_max: TBD / requires measurement
+    use_inf: true
+    inf_epsilon: 1.0

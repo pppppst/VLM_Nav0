@@ -1,0 +1,42 @@
+obstacle_cloud_filter:
+  ros__parameters:
+    input_topic: /cloud_registered_base
+    output_topic: /vlm_nav/obstacle_cloud
+    target_frame: base_link
+    tf_queue_size: 20
+    use_sim_time: false
+    min_height: TBD / requires measurement
+    max_height: TBD / requires measurement
+    self_crop_min_x: TBD / requires measurement
+    self_crop_max_x: TBD / requires measurement
+    self_crop_min_y: TBD / requires measurement
+    self_crop_max_y: TBD / requires measurement
+    self_crop_min_z: TBD / requires measurement
+    self_crop_max_z: TBD / requires measurement
+    voxel_leaf_size: 0.05
+    diagnostic_updater.period: 1.0
+
+vlm_nav:
+  ros__parameters:
+    enabled: false
+    target_description: chair
+    global_frame: map
+    base_frame: base_link
+    camera_frame: camera_color_optical_frame
+    map_topic: /map
+    rgb_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    navigate_action: /navigate_to_pose
+    compute_path_action: /compute_path_to_pose
+    spin_action: /spin
+    stop_cmd_topic: /cmd_vel_bridge
+    arrival_odom_topic: /odometry
+    require_camera_calibration: true
+    camera_extrinsic_calibrated: false
+    require_external_safety_gates: true
+    nav_ready_topic: /vlm_nav/nav_ready
+    control_armed_topic: /vlm_nav/control_armed
+    vlm_api_ready_topic: /vlm_nav/vlm_api_ready
+    external_gate_timeout: 2.0
+    publish_stop_command: true

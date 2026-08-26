@@ -1,0 +1,15 @@
+# Intentionally pinned; never track upstream main automatically.
+# unitree_ros2: Humble/Go2 interface/message/Sport API verified for this port.
+# spark-fast-lio: Humble/Go2 interface verified; full VLM_Nav hardware validation
+# remains blocked on point-time semantics, measured LiDAR/IMU alignment, and
+# extrinsics. Upgrade only as a separately reviewed change with a complete
+# regression and hardware re-test.
+repositories:
+  unitree_ros2:
+    type: git
+    url: https://github.com/unitreerobotics/unitree_ros2.git
+    version: 0dfa8f2e444713c52c96c7b70c433b2609879a31
+  spark-fast-lio:
+    type: git
+    url: https://github.com/MIT-SPARK/spark-fast-lio.git
+    version: 17b36d293a14df37d57e1751a337a32e2f164692

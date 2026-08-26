@@ -1,0 +1,47 @@
+# Adopted Co-Nav historical Go2 profile; user accepted the observed drift for Gate 2.
+lidar_imu_extrinsic:
+  calibrated: true
+  source: >-
+    Co-Nav historical Go2 profile in
+    Co-NavGPT2/configs/spark_fast_lio_go2.yaml; adopted per operator
+    instruction on 2026-08-26
+  definition: p_imu = R_lidar_to_imu * p_lidar + T_lidar_in_imu
+  lidar_frame: utlidar_lidar
+  imu_frame: utlidar_imu
+  axis_definition: >-
+    Historical Co-Nav FAST-LIO convention; kept identical to the historical
+    base-to-LiDAR candidate for compatibility.
+  translation: [0.171, 0.0, 0.0908]
+  rotation_matrix: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+base_lidar_extrinsic:
+  calibrated: true
+  source: >-
+    Co-Nav historical Go2 profile in
+    Co-NavGPT2/launch/spark_fast_lio_go2.launch.yaml; adopted per operator
+    instruction on 2026-08-26 for the confirmed factory, unmodified radar.
+  definition: p_utlidar_lidar = R_base_to_lidar * p_base + T_base_to_lidar
+  source_url: Co-NavGPT2/launch/spark_fast_lio_go2.launch.yaml
+  validation_status: >-
+    Adopted runtime profile; complete historical-profile replay gave about
+    0.06 m static-bag translation drift, accepted by the operator for Gate 2.
+    Repeat static-machine confirmation remains recommended.
+  direction: parent frame to child frame
+  parent_frame: base_link
+  child_frame: utlidar_lidar
+  xyz: [0.171, 0.0, 0.0908]
+  rpy: [0.0, 0.0, 0.0]
+
+camera_extrinsic:
+  calibrated: false
+  source: TBD / requires measurement
+  rejected_legacy_candidate: >-
+    Co-Nav matrices were inherited from a D455 plus Livox MID360 setup and do
+    not identify the current D435-to-base_link transform
+  direction: parent frame to child frame
+  parent_frame: base_link
+  child_frame: camera_link
+  xyz: TBD / requires measurement
+  rpy: TBD / requires measurement

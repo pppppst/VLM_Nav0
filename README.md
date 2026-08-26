@@ -33,10 +33,15 @@ Livox → FAST_LIO → /cloud_registered_body → tf2 转到 base_link
            └→ /scan → SLAM Toolbox → /map
 ```
 
+Go2 移植使用独立、安全门控的 profile，冻结架构和 6-Gate 验收清单见
+[`docs/GO2_PORTING.md`](docs/GO2_PORTING.md)，最短操作顺序见
+[`docs/GO2_FAST_TRACK.md`](docs/GO2_FAST_TRACK.md)。Ranger 仍为默认 profile。
+
 ## 安装与构建
 
 ```bash
-cd /home/isee-cdh/ws
+export VLM_NAV_WS="$HOME/unitree_ros2"
+cd "$VLM_NAV_WS"
 python3 -m pip install -r VLM_Nav/requirements.txt
 source /opt/ros/humble/setup.bash
 colcon --log-base VLM_Nav/log build \
@@ -46,7 +51,7 @@ colcon --log-base VLM_Nav/log build \
 source VLM_Nav/install/setup.bash
 ```
 
-启动脚本使用 `/home/isee-cdh/ws/VLM_Nav/install`。修改源码后必须重新构建该
+启动脚本使用 `$VLM_NAV_WS/VLM_Nav/install`。修改源码后必须重新构建该
 安装目录并重启旧的 launch 进程；启动器会在打开终端前检查
 `obstacle_cloud_filter` 是否存在，避免旧 overlay 静默覆盖新版本。
 
@@ -81,8 +86,8 @@ Qwen 偶发返回的严格二元素坐标数组 `[u,v]`，换算后仍执行整�
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/isee-cdh/ws/VLM_Nav/install/setup.bash
-python3 /home/isee-cdh/ws/VLM_Nav/scripts/qwen_latency_probe.py \
+source "$VLM_NAV_WS/VLM_Nav/install/setup.bash"
+python3 "$VLM_NAV_WS/VLM_Nav/scripts/qwen_latency_probe.py" \
   --samples 5 --timeout 8.0 --target chair --mode both
 ```
 
@@ -114,7 +119,7 @@ VLM_Nav/scripts/04_fastlio.sh
 FAST_LIO 初始位置，但不会 ARM 或驱动小车：
 
 ```bash
-cd /home/isee-cdh/ws
+cd "$VLM_NAV_WS"
 ./VLM_Nav/scripts/start_hardware.sh
 ```
 
@@ -126,7 +131,7 @@ cd /home/isee-cdh/ws
 **一键打开**系统、RViz、状态和诊断四个终端：
 
 ```bash
-cd /home/isee-cdh/ws
+cd "$VLM_NAV_WS"
 unset ALL_PROXY all_proxy
 ./VLM_Nav/scripts/start_navigation_validation.sh "放置了可乐的椅子"
 ```
@@ -311,7 +316,7 @@ ros2 param get /behavior_server costmap_topic
 不需要硬件的测试：
 
 ```bash
-cd /home/isee-cdh/ws/VLM_Nav
+cd "$VLM_NAV_WS/VLM_Nav"
 ./scripts/test_no_hardware.sh
 ```
 
@@ -323,8 +328,8 @@ cd /home/isee-cdh/ws/VLM_Nav
 
 ```bash
 source /opt/ros/humble/setup.bash
-source /home/isee-cdh/ws/VLM_Nav/install/setup.bash
-cd /home/isee-cdh/ws/VLM_Nav
+source "$VLM_NAV_WS/VLM_Nav/install/setup.bash"
+cd "$VLM_NAV_WS/VLM_Nav"
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   PYTHONPATH=.:${PYTHONPATH:-} \
   python3 -m pytest -q test

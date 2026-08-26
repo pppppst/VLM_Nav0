@@ -26,6 +26,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from rclpy.qos import (
     DurabilityPolicy,
     HistoryPolicy,
@@ -35,7 +36,7 @@ from rclpy.qos import (
 )
 from rclpy.time import Time
 from sensor_msgs.msg import CameraInfo, Image
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -111,6 +112,13 @@ class VLMNavigator(Node):
             "rgb_topic": "/camera/color/image_raw",
             "depth_topic": "/camera/aligned_depth_to_color/image_raw",
             "camera_info_topic": "/camera/color/camera_info",
+            "require_camera_calibration": False,
+            "camera_extrinsic_calibrated": False,
+            "require_external_safety_gates": False,
+            "nav_ready_topic": "/vlm_nav/nav_ready",
+            "control_armed_topic": "/vlm_nav/control_armed",
+            "vlm_api_ready_topic": "/vlm_nav/vlm_api_ready",
+            "external_gate_timeout": 2.0,
             "navigate_action": "/navigate_to_pose",
             "compute_path_action": "/compute_path_to_pose",
             "spin_action": "/spin",
@@ -195,6 +203,19 @@ class VLMNavigator(Node):
         )
         self.add_on_set_parameters_callback(self.on_parameters_changed)
 
+        self.nav_ready = False
+        self.control_armed = False
+        self.vlm_api_ready = False
+        self.external_gate_receipts = {
+            "nav_ready": 0.0,
+            "control_armed": 0.0,
+            "vlm_api_ready": 0.0,
+        }
+        if self.p.require_external_safety_gates and self.p.enabled:
+            raise RuntimeError(
+                "initial enabled=true is forbidden when external safety gates are required"
+            )
+
         self.state = DISARMED
         self.image_recorder = ArmImageRecorder(
             self.p.vlm_image_record_path,
@@ -208,6 +229,9 @@ class VLMNavigator(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.state_pub = self.create_publisher(String, "~/state", 10)
+        self.vlm_enabled_pub = self.create_publisher(
+            Bool, "/vlm_nav/vlm_enabled", visualization_qos
+        )
         self.vlm_text_pub = self.create_publisher(
             String, "~/output_text", visualization_qos
         )
@@ -231,6 +255,21 @@ class VLMNavigator(Node):
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(
+            Bool, self.p.nav_ready_topic,
+            lambda message: self.on_external_gate("nav_ready", message),
+            visualization_qos,
+        )
+        self.create_subscription(
+            Bool, self.p.control_armed_topic,
+            lambda message: self.on_external_gate("control_armed", message),
+            visualization_qos,
+        )
+        self.create_subscription(
+            Bool, self.p.vlm_api_ready_topic,
+            lambda message: self.on_external_gate("vlm_api_ready", message),
+            visualization_qos,
         )
         self.create_subscription(OccupancyGrid, self.p.map_topic, self.on_map, map_qos)
         self.create_subscription(
@@ -432,6 +471,7 @@ class VLMNavigator(Node):
         self.safety_timer = self.create_timer(0.2, self.safety_tick)
         self.diagnostics_timer = self.create_timer(1.0, self.publish_diagnostics)
         self.publish_state()
+        self.publish_vlm_enabled()
 
     # ---------- lifecycle and safety ----------
 
@@ -596,11 +636,74 @@ class VLMNavigator(Node):
             getattr(getattr(self, "p", None), "easy_case_mode", False)
         )
 
+    def on_external_gate(self, name, message):
+        setattr(self, name, bool(message.data))
+        self.external_gate_receipts[name] = time.monotonic()
+        if (
+            not message.data
+            and self.p.require_external_safety_gates
+            and self.get_parameter("enabled").value
+        ):
+            self.get_logger().error(f"{name} lost; disabling VLM task")
+            self.set_parameters([Parameter("enabled", value=False)])
+
+    def external_safety_gates_healthy(self):
+        now = time.monotonic()
+        maximum_age = float(self.p.external_gate_timeout)
+        return all(
+            (
+                self.nav_ready,
+                self.control_armed,
+                self.vlm_api_ready,
+                maximum_age > 0.0,
+                all(
+                    self.elapsed_since(receipt, now) <= maximum_age
+                    for receipt in self.external_gate_receipts.values()
+                ),
+            )
+        )
+
     def on_parameters_changed(self, parameters):
         values = {parameter.name: parameter.value for parameter in parameters}
         requested_enabled = bool(
             values.get("enabled", self.get_parameter("enabled").value)
         )
+        require_camera_calibration = bool(
+            values.get(
+                "require_camera_calibration",
+                self.get_parameter("require_camera_calibration").value,
+            )
+        )
+        camera_extrinsic_calibrated = bool(
+            values.get(
+                "camera_extrinsic_calibrated",
+                self.get_parameter("camera_extrinsic_calibrated").value,
+            )
+        )
+        require_external_safety_gates = bool(
+            values.get(
+                "require_external_safety_gates",
+                self.get_parameter("require_external_safety_gates").value,
+            )
+        )
+        if (
+            requested_enabled
+            and require_external_safety_gates
+            and not self.external_safety_gates_healthy()
+        ):
+            return SetParametersResult(
+                successful=False,
+                reason="NAV_READY / CONTROL_ARMED / VLM API gate is false",
+            )
+        if (
+            requested_enabled
+            and require_camera_calibration
+            and not camera_extrinsic_calibrated
+        ):
+            return SetParametersResult(
+                successful=False,
+                reason="camera extrinsic is not calibrated; VLM enable is blocked",
+            )
         if "easy_case_mode" in values:
             if requested_enabled:
                 return SetParametersResult(
@@ -618,6 +721,13 @@ class VLMNavigator(Node):
                     successful=False,
                     reason="change target_description only while enabled=false",
                 )
+
+        if "require_camera_calibration" in values:
+            self.p.require_camera_calibration = require_camera_calibration
+        if "camera_extrinsic_calibrated" in values:
+            self.p.camera_extrinsic_calibrated = camera_extrinsic_calibrated
+        if "require_external_safety_gates" in values:
+            self.p.require_external_safety_gates = require_external_safety_gates
 
         if "easy_case_mode" in values:
             self.p.easy_case_mode = bool(values["easy_case_mode"])
@@ -663,7 +773,13 @@ class VLMNavigator(Node):
                 self.initial_costmap_refresh_deadline = 0.0
                 self.last_initial_costmap_clear_status = "not_required"
                 self.reset_task(DISARMED)
+            self.publish_vlm_enabled()
         return SetParametersResult(successful=True)
+
+    def publish_vlm_enabled(self):
+        message = Bool()
+        message.data = bool(self.p.enabled)
+        self.vlm_enabled_pub.publish(message)
 
     def require_initial_costmap_clear(self):
         if not bool(getattr(self.p, "clear_costmap_on_arm", True)):
@@ -957,6 +1073,14 @@ class VLMNavigator(Node):
         return math.inf if timestamp <= 0.0 else max(0.0, now - timestamp)
 
     def safety_tick(self):
+        if (
+            self.get_parameter("enabled").value
+            and bool(getattr(self.p, "require_external_safety_gates", False))
+            and not self.external_safety_gates_healthy()
+        ):
+            self.get_logger().error("external VLM safety gate became stale or false")
+            self.set_parameters([Parameter("enabled", value=False)])
+            return
         if not self.get_parameter("enabled").value or self.state in (
             DISARMED,
             API_ERROR,

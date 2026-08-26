@@ -153,6 +153,14 @@ def test_every_python_test_is_registered_with_ament_cmake_pytest():
         "test_vlm_client.py",
         "test_obstacle_chain_config.py",
         "test_obstacle_cloud_filter_runtime.py",
+        "test_go2_profile.py",
+        "test_go2_preflight.py",
+        "test_go2_readiness.py",
+        "test_go2_bridge_config.py",
+        "test_go2_bridge_runtime.py",
+        "test_go2_operational_config.py",
+        "test_go2_offline_tools.py",
+        "test_go2_docs.py",
     }
     registered = set(
         re.findall(r"ament_add_pytest_test\([^\s]+\s+test/([^\s\)]+)", cmake)

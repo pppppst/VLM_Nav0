@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+from vlm_nav.go2_nav_supervisor import main
+
+
+if __name__ == "__main__":
+    main()
