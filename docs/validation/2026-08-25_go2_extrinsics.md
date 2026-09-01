@@ -1,5 +1,11 @@
 # Go2 外参来源审计（2026-08-25）
 
+> 当前采用状态（2026-08-28）：正式配置已采用 Unitree 官方 L1
+> LiDAR→IMU `[0.007698, 0.014655, -0.00667]`、`R=I`，以及 Unitree Go2
+> URDF 的 `base_link→utlidar_lidar` 候选 `[0.28945, 0, -0.046825]`、
+> `rpy=[0, 2.8782, 0]`。本文后续关于 Co-Nav 组合和漂移的内容是历史验证记录；
+> 新的组合 profile 尚未完成静止 Gate 2 复验。
+
 本次只审计本机 `Co-NavGPT2`、Go2 上已确认的 Unitree L1 SDK 版本，以及 Unitree
 官方源码；没有连接或移动 Go2。
 

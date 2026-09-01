@@ -1,4 +1,6 @@
 from pathlib import Path
+import importlib.util
+import os
 
 import yaml
 import pytest
@@ -9,22 +11,32 @@ from vlm_nav.go2_config_renderer import render_fastlio_config
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def load_launch_module():
+    os.environ.setdefault("ROS_LOG_DIR", "/tmp/go2_roslog")
+    spec = importlib.util.spec_from_file_location(
+        "go2_system_launch", ROOT / "launch/go2_system.launch.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_yaml(relative):
     return yaml.safe_load((ROOT / relative).read_text(encoding="utf-8"))
 
 
-def test_go2_calibration_uses_adopted_conav_historical_profile():
+def test_go2_calibration_uses_unitree_l1_lidar_imu_and_urdf_base_lidar_candidate():
     calibration = load_yaml("config/go2_calibration.yaml")
 
     lidar_imu = calibration["lidar_imu_extrinsic"]
     assert lidar_imu["calibrated"] is True
-    assert "Co-Nav historical" in lidar_imu["source"]
+    assert "Unitree official L1" in lidar_imu["source"]
     assert lidar_imu["definition"] == (
         "p_imu = R_lidar_to_imu * p_lidar + T_lidar_in_imu"
     )
     assert lidar_imu["lidar_frame"] == "utlidar_lidar"
     assert lidar_imu["imu_frame"] == "utlidar_imu"
-    assert lidar_imu["translation"] == [0.171, 0.0, 0.0908]
+    assert lidar_imu["translation"] == [0.007698, 0.014655, -0.00667]
     assert lidar_imu["rotation_matrix"] == [
         1.0,
         0.0,
@@ -38,12 +50,12 @@ def test_go2_calibration_uses_adopted_conav_historical_profile():
     ]
 
     base_lidar = calibration["base_lidar_extrinsic"]
-    assert base_lidar["calibrated"] is True
-    assert "Co-Nav historical" in base_lidar["source"]
+    assert base_lidar["calibrated"] is False
+    assert "official Go2 URDF" in base_lidar["source"]
     assert base_lidar["parent_frame"] == "base_link"
     assert base_lidar["child_frame"] == "utlidar_lidar"
-    assert base_lidar["xyz"] == [0.171, 0.0, 0.0908]
-    assert base_lidar["rpy"] == [0.0, 0.0, 0.0]
+    assert base_lidar["xyz"] == [0.28945, 0.0, -0.046825]
+    assert base_lidar["rpy"] == [0.0, 2.8782, 0.0]
 
     camera = calibration["camera_extrinsic"]
     assert camera["calibrated"] is False
@@ -51,6 +63,14 @@ def test_go2_calibration_uses_adopted_conav_historical_profile():
     assert camera["child_frame"] == "camera_link"
     assert camera["xyz"] == "TBD / requires measurement"
     assert camera["rpy"] == "TBD / requires measurement"
+
+
+def test_go2_waiter_omits_empty_ros_parameter_arrays():
+    launch = load_launch_module()
+    waiter = launch._waiter("test_waiter", transforms=("base_link->utlidar_lidar",))
+    parameters = waiter.__dict__["_Node__parameters"][0]
+    values = list(parameters.values())
+    assert all(value != () for value in values)
 
 
 def test_go2_fastlio_contract_has_single_plan_a_tf_owner_and_base_cloud():
@@ -73,12 +93,14 @@ def test_go2_robot_profile_uses_registered_base_cloud_and_blocks_uncalibrated_vl
 
     assert obstacle["input_topic"] == "/cloud_registered_base"
     assert obstacle["target_frame"] == "base_link"
-    for value in (
-        obstacle["min_height"],
-        obstacle["max_height"],
-        obstacle["self_crop_min_x"],
-    ):
-        assert value == "TBD / requires measurement"
+    assert obstacle["min_height"] == -0.35
+    assert obstacle["max_height"] == 0.20
+    assert obstacle["self_crop_min_x"] == -0.40
+    assert obstacle["self_crop_max_x"] == 0.40
+    assert obstacle["self_crop_min_y"] == -0.18
+    assert obstacle["self_crop_max_y"] == 0.18
+    assert obstacle["self_crop_min_z"] == -0.40
+    assert obstacle["self_crop_max_z"] == 0.16
     assert vlm["rgb_topic"] == "/camera/camera/color/image_raw"
     assert vlm["depth_topic"] == "/camera/camera/aligned_depth_to_color/image_raw"
     assert vlm["camera_info_topic"] == "/camera/camera/color/camera_info"
@@ -203,7 +225,7 @@ def test_fastlio_renderer_uses_reviewed_unitree_l1_extrinsic_direction():
     rendered = render_fastlio_config(template, calibration, measurements)
     params = rendered["/**"]["ros__parameters"]
 
-    assert params["mapping"]["extrinsic_T"] == [0.171, 0.0, 0.0908]
+    assert params["mapping"]["extrinsic_T"] == [0.007698, 0.014655, -0.00667]
     assert params["mapping"]["extrinsic_R"] == [
         1.0,
         0.0,

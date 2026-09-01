@@ -81,9 +81,9 @@ Plan B 只在动态 bag 证明 6DoF `base_link` 使 costmap 明显抖动后评�
 Unitree L1 SDK 已确认内部 LiDAR→IMU 外参：在
 `p_imu = R * p_lidar + T` 定义下，`T=[0.007698, 0.014655, -0.00667]`、`R=I`；
 来源和符号推导见 `docs/validation/2026-08-25_go2_extrinsics.md`。
-`[0.171, 0, 0.0908]` 仍未被采用：旧 Co-Nav 将它同时用于 LiDAR→IMU 和
-`base_link→utlidar_lidar`，没有证明其适用于当前 UTLiDAR 安装。identity 只有在
-有明确来源时才可通过标定检查。
+当前正式 profile 已采用上述 Unitree L1 数值；旧 Co-Nav 的 `[0.171, 0, 0.0908]`
+仅保留为历史对照，不能再用于 LiDAR→IMU 或 `base_link→utlidar_lidar`。安装外参
+继续使用 Unitree Go2 URDF 候选，但在新的组合 profile 完成静止验证前保持未校准。
 
 ## DDS、数据和时钟 preflight
 

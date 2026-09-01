@@ -63,19 +63,20 @@ def _static_transform(name, transform):
 
 
 def _waiter(name, *, topics=(), transforms=(), timeout=30.0):
+    waiter_parameters = {
+        "timeout": timeout,
+        "stable_samples": 3,
+    }
+    if topics:
+        waiter_parameters["required_topics"] = list(topics)
+    if transforms:
+        waiter_parameters["required_transforms"] = list(transforms)
     return Node(
         package="vlm_nav",
         executable="go2_readiness_waiter",
         name=name,
         output="screen",
-        parameters=[
-            {
-                "required_topics": list(topics),
-                "required_transforms": list(transforms),
-                "timeout": timeout,
-                "stable_samples": 3,
-            }
-        ],
+        parameters=[waiter_parameters],
     )
 
 
@@ -207,7 +208,7 @@ def _build(context):
         "wait_go2_slam",
         topics=("/map",),
         transforms=("map->odom",),
-        timeout=60.0,
+        timeout=120.0,
     )
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

@@ -200,8 +200,13 @@ class Go2SafetySupervisor(Node):
         message.data = ready
         self.ready_pub.publish(message)
         if ready != self.last_ready:
-            log = self.get_logger().info if ready else self.get_logger().warn
-            log(f"SYSTEM_READY={str(ready).lower()}")
+            # rclpy associates logging severity with the source call site.  Do
+            # not select info/warn through one shared line: the readiness
+            # transition would then try to change that call site's severity.
+            if ready:
+                self.get_logger().info("SYSTEM_READY=true")
+            else:
+                self.get_logger().warning("SYSTEM_READY=false")
             self.last_ready = ready
 
 

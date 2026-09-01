@@ -1,47 +1,48 @@
-# Adopted Co-Nav historical Go2 profile; user accepted the observed drift for Gate 2.
+# LiDAR/IMU uses the adopted Unitree L1 geometry; base-to-LiDAR is the
+# operator-selected Unitree Go2 URDF candidate and must be revalidated on the
+# current robot.
 lidar_imu_extrinsic:
   calibrated: true
   source: >-
-    Co-Nav historical Go2 profile in
-    Co-NavGPT2/configs/spark_fast_lio_go2.yaml; adopted per operator
-    instruction on 2026-08-26
+    Unitree official L1 geometry from the unilidar_sdk and
+    point_lio_unilidar configuration; adopted per operator instruction on
+    2026-08-28
   definition: p_imu = R_lidar_to_imu * p_lidar + T_lidar_in_imu
   lidar_frame: utlidar_lidar
   imu_frame: utlidar_imu
   axis_definition: >-
-    Historical Co-Nav FAST-LIO convention; kept identical to the historical
-    base-to-LiDAR candidate for compatibility.
-  translation: [0.171, 0.0, 0.0908]
+    Unitree L1 LiDAR and internal IMU axes are parallel; translation follows
+    the SPARK/FAST-LIO p_imu = R_lidar_to_imu * p_lidar + T_lidar_in_imu
+    convention.
+  source_url: https://github.com/unitreerobotics/point_lio_unilidar/blob/main/config/unilidar_l1.yaml
+  translation: [0.007698, 0.014655, -0.00667]
   rotation_matrix: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
 
 base_lidar_extrinsic:
-  calibrated: true
+  calibrated: false
   source: >-
-    Co-Nav historical Go2 profile in
-    Co-NavGPT2/launch/spark_fast_lio_go2.launch.yaml; adopted per operator
-    instruction on 2026-08-26 for the confirmed factory, unmodified radar.
+    Unitree official Go2 URDF radar_joint candidate, selected per operator
+    instruction on 2026-08-27 for the confirmed factory, unmodified radar.
   definition: p_utlidar_lidar = R_base_to_lidar * p_base + T_base_to_lidar
-  source_url: Co-NavGPT2/launch/spark_fast_lio_go2.launch.yaml
+  source_url: https://github.com/unitreerobotics/unitree_ros/blob/master/robots/go2_description/urdf/go2_description.urdf
   validation_status: >-
-    Adopted runtime profile; complete historical-profile replay gave about
-    0.06 m static-bag translation drift, accepted by the operator for Gate 2.
-    Repeat static-machine confirmation remains recommended.
+    Operator-selected official candidate; the prior replay used a different
+    LiDAR-to-IMU profile and showed unacceptable static drift, so this combined
+    profile must be revalidated before runtime use.
   direction: parent frame to child frame
   parent_frame: base_link
   child_frame: utlidar_lidar
-  xyz: [0.171, 0.0, 0.0908]
-  rpy: [0.0, 0.0, 0.0]
+  xyz: [0.28945, 0.0, -0.046825]
+  rpy: [0.0, 2.8782, 0.0]
 
 camera_extrinsic:
-  calibrated: false
-  source: TBD / requires measurement
-  rejected_legacy_candidate: >-
-    Co-Nav matrices were inherited from a D455 plus Livox MID360 setup and do
-    not identify the current D435-to-base_link transform
-  direction: parent frame to child frame
-  parent_frame: base_link
-  child_frame: camera_link
-  xyz: TBD / requires measurement
-  rpy: TBD / requires measurement
+    calibrated: true
+    source: operator-provided Go2 front camera extrinsic
+    direction: parent frame to child frame
+    parent_frame: base_link
+    child_frame: camera_link
+    xyz: [0.32715, -0.00003, 0.04297]
+    rpy: [0.0, 0.0, 0.0]
+

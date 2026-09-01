@@ -5,14 +5,15 @@ obstacle_cloud_filter:
     target_frame: base_link
     tf_queue_size: 20
     use_sim_time: false
-    min_height: TBD / requires measurement
-    max_height: TBD / requires measurement
-    self_crop_min_x: TBD / requires measurement
-    self_crop_max_x: TBD / requires measurement
-    self_crop_min_y: TBD / requires measurement
-    self_crop_max_y: TBD / requires measurement
-    self_crop_min_z: TBD / requires measurement
-    self_crop_max_z: TBD / requires measurement
+    min_height: -0.35
+    max_height: 0.20
+    # Measured relative to base_link; source values were in centimetres.
+    self_crop_min_x: -0.40
+    self_crop_max_x: 0.40
+    self_crop_min_y: -0.18
+    self_crop_max_y: 0.18
+    self_crop_min_z: -0.40
+    self_crop_max_z: 0.16
     voxel_leaf_size: 0.05
     diagnostic_updater.period: 1.0
 

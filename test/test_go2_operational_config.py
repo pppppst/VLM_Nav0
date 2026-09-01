@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import rclpy
 
 import yaml
 
@@ -6,6 +8,20 @@ from vlm_nav.go2_sensor_preflight import load_validated_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_readiness_waiter_declares_string_array_parameters():
+    from vlm_nav.go2_readiness_waiter import ReadinessWaiter
+
+    os.environ.setdefault("ROS_LOG_DIR", "/tmp/go2_roslog")
+    rclpy.init(args=[])
+    node = ReadinessWaiter()
+    try:
+        assert node.get_parameter("required_topics").type_.name == "STRING_ARRAY"
+        assert node.get_parameter("required_transforms").type_.name == "STRING_ARRAY"
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 def test_network_environment_is_modern_and_fails_closed():

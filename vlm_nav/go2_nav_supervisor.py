@@ -158,8 +158,12 @@ class Go2NavSupervisor(Node):
         message.data = ready
         self.ready_pub.publish(message)
         if ready != self.last_ready:
-            log = self.get_logger().info if ready else self.get_logger().warn
-            log(f"NAV_READY={str(ready).lower()}")
+            # Keep each severity at a stable source call site; rclpy rejects
+            # changing severity for the same caller between log calls.
+            if ready:
+                self.get_logger().info("NAV_READY=true")
+            else:
+                self.get_logger().warning("NAV_READY=false")
             self.last_ready = ready
 
 

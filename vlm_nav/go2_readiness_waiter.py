@@ -16,19 +16,19 @@ from tf2_ros import Buffer, TransformListener
 class ReadinessWaiter(Node):
     def __init__(self) -> None:
         super().__init__("go2_readiness_waiter")
-        self.declare_parameter("required_topics", [])
-        self.declare_parameter("required_transforms", [])
+        # A bare [] is inferred by rclpy as BYTE_ARRAY and rejects string-array
+        # launch overrides.  Use a string sentinel and filter it below.
+        self.declare_parameter("required_topics", [""])
+        self.declare_parameter("required_transforms", [""])
         self.declare_parameter("timeout", 30.0)
         self.declare_parameter("stable_samples", 3)
         self.declare_parameter("required_message_count", 3)
-        self.required_topics = list(
+        self.required_topics = [topic for topic in (
             self.get_parameter("required_topics").get_parameter_value().string_array_value
-        )
-        self.required_transforms = list(
-            self.get_parameter("required_transforms")
-            .get_parameter_value()
-            .string_array_value
-        )
+        ) if topic]
+        self.required_transforms = [transform for transform in (
+            self.get_parameter("required_transforms").get_parameter_value().string_array_value
+        ) if transform]
         self.timeout = float(self.get_parameter("timeout").value)
         self.stable_samples = int(self.get_parameter("stable_samples").value)
         self.required_message_count = int(

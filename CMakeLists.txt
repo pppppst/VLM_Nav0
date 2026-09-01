@@ -153,6 +153,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_go2_operational_config test/test_go2_operational_config.py)
   ament_add_pytest_test(test_go2_offline_tools test/test_go2_offline_tools.py)
   ament_add_pytest_test(test_go2_docs test/test_go2_docs.py)
+  ament_add_pytest_test(test_hesai_converter_integration test/test_hesai_converter_integration.py)
 endif()
 
 ament_package()

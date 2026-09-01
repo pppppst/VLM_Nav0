@@ -2,13 +2,15 @@
   ros__parameters:
     target_frame: base_link
     transform_tolerance: 0.10
-    min_height: TBD / requires measurement
-    max_height: TBD / requires measurement
+    # Measured relative to base_link; shared with the obstacle filter.
+    min_height: -0.35
+    max_height: 0.20
     angle_min: -3.141592653589793
     angle_max: 3.141592653589793
     angle_increment: 0.008726646259972
-    scan_time: TBD / requires measurement
-    range_min: TBD / requires measurement
-    range_max: TBD / requires measurement
+    # UTLiDAR live probe: median period 0.0651 s; observed XY range <= 7.71 m.
+    scan_time: 0.065
+    range_min: 0.10
+    range_max: 8.0
     use_inf: true
     inf_epsilon: 1.0

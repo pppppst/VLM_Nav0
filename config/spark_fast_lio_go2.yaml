@@ -30,7 +30,8 @@
       extrinsic_T: TBD / requires measurement
       extrinsic_R: TBD / requires measurement
     gravity_alignment:
-      # Adopted Co-Nav historical profile; Gate 2 drift remains under review.
+      # Adopted Unitree official L1 LiDAR-to-IMU geometry; Gate 2 drift remains
+      # under review until the combined profile is revalidated on the robot.
       enable_gravity_alignment: false
     publish:
       path_en: true
