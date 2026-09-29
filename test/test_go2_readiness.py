@@ -15,8 +15,12 @@ def healthy_inputs(**overrides):
         map_to_odom=True,
         nav2=True,
         rgb=True,
-        aligned_depth=True,
-        camera_info=True,
+        raw_depth=True,
+        color_camera_info=True,
+        depth_camera_info=True,
+        rgbd_sync=True,
+        camera_geometry=True,
+        units_verified=True,
         camera_calibrated=True,
         vlm_api=True,
     )
@@ -28,12 +32,20 @@ def test_readiness_states_are_independent_and_layered():
     result = evaluate_readiness(healthy_inputs())
     assert result.system_ready is True
     assert result.nav_ready is True
+    assert result.vlm_input_ready is True
+    assert result.vlm_autonomy_ready is True
     assert result.vlm_gate_ready is True
 
     no_api = evaluate_readiness(healthy_inputs(vlm_api=False))
     assert no_api.system_ready is True
     assert no_api.nav_ready is True
+    assert no_api.vlm_input_ready is True
+    assert no_api.vlm_autonomy_ready is False
     assert no_api.vlm_gate_ready is False
+
+    no_units = evaluate_readiness(healthy_inputs(units_verified=False))
+    assert no_units.vlm_input_ready is True
+    assert no_units.vlm_autonomy_ready is False
 
     no_nav = evaluate_readiness(healthy_inputs(nav2=False))
     assert no_nav.system_ready is True
@@ -70,6 +82,14 @@ def test_runtime_supervisors_have_single_owned_readiness_topics():
     assert "GetState" in nav_source
     assert "PRIMARY_STATE_ACTIVE" in nav_source
     assert "system_ready_receipt" in nav_source
-    assert "get_publisher_count() == 1" in nav_source
+    assert 'count_publishers("/vlm_nav/system_ready") == 1' in nav_source
     assert "lifecycle_receipts" in nav_source
     assert "go2_nav_supervisor" in nav_launch
+
+
+def test_nav_supervisor_does_not_shadow_rclpy_clients_property():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "vlm_nav/go2_nav_supervisor.py").read_text()
+    assert "self.lifecycle_clients =" in source
+    assert "self.clients =" not in source

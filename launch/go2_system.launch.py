@@ -104,6 +104,8 @@ def _build(context):
     preflight_report_path = LaunchConfiguration("sensor_preflight_report").perform(context)
     preflight_config_path = LaunchConfiguration("sensor_preflight_config").perform(context)
     preflight_max_age = float(LaunchConfiguration("sensor_preflight_max_age_s").perform(context))
+    bridge_dry_run = LaunchConfiguration("bridge_dry_run").perform(context).lower() in ("1", "true", "yes")
+    start_bridge = LaunchConfiguration("start_bridge").perform(context).lower() in ("1", "true", "yes")
     if target_stage not in STAGES:
         raise RuntimeError(f"target_stage must be one of {STAGES}, got {target_stage!r}")
 
@@ -126,6 +128,49 @@ def _build(context):
     static_nodes = [
         _static_transform("go2_base_to_lidar", calibration["base_lidar_extrinsic"])
     ]
+    body_imu = calibration.get("base_imu_extrinsic")
+    lowstate_adapter = None
+    if body_imu is not None:
+        require_calibrated("base_imu_extrinsic", body_imu)
+        static_nodes.append(_static_transform("go2_base_to_body_imu", body_imu))
+        lowstate_adapter = Node(
+            package="vlm_nav",
+            executable="lowstate_imu_adapter",
+            name="lowstate_imu_adapter",
+            output="screen",
+        )
+    hesai_driver = Node(
+        package="hesai_ros_driver",
+        executable="hesai_ros_driver_node",
+        name="hesai_ros_driver_node",
+        output="screen",
+        parameters=[
+            {"config_path": LaunchConfiguration("hesai_config_file")}
+        ],
+    )
+    converter = Node(
+        package="hesai_fastlio_converter",
+        executable="hesai_fastlio_converter_node",
+        name="hesai_fastlio_converter",
+        output="screen",
+        parameters=[
+            {
+                "input_topic": "/lidar_points",
+                "output_topic": "/lidar_points_fastlio",
+                "input_reliability": "best_effort",
+                "output_reliability": "reliable",
+                "expected_points": 64000,
+                "min_points": 60000,
+                "scan_lines": 16,
+                "expected_scan_period_sec": 0.1,
+                "min_scan_period_sec": 0.05,
+                "max_scan_period_sec": 0.15,
+                "min_points_per_ring": 3000,
+                "input_time_field": "timestamp",
+                "input_time_scale": 1.0,
+            }
+        ],
+    )
     camera = calibration["camera_extrinsic"]
     if camera.get("calibrated") is True:
         require_calibrated("camera_extrinsic", camera)
@@ -136,27 +181,24 @@ def _build(context):
         executable="twist_to_go2_sport_bridge",
         name="twist_to_go2_sport_bridge",
         output="screen",
-        parameters=[os.path.join(share, "config", "go2_bridge.yaml")],
+        parameters=[os.path.join(share, "config", "go2_bridge.yaml"), {"dry_run": bridge_dry_run}],
     )
+    safety_parameters = {
+        "formal_report_path": preflight_report_path,
+        "formal_report_max_age_s": preflight_max_age,
+        "lidar_frame": "hesai_lidar",
+        "imu_topic": "/body_imu" if body_imu is not None else "/utlidar/imu",
+    }
     safety_supervisor = Node(
         package="vlm_nav",
         executable="go2_safety_supervisor",
         name="go2_safety_supervisor",
         output="screen",
-        parameters=[
-            {
-                "formal_report_path": preflight_report_path,
-                "formal_report_max_age_s": preflight_max_age,
-                "acceleration_abs_max_mps2": float(
-                    imu_thresholds["acceleration_abs_max_mps2"]
-                ),
-                "gyro_abs_max_radps": float(imu_thresholds["gyro_abs_max_radps"]),
-            }
-        ],
+        parameters=[safety_parameters],
     )
     base_waiter = _waiter(
         "wait_go2_base_lidar_tf",
-        transforms=("base_link->utlidar_lidar",),
+        transforms=("base_link->hesai_lidar",),
         timeout=10.0,
     )
     spark = Node(
@@ -164,13 +206,13 @@ def _build(context):
         executable="spark_lio_mapping",
         name="lio_mapping",
         output="screen",
-        remappings=[("lidar", "/utlidar/cloud"), ("imu", "/utlidar/imu")],
+        remappings=[("lidar", "/lidar_points_fastlio"), ("imu", "/body_imu")],
         parameters=[LaunchConfiguration("spark_config_file")],
     )
     fastlio_waiter = _waiter(
         "wait_go2_fastlio",
         topics=("/odometry", "/cloud_registered_base"),
-        transforms=("odom->base_link", "base_link->utlidar_lidar"),
+        transforms=("odom->base_link", "base_link->hesai_lidar"),
         timeout=60.0,
     )
     obstacle = Node(
@@ -236,7 +278,19 @@ def _build(context):
     if after_slam:
         handlers.append(_advance_after(slam_waiter, after_slam, "SLAM"))
 
-    return [*handlers, *static_nodes, bridge, safety_supervisor, base_waiter]
+    runtime_nodes = [
+        *handlers,
+        *static_nodes,
+        hesai_driver,
+        converter,
+        safety_supervisor,
+        base_waiter,
+    ]
+    if start_bridge:
+        runtime_nodes.append(bridge)
+    if lowstate_adapter is not None:
+        runtime_nodes.append(lowstate_adapter)
+    return runtime_nodes
 
 
 def generate_launch_description():
@@ -245,19 +299,25 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "calibration_file",
-                default_value=os.path.join(share, "config", "go2_calibration.yaml"),
+                default_value=os.path.join(share, "config", "go2_calibration_xt16.yaml"),
             ),
             DeclareLaunchArgument(
                 "spark_config_file",
-                default_value=os.path.join(share, "config", "spark_fast_lio_go2.yaml"),
+                default_value=os.path.join(share, "config", "spark_fast_lio_go2_xt16.yaml"),
             ),
             DeclareLaunchArgument("sensor_preflight_report", default_value=""),
             DeclareLaunchArgument(
                 "sensor_preflight_config",
-                default_value=os.path.join(share, "config", "go2_preflight.yaml"),
+                default_value=os.path.join(share, "config", "go2_preflight_xt16.yaml"),
             ),
-            DeclareLaunchArgument("sensor_preflight_max_age_s", default_value="300.0"),
+            DeclareLaunchArgument(
+                "hesai_config_file",
+                default_value="/home/isee-pst/Documents/liang/hesai_xt16_ws/src/HesaiLidar_ROS_2.0/config/config.yaml",
+            ),
+            DeclareLaunchArgument("sensor_preflight_max_age_s", default_value="600.0"),
             DeclareLaunchArgument("target_stage", default_value="fastlio"),
+            DeclareLaunchArgument("bridge_dry_run", default_value="true"),
+            DeclareLaunchArgument("start_bridge", default_value="true"),
             OpaqueFunction(function=_build),
         ]
     )

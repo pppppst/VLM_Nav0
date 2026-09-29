@@ -1,0 +1,7 @@
+<library path="componentwise_min_speed_generator">
+  <class
+    type="vlm_nav::ComponentwiseMinSpeedGenerator"
+    base_class_type="dwb_core::TrajectoryGenerator">
+    <description>Rejects nonzero DWB velocity components below their configured minima.</description>
+  </class>
+</library>

@@ -9,21 +9,24 @@ topics=(
   /utlidar/cloud
   /utlidar/imu
   /camera/camera/color/image_raw
-  /camera/camera/aligned_depth_to_color/image_raw
+  /camera/camera/depth/image_rect_raw
   /camera/camera/color/camera_info
+  /camera/camera/depth/camera_info
 )
 
 declare -A expected_reliability expected_durability
 expected_reliability[/utlidar/cloud]=RELIABLE
 expected_reliability[/utlidar/imu]=RELIABLE
 expected_reliability[/camera/camera/color/image_raw]=RELIABLE
-expected_reliability[/camera/camera/aligned_depth_to_color/image_raw]=RELIABLE
+expected_reliability[/camera/camera/depth/image_rect_raw]=RELIABLE
 expected_reliability[/camera/camera/color/camera_info]=RELIABLE
+expected_reliability[/camera/camera/depth/camera_info]=RELIABLE
 expected_durability[/utlidar/cloud]=VOLATILE
 expected_durability[/utlidar/imu]=VOLATILE
 expected_durability[/camera/camera/color/image_raw]=VOLATILE
-expected_durability[/camera/camera/aligned_depth_to_color/image_raw]=VOLATILE
+expected_durability[/camera/camera/depth/image_rect_raw]=VOLATILE
 expected_durability[/camera/camera/color/camera_info]=VOLATILE
+expected_durability[/camera/camera/depth/camera_info]=VOLATILE
 
 failed=0
 required_samples=3

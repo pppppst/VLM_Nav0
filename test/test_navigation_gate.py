@@ -1,7 +1,10 @@
 """Small ROS contract tests; skipped when the ROS environment is not sourced."""
 
 from collections import deque
+import importlib.util
 import math
+import os
+from pathlib import Path
 import time
 from types import SimpleNamespace
 
@@ -14,6 +17,8 @@ from action_msgs.msg import GoalStatus
 from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
+from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, ReliabilityPolicy
 from visualization_msgs.msg import Marker
 from tf2_ros import TransformException
 
@@ -33,6 +38,64 @@ from vlm_nav.vlm_navigator import (
 from vlm_nav.models import FrameSnapshot, Pixel, VLMResult, WorkerResult
 
 
+RAW_DEPTH_LIBRARY = Path("/usr/local/lib/librealsense2.so.2.53.1")
+RAW_DEPTH_PROBE_SPEC = importlib.util.spec_from_file_location(
+    "navigation_gate_raw_depth_probe",
+    Path(__file__).parents[1] / "scripts/raw_depth_probe.py",
+)
+RAW_DEPTH_PROBE = importlib.util.module_from_spec(RAW_DEPTH_PROBE_SPEC)
+RAW_DEPTH_PROBE_SPEC.loader.exec_module(RAW_DEPTH_PROBE)
+
+
+def test_raw_vlm_subscribes_to_images_and_dual_info_with_sensor_qos():
+    os.environ["ROS_LOG_DIR"] = "/tmp/go2_roslog"
+    if rclpy.ok():
+        rclpy.shutdown()
+    rclpy.init(
+        args=[
+            "--ros-args",
+            "-p", "raw_depth_mode:=true",
+            "-p", "rgb_topic:=/camera/camera/color/image_raw",
+            "-p", "depth_topic:=/camera/camera/depth/image_rect_raw",
+            "-p", "camera_info_topic:=/camera/camera/color/camera_info",
+            "-p", "depth_camera_info_topic:=/camera/camera/depth/camera_info",
+        ]
+    )
+    node = VLMNavigator()
+    try:
+        topics = {
+            "/camera/camera/color/image_raw",
+            "/camera/camera/depth/image_rect_raw",
+            "/camera/camera/color/camera_info",
+            "/camera/camera/depth/camera_info",
+        }
+        subscriptions = [
+            item for item in node.subscriptions if item.topic_name in topics
+        ]
+        assert {item.topic_name for item in subscriptions} == topics
+        assert all(
+            item.qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+            and item.qos_profile.durability == DurabilityPolicy.VOLATILE
+            for item in subscriptions
+        )
+        assert not any(
+            item.topic_name == "/vlm_nav/vlm_api_ready"
+            for item in node.subscriptions
+        )
+        assert any(
+            item.topic_name == "/vlm_nav/vlm_api_ready"
+            for item in node.publishers
+        )
+        assert any(
+            item.topic_name == "/vlm_nav/camera_preview"
+            and item.qos_profile.reliability == ReliabilityPolicy.BEST_EFFORT
+            for item in node.publishers
+        )
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
 def path_pose(x, y):
     return SimpleNamespace(
         pose=SimpleNamespace(position=SimpleNamespace(x=float(x), y=float(y)))
@@ -45,6 +108,20 @@ class RecordingMarkerPublisher:
 
     def publish(self, message):
         self.messages.append(message)
+
+
+def test_camera_preview_reuses_rgb_subscription_at_one_hz():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(camera_preview_rate=1.0)
+    node.last_camera_preview = 0.0
+    node.camera_preview_pub = RecordingMarkerPublisher()
+    message = object()
+
+    node.publish_camera_preview(message, now=10.0)
+    node.publish_camera_preview(message, now=10.5)
+    node.publish_camera_preview(message, now=11.0)
+
+    assert node.camera_preview_pub.messages == [message, message]
 
 
 def test_publish_debug_emits_annotated_target_image():
@@ -71,6 +148,188 @@ def test_publish_debug_emits_annotated_target_image():
     message = node.debug_pub.messages[0]
     assert (message.width, message.height, message.encoding) == (240, 160, "rgb8")
     assert any(message.data)
+
+
+@pytest.mark.skipif(
+    not RAW_DEPTH_LIBRARY.exists(), reason="Official librealsense library required"
+)
+def test_grounding_maps_color_pixel_before_reading_raw_depth():
+    """Catches a regression to raw_depth[v_color, u_color]."""
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(
+        depth_neighborhood_radius=0,
+        min_depth=0.2,
+        max_depth=5.0,
+        min_depth_samples=1,
+        max_depth_deviation=0.2,
+        max_ground_height=0.35,
+    )
+    node.raw_depth_geometry = RAW_DEPTH_PROBE.Geometry(str(RAW_DEPTH_LIBRARY))
+    info = {
+        "width": 64,
+        "height": 48,
+        "k": [100.0, 0.0, 32.0, 0.0, 100.0, 24.0, 0.0, 0.0, 1.0],
+        "d": [0.0] * 5,
+    }
+    depth_to_color = np.eye(4)
+    depth_to_color[0, 3] = -0.02
+    raw = np.zeros((48, 64), dtype=np.uint16)
+    raw[24, 30] = 3000  # Wrong direct color-pixel lookup.
+    raw[24, 32] = 1000  # Correct SDK-mapped depth pixel.
+    metadata = {
+        "color_info": info,
+        "depth_info": info,
+        "rgb_stamp_ns": 10,
+        "depth_stamp_ns": 10,
+        "depth_to_color": depth_to_color.tolist(),
+        "color_to_depth": np.linalg.inv(depth_to_color).tolist(),
+        "T_map_depth_optical": np.eye(4).tolist(),
+    }
+    snapshot = SimpleNamespace(
+        rgb=np.zeros((48, 64, 3), dtype=np.uint8),
+        depth_m=raw.astype(np.float32) * 0.001,
+        intrinsics=(100.0, 100.0, 32.0, 24.0),
+        transform_matrix=np.eye(4),
+        raw_depth_snapshot=(
+            np.zeros((48, 64, 3), dtype=np.uint8),
+            raw,
+            metadata,
+        ),
+        depth_scale=0.001,
+    )
+
+    point, reason = node.ground_pixel_with_reason(
+        snapshot, Pixel(30, 24), require_ground=False
+    )
+
+    assert reason == "ok"
+    assert point == pytest.approx((0.0, 0.0, 1.0), abs=1e-5)
+
+
+def test_raw_depth_missing_pixel_remains_recoverable():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(min_depth=0.2, max_depth=5.0, max_ground_height=0.35)
+    node.raw_depth_geometry = SimpleNamespace(
+        project=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("SDK did not find a depth pixel")
+        )
+    )
+    snapshot = SimpleNamespace(
+        raw_depth_snapshot=object(), depth_scale=0.001
+    )
+
+    point, reason = node.ground_pixel_with_reason(
+        snapshot, Pixel(30, 24), require_ground=False
+    )
+
+    assert point is None
+    assert reason.startswith("insufficient_valid_depth_samples:")
+
+
+def test_input_and_autonomy_readiness_are_separate_fail_closed_gates():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(
+        rgbd_wait_timeout=2.0,
+        tf_failure_timeout=3.0,
+        external_gate_timeout=2.0,
+    )
+    now = time.monotonic()
+    node.rgbd_sync_status = {"healthy": True, "rate": 0.9}
+    node.latest_snapshot = SimpleNamespace(
+        captured_monotonic=now, raw_depth_snapshot=object()
+    )
+    node.camera_extrinsic_matrix = np.eye(4)
+    node.last_camera_tf_success = now
+    node.depth_units_verified = False
+    node.vlm_api_ready = True
+
+    assert node.vlm_input_ready(now) is True
+    assert node.vlm_autonomy_ready(now) is False
+
+    node.depth_units_verified = True
+    assert node.vlm_autonomy_ready(now) is True
+    node.vlm_api_ready = False
+    assert node.vlm_autonomy_ready(now) is False
+
+
+def test_real_vlm_results_own_api_ready_state():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(require_external_safety_gates=False)
+    published = []
+    node.vlm_api_ready = False
+    node.vlm_api_ready_pub = SimpleNamespace(
+        publish=lambda message: published.append(message.data)
+    )
+    snapshot = SimpleNamespace(request_kind="target")
+    result = VLMResult(
+        target_visible=False,
+        object_match=False,
+        qualifier_match=False,
+        relation_match=False,
+        confidence=0.0,
+        target_pixel=None,
+        evidence_pixel=None,
+    )
+
+    assert node.update_vlm_api_ready(
+        WorkerResult(snapshot, result, 0.2)
+    ) is True
+    assert node.update_vlm_api_ready(
+        WorkerResult(snapshot, None, 4.0, "TimeoutError: timed out")
+    ) is False
+
+    assert published == [True, False]
+    assert node.vlm_api_status_reason == "TimeoutError: timed out"
+
+
+def test_first_snapshot_submits_one_real_api_preflight_while_disabled():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.api_preflight_pending = True
+    node.state = "DISARMED"
+    node.latest_snapshot = FrameSnapshot(
+        sequence=1,
+        task_epoch=0,
+        target_description="chair",
+        captured_monotonic=time.monotonic(),
+        stamp=Time(),
+        frame_id="camera",
+        rgb=np.zeros((2, 2, 3), dtype=np.uint8),
+        depth_m=np.ones((2, 2), dtype=np.float32),
+        intrinsics=(1.0, 1.0, 1.0, 1.0),
+        transform_matrix=np.eye(4),
+    )
+    submitted = []
+    node.worker = SimpleNamespace(submit=submitted.append)
+    node.ensure_worker = lambda: True
+    node.get_parameter = lambda name: SimpleNamespace(value="chair")
+    node.get_logger = lambda: SimpleNamespace(info=lambda _message: None)
+
+    node.sample_latest_frame()
+    node.sample_latest_frame()
+
+    assert len(submitted) == 1
+    assert submitted[0].request_kind == "api_preflight"
+    assert node.api_preflight_pending is False
+
+
+def test_raw_depth_autonomy_enable_requires_verified_report_not_a_bool_parameter():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(raw_depth_mode=True)
+    values = {
+        "enabled": False,
+        "require_camera_calibration": False,
+        "camera_extrinsic_calibrated": True,
+        "require_external_safety_gates": False,
+    }
+    node.get_parameter = lambda name: SimpleNamespace(value=values[name])
+    node.depth_units_verified = False
+    node.depth_units_error = "raw-depth unit report profile does not match runtime"
+    node.vlm_input_ready = lambda: True
+
+    result = node.on_parameters_changed([Parameter("enabled", value=True)])
+
+    assert result.successful is False
+    assert "unit report" in result.reason
 
 
 def test_successful_target_probe_path_dispatches_without_map_reclassification():
@@ -307,6 +566,32 @@ def test_stationary_scan_submits_one_new_frame_and_holds_heading():
     assert node.scan_waiting_for_vlm is True
     assert node.scan_request_sequence == 8
     assert node.scan_index == 0
+
+
+def test_begin_scan_observes_initial_heading_before_first_rotation():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.p = SimpleNamespace(scan_steps=8, scan_settle_time=0.30)
+    node.sequence = 42
+    canceled = []
+    stopped = []
+    states = []
+    node.cancel_motion = lambda publish_stop=False: canceled.append(publish_stop)
+    node.publish_stop = lambda: stopped.append(True)
+    node.set_state = states.append
+
+    started = time.monotonic()
+    node.begin_scan((1.0, 2.0, 0.25))
+
+    assert canceled == [True]
+    assert stopped == [True]
+    assert states == [SCANNING]
+    assert node.scan_headings[0] == pytest.approx(0.25)
+    assert node.scan_headings[1] == pytest.approx(0.25 + math.pi / 4.0)
+    assert node.scan_headings[-1] == pytest.approx(0.25 + 7.0 * math.pi / 4.0)
+    assert node.scan_index == 0
+    assert node.scan_capture_after_sequence == 42
+    assert node.scan_settle_until >= started + 0.25
+    assert node.scan_waiting_for_vlm is False
 
 
 def test_no_target_scan_result_advances_only_after_result_handling():
@@ -1410,7 +1695,7 @@ def safety_test_node():
         sensor_failure_timeout=30.0,
         tf_failure_timeout=3.0,
         max_travel_radius=3.0,
-        target_lost_timeout=10.0,
+        approach_cancel_radius=0.89,
         target_confirmation_timeout=20.0,
         goal_timeout=120.0,
     )
@@ -1428,6 +1713,22 @@ def safety_test_node():
     node.sensor_wait_reason = "none"
     node.target_confirmation_started = time.monotonic()
     return node
+
+
+def test_approach_does_not_expire_when_target_is_no_longer_observed():
+    node = safety_test_node()
+    node.state = APPROACHING
+    node.target_reference_position = (2.0, 0.0, 0.5)
+    node.target_seen_time = time.monotonic() - 3600.0
+    node.last_robot_tf_success = time.monotonic()
+    node.robot_pose = lambda: (0.0, 0.0, 0.0)
+    failures = []
+    node.fail_safe = failures.append
+
+    node.safety_tick()
+
+    assert failures == []
+    assert node.state == APPROACHING
 
 
 def test_safety_tick_refreshes_robot_tf_while_target_confirming():
@@ -1558,6 +1859,115 @@ def test_rgbd_metadata_mismatch_is_rejected_before_image_conversion():
     assert node.sensor_recovery_count == 0
 
 
+def test_raw_rgbd_snapshot_caches_static_extrinsic_and_uses_depth_stamp_tf():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.state = SCANNING
+    node.p = SimpleNamespace(
+        global_frame="map",
+        camera_frame="camera_color_optical_frame",
+        vlm_sample_rate=5.0,
+        image_tf_queue_size=4,
+        image_tf_wait_timeout=5.0,
+        sensor_recovery_frames=3,
+        raw_depth_mode=True,
+    )
+    node.get_parameter = lambda name: SimpleNamespace(
+        value="chair" if name == "target_description" else False
+    )
+    color_info = SimpleNamespace(
+        width=2,
+        height=2,
+        k=[100.0, 0.0, 1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 1.0],
+        d=[0.0] * 5,
+        header=SimpleNamespace(frame_id="camera_color_optical_frame"),
+    )
+    depth_info = SimpleNamespace(
+        width=2,
+        height=2,
+        k=[90.0, 0.0, 1.0, 0.0, 90.0, 1.0, 0.0, 0.0, 1.0],
+        d=[0.0] * 5,
+        header=SimpleNamespace(frame_id="camera_depth_optical_frame"),
+    )
+    node.camera_infos = {"color": color_info, "depth": depth_info}
+    node.last_rgbd_pair_received = 0.0
+    node.last_valid_rgbd_received = 0.0
+    node.invalid_rgbd_frames = 0
+    node.sensor_recovery_count = 0
+    node.pending_rgbd_frames = deque()
+    node.last_rgbd_queued = 0.0
+    node.image_tf_queue_drops = 0
+    node.image_tf_failures = 0
+    node.last_image_tf_error = "none"
+    node.sequence = 0
+    node.task_epoch = 7
+    node.latest_snapshot = None
+    node.last_camera_tf_success = 0.0
+    node.camera_extrinsic_matrix = None
+    node.depth_scale = 0.001
+    node.get_logger = lambda: SimpleNamespace(warn=lambda *args, **kwargs: None)
+    requested = []
+
+    def lookup(target, source, requested_time, timeout):
+        requested.append((target, source, requested_time.nanoseconds))
+        translation = SimpleNamespace(x=0.02 if target.startswith("camera") else 1.0,
+                                      y=0.0, z=0.0)
+        return SimpleNamespace(
+            transform=SimpleNamespace(
+                translation=translation,
+                rotation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+            )
+        )
+
+    node.tf_buffer = SimpleNamespace(lookup_transform=lookup)
+
+    def image(stamp_ns, frame, encoding, data, step):
+        return SimpleNamespace(
+            width=2,
+            height=2,
+            step=step,
+            encoding=encoding,
+            is_bigendian=0,
+            data=data,
+            header=SimpleNamespace(
+                frame_id=frame,
+                stamp=Time(sec=0, nanosec=stamp_ns),
+            ),
+        )
+
+    rgb = image(10, "camera_color_optical_frame", "rgb8", bytes(12), 6)
+    depth = image(
+        20,
+        "camera_depth_optical_frame",
+        "16UC1",
+        np.full((2, 2), 1000, dtype=np.uint16).tobytes(),
+        4,
+    )
+
+    node.on_rgbd(rgb, depth)
+    first = node.latest_snapshot
+    node.last_rgbd_queued = 0.0
+    newer_depth = image(
+        20,
+        "camera_depth_optical_frame",
+        "16UC1",
+        np.full((2, 2), 2000, dtype=np.uint16).tobytes(),
+        4,
+    )
+    node.on_rgbd(rgb, newer_depth)
+
+    assert first is not None
+    assert first.raw_depth_snapshot[1][0, 0] == 1000
+    assert node.latest_snapshot.raw_depth_snapshot[1][0, 0] == 2000
+    assert first.rgb.flags.writeable is False
+    assert first.raw_depth_snapshot[1].flags.writeable is False
+    with pytest.raises(TypeError):
+        first.raw_depth_snapshot[2]["depth_stamp_ns"] = 999
+    assert requested.count(
+        ("camera_color_optical_frame", "camera_depth_optical_frame", 0)
+    ) == 1
+    assert requested.count(("map", "camera_depth_optical_frame", 20)) == 2
+
+
 def test_delayed_image_tf_is_retried_at_the_exact_original_stamp():
     node = VLMNavigator.__new__(VLMNavigator)
     node.state = SCANNING
@@ -1588,19 +1998,24 @@ def test_delayed_image_tf_is_retried_at_the_exact_original_stamp():
     node.get_parameter = lambda name: SimpleNamespace(
         value="chair" if name == "target_description" else True
     )
-    node.get_logger = lambda: SimpleNamespace(warn=lambda *args, **kwargs: None)
+    warnings = []
+    node.get_logger = lambda: SimpleNamespace(
+        warn=lambda *args, **kwargs: warnings.append((args, kwargs))
+    )
     requested = []
 
     def unavailable(_target, _source, requested_time, timeout):
         requested.append(requested_time.nanoseconds)
-        raise TransformException("future extrapolation")
+        raise TransformException("Lookup would require extrapolation into the future")
 
     node.tf_buffer = SimpleNamespace(lookup_transform=unavailable)
     node.resolve_pending_rgbd()
 
     assert len(node.pending_rgbd_frames) == 1
     assert node.latest_snapshot is None
-    assert node.last_image_tf_error == "future extrapolation"
+    assert node.image_tf_failures == 0
+    assert node.last_image_tf_error == "none"
+    assert not warnings
 
     transform = SimpleNamespace(
         transform=SimpleNamespace(
@@ -1672,6 +2087,11 @@ def test_compact_diagnostics_keep_only_fault_isolation_fields():
     node.last_plan_status = -1
     node.sensor_wait_reason = "none"
     node.last_api_error = "none"
+    node.rgbd_sync_status = {
+        "healthy": False, "matched": 8, "total": 10, "rate": 0.8
+    }
+    node.depth_units_verified = False
+    node.depth_units_error = "unit report not loaded"
 
     values = node.compact_diagnostic_values(now, worker_busy=False)
 
@@ -1685,6 +2105,9 @@ def test_compact_diagnostics_keep_only_fault_isolation_fields():
         "target_status",
         "navigation_status",
         "approach_status",
+        "rgbd_sync",
+        "depth_units",
+        "vlm_api_ready",
         "sensor_wait_reason",
         "last_api_error",
         "last_failure_reason",
@@ -1695,6 +2118,8 @@ def test_compact_diagnostics_keep_only_fault_isolation_fields():
         "waiting_vlm; heading=2/3; retry=1"
     )
     assert values["target_status"] == "rejected; invalid_depth"
+    assert values["rgbd_sync"] == "degraded; matched=8/10; rate=0.800"
+    assert values["depth_units"] == "blocked; unit report not loaded"
 
 
 def test_compact_diagnostics_expose_target_confirmation_resets():

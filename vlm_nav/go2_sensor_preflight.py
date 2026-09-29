@@ -74,8 +74,8 @@ def load_validated_config(path):
     return config
 
 
-def _cloud_rows(message):
-    requested_fields = ("x", "y", "z", "time", "ring")
+def _cloud_rows(message, point_time_field="time"):
+    requested_fields = ("x", "y", "z", point_time_field, "ring")
     data = point_cloud2.read_points(
         message, field_names=requested_fields, skip_nans=False
     )
@@ -93,6 +93,10 @@ class Go2SensorPreflight(Node):
         self.diagnostic_only = bool(diagnostic_only)
         timing = config["lidar_timing"]
         imu = config["imu_stationary_thresholds"]
+        self.lidar_topic = str(timing.get("topic", "/utlidar/cloud"))
+        self.imu_topic = str(timing.get("imu_topic", "/utlidar/imu"))
+        self.point_time_field = str(timing.get("point_time_field", "time"))
+        self.point_time_is_absolute = bool(timing.get("point_time_is_absolute", False))
         self.raw_imu = RawImuAccumulator()
         self.imu_health = None
         if not self.diagnostic_only:
@@ -129,20 +133,20 @@ class Go2SensorPreflight(Node):
         self.started = time.monotonic()
         self.report = None
         self.done = False
-        self.create_subscription(PointCloud2, "/utlidar/cloud", self.on_cloud, qos)
-        self.create_subscription(Imu, "/utlidar/imu", self.on_imu, qos)
+        self.create_subscription(PointCloud2, self.lidar_topic, self.on_cloud, qos)
+        self.create_subscription(Imu, self.imu_topic, self.on_imu, qos)
         self.timer = self.create_timer(0.1, self.check_complete)
 
     def on_cloud(self, message):
         receive_time = time.time()
         field_names = {field.name for field in message.fields}
-        required = {"x", "y", "z", "time", "ring"}
+        required = {"x", "y", "z", self.point_time_field, "ring"}
         missing = sorted(required - field_names)
         if missing:
             self.cloud_errors.append(f"missing PointCloud2 fields: {missing}")
             return
         try:
-            rows = list(_cloud_rows(message))
+            rows = list(_cloud_rows(message, self.point_time_field))
             report = analyze_cloud_points(rows)
         except Exception as error:  # malformed driver data is a failed preflight
             self.cloud_errors.append(f"{type(error).__name__}: {error}")
@@ -153,12 +157,10 @@ class Go2SensorPreflight(Node):
         )
         self.cloud_reports.append(report)
         self.cloud_header_stamps.append(stamp)
-        self.cloud_point_time_frames.append(
-            (
-                stamp,
-                np.fromiter((float(row[3]) for row in rows), dtype=np.float32),
-            )
-        )
+        point_times = np.fromiter((float(row[3]) for row in rows), dtype=np.float64)
+        if self.point_time_is_absolute:
+            point_times = point_times - stamp
+        self.cloud_point_time_frames.append((stamp, point_times))
         self.cloud_receipts.append(time.monotonic())
 
     def on_imu(self, message):

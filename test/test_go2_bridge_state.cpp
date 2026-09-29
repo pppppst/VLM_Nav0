@@ -19,8 +19,8 @@ BridgeLimits limits()
 
 void valid_then_arm(Go2BridgeStateMachine & machine, double now = 1.0)
 {
-  ASSERT_TRUE(machine.handle_command(0.1, 0.0, 0.2, now).accepted);
   ASSERT_TRUE(machine.arm(now));
+  ASSERT_TRUE(machine.handle_command(0.1, 0.0, 0.2, now).accepted);
 }
 }  // namespace
 
@@ -52,10 +52,29 @@ TEST(Go2BridgeState, RejectsLateralVelocity)
 TEST(Go2BridgeState, ClampsAcceptedCommand)
 {
   Go2BridgeStateMachine machine(limits());
+  ASSERT_TRUE(machine.arm(1.0));
   auto result = machine.handle_command(2.0, 0.0, -4.0, 1.0);
   ASSERT_TRUE(result.accepted);
   EXPECT_DOUBLE_EQ(result.command.vx, 0.20);
   EXPECT_DOUBLE_EQ(result.command.vyaw, -0.40);
+}
+
+TEST(Go2BridgeState, AcceptsPositiveYaw)
+{
+  Go2BridgeStateMachine machine(limits());
+  ASSERT_TRUE(machine.arm(1.0));
+  auto result = machine.handle_command(0.0, 0.0, 0.2, 1.0);
+  ASSERT_TRUE(result.accepted);
+  EXPECT_DOUBLE_EQ(result.command.vyaw, 0.2);
+}
+
+TEST(Go2BridgeState, AcceptsNegativeYaw)
+{
+  Go2BridgeStateMachine machine(limits());
+  ASSERT_TRUE(machine.arm(1.0));
+  auto result = machine.handle_command(0.0, 0.0, -0.2, 1.0);
+  ASSERT_TRUE(result.accepted);
+  EXPECT_DOUBLE_EQ(result.command.vyaw, -0.2);
 }
 
 TEST(Go2BridgeState, CommandTimeoutFaultsAndStopsOnce)
@@ -66,6 +85,29 @@ TEST(Go2BridgeState, CommandTimeoutFaultsAndStopsOnce)
   EXPECT_EQ(machine.state(), BridgeState::FAULT);
   EXPECT_TRUE(machine.consume_stop_edge());
   EXPECT_FALSE(machine.consume_stop_edge());
+}
+
+TEST(Go2BridgeState, ExplicitZeroStopsWithoutWatchdogFault)
+{
+  Go2BridgeStateMachine machine(limits());
+  valid_then_arm(machine);
+  ASSERT_TRUE(machine.handle_command(0.0, 0.0, 0.0, 1.2).accepted);
+  EXPECT_FALSE(machine.active_command().has_value());
+  EXPECT_EQ(machine.state(), BridgeState::ARMED);
+  machine.tick(2.0, true);
+  EXPECT_EQ(machine.state(), BridgeState::ARMED);
+  EXPECT_TRUE(machine.consume_stop_edge());
+  EXPECT_FALSE(machine.consume_stop_edge());
+}
+
+TEST(Go2BridgeState, LateZeroCannotClearFault)
+{
+  Go2BridgeStateMachine machine(limits());
+  valid_then_arm(machine);
+  machine.tick(1.51, true);
+  EXPECT_EQ(machine.state(), BridgeState::FAULT);
+  EXPECT_FALSE(machine.handle_command(0.0, 0.0, 0.0, 1.6).accepted);
+  EXPECT_EQ(machine.state(), BridgeState::FAULT);
 }
 
 TEST(Go2BridgeState, EndpointLossUsesDebounce)
@@ -91,6 +133,26 @@ TEST(Go2BridgeState, FaultNeverAutomaticallyRearms)
   EXPECT_FALSE(machine.arm(1.6));
   EXPECT_TRUE(machine.reset_fault());
   EXPECT_EQ(machine.state(), BridgeState::DISARMED);
+}
+
+TEST(Go2BridgeState, DisarmedRejectsAndDoesNotCacheNonzeroCommand)
+{
+  Go2BridgeStateMachine machine(limits());
+  auto result = machine.handle_command(0.2, 0.0, 0.0, 1.0);
+  EXPECT_FALSE(result.accepted);
+  EXPECT_EQ(result.error, "nonzero cmd_vel is forbidden while DISARMED");
+  EXPECT_FALSE(machine.active_command().has_value());
+  ASSERT_TRUE(machine.arm(2.0));
+  EXPECT_FALSE(machine.active_command().has_value());
+}
+
+TEST(Go2BridgeState, ArmDoesNotRequireOrActivateCachedCommand)
+{
+  Go2BridgeStateMachine machine(limits());
+  ASSERT_TRUE(machine.handle_command(0.0, 0.0, 0.0, 1.0).accepted);
+  ASSERT_TRUE(machine.arm(2.0));
+  EXPECT_EQ(machine.state(), BridgeState::ARMED);
+  EXPECT_FALSE(machine.active_command().has_value());
 }
 
 TEST(Go2BridgeState, DisarmStopsOnce)

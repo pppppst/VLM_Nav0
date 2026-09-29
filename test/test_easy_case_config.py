@@ -74,6 +74,7 @@ def test_rviz_keeps_core_views_on_and_auxiliary_views_off():
         "FAST_LIO Live Body Cloud (/cloud_registered_body)",
         "Nav2 Global Plan",
         "VLM TARGET (red)",
+        "Camera RGB (1 Hz preview)",
         "VLM Annotated Image",
     ):
         assert displays[name]["Enabled"] is True
@@ -82,7 +83,6 @@ def test_rviz_keeps_core_views_on_and_auxiliary_views_off():
         "Grid",
         "TF",
         "Nav2 Local Plan",
-        "Camera RGB (live)",
         "VLM Frontier Map",
         "VLM Scan Montage",
     ):

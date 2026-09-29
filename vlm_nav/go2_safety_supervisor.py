@@ -16,7 +16,7 @@ from nav_msgs.msg import Odometry
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Imu, PointCloud2
+from sensor_msgs.msg import Imu
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformListener
 
@@ -62,21 +62,20 @@ class Go2SafetySupervisor(Node):
     def __init__(self) -> None:
         super().__init__("go2_safety_supervisor")
         report_path = Path(self.declare_parameter("formal_report_path", "").value)
-        report_max_age = float(self.declare_parameter("formal_report_max_age_s", 300.0).value)
-        self.raw_max_age = float(self.declare_parameter("raw_max_age_s", 0.5).value)
+        report_max_age = float(self.declare_parameter("formal_report_max_age_s", 600.0).value)
+        self.imu_max_age = float(self.declare_parameter("imu_max_age_s", 0.5).value)
         self.lio_max_age = float(self.declare_parameter("lio_max_age_s", 1.0).value)
-        self.extreme_acceleration = float(
-            self.declare_parameter("acceleration_abs_max_mps2", 0.0).value
+        self.lidar_frame = str(
+            self.declare_parameter("lidar_frame", "utlidar_lidar").value
         )
-        self.extreme_gyro = float(self.declare_parameter("gyro_abs_max_radps", 0.0).value)
-
+        self.imu_topic = str(
+            self.declare_parameter("imu_topic", "/utlidar/imu").value
+        )
         if min(
-            self.raw_max_age,
+            self.imu_max_age,
             self.lio_max_age,
-            self.extreme_acceleration,
-            self.extreme_gyro,
         ) <= 0.0:
-            raise ValueError("live safety thresholds must be verified positive numbers")
+            raise ValueError("live safety freshness limits must be positive numbers")
 
         if not report_path.is_file():
             raise FormalPreflightError(f"formal preflight report does not exist: {report_path}")
@@ -98,22 +97,16 @@ class Go2SafetySupervisor(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.ready_pub = self.create_publisher(Bool, "/vlm_nav/system_ready", latched_qos)
-        self.lidar = StreamHealth()
         self.imu = StreamHealth()
         self.odometry_receipt = None
-        self.registered_cloud_receipt = None
         self.bridge_normal = False
         self.sport_interface_ready = False
         self.bridge_receipt = None
         self.sport_interface_receipt = None
         self.last_ready = None
 
-        self.create_subscription(PointCloud2, "/utlidar/cloud", self._on_lidar, sensor_qos)
-        self.create_subscription(Imu, "/utlidar/imu", self._on_imu, sensor_qos)
+        self.create_subscription(Imu, self.imu_topic, self._on_imu, sensor_qos)
         self.create_subscription(Odometry, "/odometry", self._on_odometry, sensor_qos)
-        self.create_subscription(
-            PointCloud2, "/cloud_registered_base", self._on_registered_cloud, sensor_qos
-        )
         self.create_subscription(
             String, "/vlm_nav/go2_bridge_state", self._on_bridge_state, latched_qos
         )
@@ -128,13 +121,6 @@ class Go2SafetySupervisor(Node):
         self.timer = self.create_timer(0.1, self._tick)
         self._publish(False)
 
-    def _on_lidar(self, message: PointCloud2) -> None:
-        fields = {field.name for field in message.fields}
-        self.lidar.observe(
-            _stamp_seconds(message),
-            data_ok={"x", "y", "z", "time"}.issubset(fields) and message.width > 0,
-        )
-
     def _on_imu(self, message: Imu) -> None:
         values = (
             message.linear_acceleration.x,
@@ -145,16 +131,10 @@ class Go2SafetySupervisor(Node):
             message.angular_velocity.z,
         )
         finite = all(math.isfinite(value) for value in values)
-        bounded = finite and all(
-            abs(value) <= self.extreme_acceleration for value in values[:3]
-        ) and all(abs(value) <= self.extreme_gyro for value in values[3:])
-        self.imu.observe(_stamp_seconds(message), data_ok=bounded)
+        self.imu.observe(_stamp_seconds(message), data_ok=finite)
 
     def _on_odometry(self, _message: Odometry) -> None:
         self.odometry_receipt = time.monotonic()
-
-    def _on_registered_cloud(self, _message: PointCloud2) -> None:
-        self.registered_cloud_receipt = time.monotonic()
 
     def _on_bridge_state(self, message: String) -> None:
         state = message.data.split(":", 1)[0].strip()
@@ -174,16 +154,13 @@ class Go2SafetySupervisor(Node):
         now = time.monotonic()
         lio_fresh = bool(
             self.odometry_receipt is not None
-            and self.registered_cloud_receipt is not None
             and now - self.odometry_receipt <= self.lio_max_age
-            and now - self.registered_cloud_receipt <= self.lio_max_age
         )
         ready = all(
             (
-                self.lidar.healthy(now, self.raw_max_age),
-                self.imu.healthy(now, self.raw_max_age),
+                self.imu.healthy(now, self.imu_max_age),
                 lio_fresh,
-                self._has_tf("base_link", "utlidar_lidar"),
+                self._has_tf("base_link", self.lidar_frame),
                 self._has_tf("odom", "base_link"),
                 self.bridge_normal,
                 self.sport_interface_ready,

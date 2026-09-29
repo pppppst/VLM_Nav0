@@ -12,13 +12,20 @@ common_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 vlm_nav_source_dir="$(cd "${common_script_dir}/.." && pwd)"
 vlm_nav_workspace_dir="$(cd "${vlm_nav_source_dir}/.." && pwd)"
 ranger_home="${VLM_NAV_RANGER_HOME:-${HOME}}"
+if [[ -f "${vlm_nav_workspace_dir}/go2_ws/install/setup.bash" ]]; then
+  vlm_nav_setup="${vlm_nav_workspace_dir}/go2_ws/install/setup.bash"
+elif [[ -f "${vlm_nav_source_dir}/install/setup.bash" ]]; then
+  vlm_nav_setup="${vlm_nav_source_dir}/install/setup.bash"
+else
+  vlm_nav_setup="${vlm_nav_workspace_dir}/install/setup.bash"
+fi
 setup_files=(
+  "/home/isee-pst/Documents/liang/hesai_xt16_ws/install/setup.bash"
   "${ranger_home}/ros2_ws/install/setup.bash"
   "${ranger_home}/rs515/ros2_ws/install/setup.bash"
   "${ranger_home}/agilex_ws/install/setup.bash"
   "${ranger_home}/ws/install_fastlio/setup.bash"
-  "${vlm_nav_workspace_dir}/install/setup.bash"
-  "${vlm_nav_source_dir}/install/setup.bash"
+  "${vlm_nav_setup}"
 )
 if [[ -n "${VLM_NAV_EXTRA_SETUP_FILES:-}" ]]; then
   IFS=':' read -r -a extra_setup_files <<<"${VLM_NAV_EXTRA_SETUP_FILES}"
@@ -32,5 +39,5 @@ for setup_file in "${setup_files[@]}"; do
 done
 
 export RCUTILS_COLORIZED_OUTPUT=1
-unset common_script_dir vlm_nav_source_dir vlm_nav_workspace_dir ranger_home setup_files setup_file
+unset common_script_dir vlm_nav_source_dir vlm_nav_workspace_dir vlm_nav_setup ranger_home setup_files setup_file
 set -u

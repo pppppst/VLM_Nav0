@@ -4,6 +4,7 @@ import time
 import pytest
 import yaml
 
+import vlm_nav.go2_preflight as go2_preflight
 from vlm_nav.go2_preflight import (
     CameraHealthAccumulator,
     FormalPreflightError,
@@ -304,7 +305,169 @@ def test_formal_preflight_report_must_be_healthy_and_fresh():
         )
 
 
-def test_camera_health_requires_aligned_rgbd_info_and_monotonic_timestamps():
+def test_depth_units_report_is_the_only_autonomy_scale_authority():
+    report = {
+        "verified": True,
+        "passed": True,
+        "profile": {
+            "width": 640,
+            "height": 480,
+            "fps": 15,
+            "enable_sync": True,
+            "align_depth": False,
+        },
+        "depth_topic": "/camera/camera/depth/image_rect_raw",
+        "device_scale": 0.0010000000474974513,
+        "meters_per_unit": 0.001,
+        "raw_value": 1000,
+        "measured_z_m": 0.98,
+        "converted_m": 1.0,
+        "raw_times_device_scale_m": 1.0000000474974513,
+        "absolute_error_m": 0.02,
+        "allowed_error_m": 0.05,
+        "snapshot_sha256": "abc123",
+    }
+
+    assert go2_preflight.validate_depth_units_report(
+        report,
+        expected_width=640,
+        expected_height=480,
+        expected_fps=15,
+        expected_depth_topic="/camera/camera/depth/image_rect_raw",
+        expected_device_scale=0.0010000000474974513,
+    ) == pytest.approx(0.001)
+
+    for broken in (
+        {**report, "verified": False},
+        {**report, "profile": {**report["profile"], "fps": 30}},
+        {**report, "absolute_error_m": 0.06},
+        {**report, "device_scale": 0.002},
+        {**report, "meters_per_unit": 0.002},
+        {**report, "converted_m": 2.0},
+    ):
+        with pytest.raises(CalibrationError):
+            go2_preflight.validate_depth_units_report(
+                broken,
+                expected_width=640,
+                expected_height=480,
+                expected_fps=15,
+                expected_depth_topic="/camera/camera/depth/image_rect_raw",
+                expected_device_scale=0.0010000000474974513,
+            )
+
+
+def test_rgbd_sync_health_requires_a_successful_short_window_not_one_pair():
+    rgb = [100.0 + index / 15.0 for index in range(10)]
+    mostly_matched_depth = [stamp + 0.01 for stamp in rgb[:9]] + [200.0]
+    one_lucky_depth = [rgb[0] + 0.01] + [200.0 + index for index in range(9)]
+
+    healthy = go2_preflight.rgbd_sync_health(
+        rgb, mostly_matched_depth, slop_s=0.05, minimum_samples=10, minimum_rate=0.9
+    )
+    unhealthy = go2_preflight.rgbd_sync_health(
+        rgb, one_lucky_depth, slop_s=0.05, minimum_samples=10, minimum_rate=0.9
+    )
+
+    assert healthy == {"healthy": True, "matched": 9, "total": 10, "rate": 0.9}
+    assert unhealthy == {"healthy": False, "matched": 1, "total": 10, "rate": 0.1}
+
+
+def test_raw_camera_health_matches_each_image_to_its_own_camera_info():
+    health = CameraHealthAccumulator(minimum_samples=1, sync_slop_s=0.05)
+    health.add_rgb(
+        stamp=1.0, local_receive_time=1.01, width=640, height=480,
+        encoding="rgb8", step=1920, data_size=921600,
+    )
+    health.add_depth(
+        stamp=1.01, local_receive_time=1.02, width=848, height=480,
+        encoding="16UC1", step=1696, data_size=814080,
+    )
+    health.add_color_camera_info(
+        stamp=1.0, local_receive_time=1.01, width=640, height=480,
+        frame_id="camera_color_optical_frame",
+        k=[600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0],
+    )
+    health.add_depth_camera_info(
+        stamp=1.01, local_receive_time=1.02, width=848, height=480,
+        frame_id="camera_depth_optical_frame",
+        k=[420.0, 0.0, 424.0, 0.0, 420.0, 240.0, 0.0, 0.0, 1.0],
+    )
+
+    report = health.summary()
+
+    assert report["healthy"] is True
+    assert report["profiles_match_camera_info"] is True
+    assert report["color_camera_info_count"] == 1
+    assert report["depth_camera_info_count"] == 1
+
+
+def test_formal_raw_camera_health_enforces_rate_duplicates_and_sync_rate():
+    health = CameraHealthAccumulator(
+        minimum_samples=10,
+        sync_slop_s=0.05,
+        minimum_sync_rate=0.9,
+        minimum_rate_hz=14.0,
+        maximum_rate_hz=16.0,
+        maximum_duplicate_rate=0.01,
+    )
+    intrinsics = [600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0]
+    for index in range(16):
+        stamp = 100.0 + index / 15.0
+        health.add_rgb(
+            stamp=stamp, local_receive_time=stamp + 0.08,
+            width=640, height=480, encoding="rgb8", step=1920,
+            data_size=921600,
+        )
+        health.add_depth(
+            stamp=stamp + 0.01, local_receive_time=stamp + 0.09,
+            width=640, height=480, encoding="16UC1", step=1280,
+            data_size=614400,
+        )
+        health.add_color_camera_info(
+            stamp=stamp, local_receive_time=stamp + 0.08,
+            width=640, height=480, frame_id="camera_color_optical_frame",
+            k=intrinsics,
+        )
+        health.add_depth_camera_info(
+            stamp=stamp + 0.01, local_receive_time=stamp + 0.09,
+            width=640, height=480, frame_id="camera_depth_optical_frame",
+            k=intrinsics,
+        )
+
+    report = health.summary()
+
+    assert report["healthy"] is True
+    assert report["rgb_stream"]["unique_hz"] == pytest.approx(15.0)
+    assert report["depth_stream"]["unique_hz"] == pytest.approx(15.0)
+    assert report["rgb_stream"]["duplicate_rate"] == 0.0
+    assert report["sync_window"]["rate"] == 1.0
+
+
+def test_raw_camera_preflight_rejects_float_depth_encoding():
+    health = CameraHealthAccumulator(minimum_samples=1, sync_slop_s=0.05)
+    intrinsics = [100.0, 0.0, 1.0, 0.0, 100.0, 1.0, 0.0, 0.0, 1.0]
+    health.add_rgb(
+        stamp=1.0, local_receive_time=1.01, width=2, height=2,
+        encoding="rgb8", step=6, data_size=12,
+    )
+    health.add_depth(
+        stamp=1.0, local_receive_time=1.01, width=2, height=2,
+        encoding="32FC1", step=8, data_size=16,
+    )
+    health.add_color_camera_info(
+        stamp=1.0, local_receive_time=1.01, width=2, height=2,
+        frame_id="color", k=intrinsics,
+    )
+    health.add_depth_camera_info(
+        stamp=1.0, local_receive_time=1.01, width=2, height=2,
+        frame_id="depth", k=intrinsics,
+    )
+
+    report = health.summary()
+
+    assert report["healthy"] is False
+    assert report["depth_metadata_healthy"] is False
+def test_camera_health_requires_raw_rgbd_dual_info_and_monotonic_timestamps():
     health = CameraHealthAccumulator(minimum_samples=3, sync_slop_s=0.05)
     for index in range(3):
         stamp = 100.0 + index * 0.033
@@ -326,12 +489,20 @@ def test_camera_health_requires_aligned_rgbd_info_and_monotonic_timestamps():
             step=1280,
             data_size=614400,
         )
-        health.add_camera_info(
+        health.add_color_camera_info(
             stamp=stamp,
             local_receive_time=stamp + 0.01,
             width=640,
             height=480,
             frame_id="camera_color_optical_frame",
+            k=[600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0],
+        )
+        health.add_depth_camera_info(
+            stamp=stamp + 0.005,
+            local_receive_time=stamp + 0.015,
+            width=640,
+            height=480,
+            frame_id="camera_depth_optical_frame",
             k=[600.0, 0.0, 320.0, 0.0, 600.0, 240.0, 0.0, 0.0, 1.0],
         )
 
@@ -340,6 +511,7 @@ def test_camera_health_requires_aligned_rgbd_info_and_monotonic_timestamps():
     assert report["rgb_count"] == 3
     assert report["depth_count"] == 3
     assert report["camera_info_count"] == 3
+    assert report["depth_camera_info_count"] == 3
     assert report["rgb_depth_offset_s"]["maximum_absolute"] == pytest.approx(0.005)
 
 

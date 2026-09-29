@@ -46,6 +46,17 @@ class ReadinessWaiter(Node):
 
     def _on_message(self, topic):
         self.received_counts[topic] += 1
+        if topic == "/cloud_registered_base":
+            count = self.received_counts[topic]
+            if count <= self.required_message_count:
+                self.get_logger().info(
+                    f"cloud readiness {count}/{self.required_message_count}"
+                )
+                if count == self.required_message_count:
+                    self.get_logger().info(
+                        f"cloud readiness reached {count}/{self.required_message_count} "
+                        f"after {time.monotonic() - self.started:.3f} s"
+                    )
 
     def _ensure_subscription(self, topic, type_names):
         if topic in self.dynamic_subscriptions or not type_names:

@@ -72,7 +72,6 @@ vlm_nav:
     # Do not remain silently stopped forever when grounded target positions
     # cannot form a spatially consistent confirmation window.
     target_confirmation_timeout: 20.0
-    target_lost_timeout: 10.0
     depth_neighborhood_radius: 5
     min_depth_samples: 8
     min_depth: 0.20

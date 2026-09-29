@@ -11,7 +11,7 @@ import rclpy
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
-from unitree_api.msg import Request
+from unitree_api.msg import Request, Response
 
 
 def _spin_until(node, predicate, timeout):
@@ -21,7 +21,7 @@ def _spin_until(node, predicate, timeout):
     return predicate()
 
 
-def test_dry_run_clamps_then_watchdog_faults_without_real_sport_output(
+def test_dry_run_arms_before_command_and_faults_on_foreign_sport_request(
     tmp_path, monkeypatch
 ):
     executable = (
@@ -53,9 +53,13 @@ def test_dry_run_clamps_then_watchdog_faults_without_real_sport_output(
             "-p",
             "endpoint_loss_debounce:=0.2",
             "-p",
+            "foreign_sport_quiet_period_s:=0.0",
+            "-p",
             f"cmd_vel_topic:={cmd_topic}",
             "-p",
             f"sport_request_topic:={sport_topic}",
+            "-p",
+            f"sport_response_topic:={sport_topic}/response",
             "-p",
             f"debug_request_topic:={debug_topic}",
             "-p",
@@ -88,23 +92,28 @@ def test_dry_run_clamps_then_watchdog_faults_without_real_sport_output(
     sport_sub = probe.create_subscription(
         Request, sport_topic, lambda message: real_sport_requests.append(message), 10
     )
+    foreign_sport_pub = probe.create_publisher(Request, sport_topic, 10)
+    sport_response_pub = probe.create_publisher(Response, f"{sport_topic}/response", 10)
     arm = probe.create_client(Trigger, f"/{node_name}/arm")
 
     try:
         assert arm.wait_for_service(timeout_sec=5.0)
-        assert _spin_until(probe, lambda: probe.count_publishers(sport_topic) == 1, 5.0)
+        assert _spin_until(probe, lambda: probe.count_publishers(sport_topic) >= 2, 5.0)
 
-        request = Twist()
-        request.linear.x = 0.8
-        request.angular.z = -0.9
-        for _ in range(4):
-            cmd_pub.publish(request)
-            rclpy.spin_once(probe, timeout_sec=0.05)
-
+        assert _spin_until(probe, lambda: probe.count_subscribers(sport_topic) >= 1, 2.0)
+        assert _spin_until(
+            probe,
+            lambda: probe.count_subscribers(f"{sport_topic}/response") >= 1,
+            2.0,
+        )
+        time.sleep(0.1)
         future = arm.call_async(Trigger.Request())
         assert _spin_until(probe, future.done, 2.0)
         assert future.result().success, future.result().message
 
+        request = Twist()
+        request.linear.x = 0.8
+        request.angular.z = -0.9
         cmd_pub.publish(request)
         assert _spin_until(
             probe,
@@ -113,12 +122,19 @@ def test_dry_run_clamps_then_watchdog_faults_without_real_sport_output(
         )
         move = next(command for command in commands if command["api_id"] == 1008)
         move_parameter = json.loads(move["parameter"])
-        assert move_parameter == {"x": 0.2, "y": 0.0, "z": -0.4}
+        assert move_parameter == {"x": 0.4, "y": 0.0, "z": -0.5}
 
+        foreign = Request()
+        foreign.header.identity.id = 9001
+        foreign.header.identity.api_id = 1027
+        foreign_sport_pub.publish(foreign)
+        assert _spin_until(probe, lambda: any(
+            state.startswith("FAULT: foreign Sport request") for state in states
+        ), 2.0)
         assert _spin_until(
             probe,
-            lambda: any(state.startswith("FAULT: last_valid_cmd_age") for state in states),
-            2.0,
+            lambda: [command["api_id"] for command in commands].count(1003) == 1,
+            1.0,
         )
         assert [command["api_id"] for command in commands].count(1003) == 1
         assert any(
@@ -127,11 +143,13 @@ def test_dry_run_clamps_then_watchdog_faults_without_real_sport_output(
             == {"x": 0.0, "y": 0.0, "z": 0.0}
             for command in commands
         )
-        assert real_sport_requests == []
+        assert any(message.header.identity.id == 9001 for message in real_sport_requests)
     finally:
         probe.destroy_subscription(debug_sub)
         probe.destroy_subscription(state_sub)
         probe.destroy_subscription(sport_sub)
+        probe.destroy_publisher(foreign_sport_pub)
+        probe.destroy_publisher(sport_response_pub)
         probe.destroy_node()
         rclpy.shutdown()
         if process.poll() is None:

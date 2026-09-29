@@ -65,8 +65,9 @@ capture_text "$output_dir/time_status.txt" timedatectl status
 capture_text "$output_dir/lidar_qos.txt" ros2 topic info -v /utlidar/cloud
 capture_text "$output_dir/imu_qos.txt" ros2 topic info -v /utlidar/imu
 capture_text "$output_dir/camera_color_qos.txt" ros2 topic info -v /camera/camera/color/image_raw
-capture_text "$output_dir/camera_depth_qos.txt" ros2 topic info -v /camera/camera/aligned_depth_to_color/image_raw
-capture_text "$output_dir/camera_info_qos.txt" ros2 topic info -v /camera/camera/color/camera_info
+capture_text "$output_dir/camera_depth_qos.txt" ros2 topic info -v /camera/camera/depth/image_rect_raw
+capture_text "$output_dir/camera_color_info_qos.txt" ros2 topic info -v /camera/camera/color/camera_info
+capture_text "$output_dir/camera_depth_info_qos.txt" ros2 topic info -v /camera/camera/depth/camera_info
 capture_text "$output_dir/base_lidar_tf.txt" timeout 5 ros2 run tf2_ros tf2_echo base_link utlidar_lidar
 capture_text "$output_dir/base_camera_tf.txt" timeout 5 ros2 run tf2_ros tf2_echo base_link camera_link
 

@@ -169,19 +169,19 @@ Visualization Manager:
         Value: /vlm_nav/markers
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: false
+      Enabled: true
       Max Value: 1
       Median window: 5
       Min Value: 0
-      Name: Camera RGB (live)
+      Name: Camera RGB (1 Hz preview)
       Normalize Range: true
       Topic:
-        Depth: 5
+        Depth: 1
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /camera/color/image_raw
-      Value: false
+        Value: /vlm_nav/camera_preview
+      Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
       Max Value: 1

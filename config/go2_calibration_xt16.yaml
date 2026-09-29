@@ -1,0 +1,47 @@
+# Hesai XT16 mounted on the Go2 base, using the Go2 body IMU from /lowstate.
+# FAST-LIO's LiDAR-to-IMU extrinsic and ROS base-to-LiDAR TF are separate.
+lidar_imu_extrinsic:
+  calibrated: true
+  source: >-
+    Operator-provided body-IMU-to-XT16 transform; Gate 2 runtime verification pending.
+  definition: p_imu = R_lidar_to_imu * p_lidar + T_lidar_in_imu
+  lidar_frame: hesai_lidar
+  imu_frame: body_imu
+  axis_definition: >-
+    The matrix is the FAST-LIO internal transform from XT16 LiDAR coordinates
+    into the Go2 body IMU frame, using the LiDAR pose translation in IMU frame.
+  translation: [0.1710, 0.0, 0.0908]
+  rotation_matrix: [0.0, -1.0, 0.0,
+                    1.0,  0.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+base_imu_extrinsic:
+  calibrated: true
+  source: Operator-provided base_link-to-body_imu transform; Gate 2 verification pending.
+  definition: p_body_imu = R_base_to_body_imu * p_base + T_base_to_body_imu
+  direction: parent frame to child frame
+  parent_frame: base_link
+  child_frame: body_imu
+  xyz: [-0.02557, 0.0, 0.04232]
+  rpy: [0.0, 0.0, 0.0]
+
+base_lidar_extrinsic:
+  calibrated: true
+  source: >-
+    Composition of base_link->body_imu and body_imu->hesai_lidar supplied for
+    the body-IMU profile; Gate 2 verification pending.
+  definition: p_hesai_lidar = R_base_to_hesai_lidar * p_base + T_base_to_hesai_lidar
+  direction: parent frame to child frame
+  parent_frame: base_link
+  child_frame: hesai_lidar
+  xyz: [0.14543, 0.0, 0.13312]
+  rpy: [0.0, 0.0, 1.570796]
+
+camera_extrinsic:
+  calibrated: false
+  source: TBD / requires measurement
+  direction: parent frame to child frame
+  parent_frame: base_link
+  child_frame: camera_link
+  xyz: TBD / requires measurement
+  rpy: TBD / requires measurement

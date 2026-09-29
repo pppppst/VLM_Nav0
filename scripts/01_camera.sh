@@ -12,7 +12,7 @@ fi
 
 echo "[硬件终端 1] 启动 RealSense RGB-D 相机"
 exec ros2 launch realsense2_camera rs_launch.py \
-  config_file:="'${REALSENSE_CONFIG}'" \
+  config_file:="${REALSENSE_CONFIG}" \
   align_depth.enable:=true \
   enable_sync:=true \
   rgb_camera.profile:=1280x720x30 \

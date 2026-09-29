@@ -12,8 +12,8 @@ enum class BridgeState { DISARMED, ARMED, FAULT };
 
 struct BridgeLimits
 {
-  double max_vx{0.20};
-  double max_vyaw{0.40};
+  double max_vx{0.40};
+  double max_vyaw{0.50};
   double cmd_timeout{0.5};
   double vy_epsilon{0.0001};
   double endpoint_loss_debounce{1.0};
@@ -79,7 +79,7 @@ public:
 
   std::optional<SafeCommand> active_command() const
   {
-    if (state_ != BridgeState::ARMED || !last_valid_cmd_time_.has_value()) {
+    if (state_ != BridgeState::ARMED || !motion_active_ || !last_valid_cmd_time_.has_value()) {
       return std::nullopt;
     }
     return command_;
@@ -122,14 +122,27 @@ public:
       return {false, fault_reason_, {}};
     }
 
+    if (state_ == BridgeState::DISARMED) {
+      if (vx != 0.0 || yaw_rate != 0.0) {
+        return {false, "nonzero cmd_vel is forbidden while DISARMED", {}};
+      }
+      return {true, "", {}};
+    }
+
     command_.vx = std::clamp(vx, -limits_.max_vx, limits_.max_vx);
     command_.vyaw = std::clamp(yaw_rate, -limits_.max_vyaw, limits_.max_vyaw);
+    const bool zero = command_.vx == 0.0 && command_.vyaw == 0.0;
+    if (zero && state_ == BridgeState::ARMED) {
+      pending_stop_edge_ = true;
+    }
+    motion_active_ = !zero;
     last_valid_cmd_time_ = now;
     return {true, "", command_};
   }
 
   bool arm(double now, std::string * reason = nullptr)
   {
+    (void)now;
     if (state_ == BridgeState::FAULT) {
       set_reason(reason, "FAULT must be explicitly reset before ARM");
       return false;
@@ -137,12 +150,8 @@ public:
     if (state_ == BridgeState::ARMED) {
       return true;
     }
-    if (!last_valid_cmd_time_.has_value() || last_valid_cmd_age(now) > limits_.cmd_timeout) {
-      set_reason(reason, "a recent valid cmd_vel is required before ARM");
-      return false;
-    }
+    clear_motion_input();
     state_ = BridgeState::ARMED;
-    endpoint_missing_since_.reset();
     return true;
   }
 
@@ -179,7 +188,7 @@ public:
       return;
     }
 
-    if (last_valid_cmd_age(now) > limits_.cmd_timeout) {
+    if (motion_active_ && last_valid_cmd_age(now) > limits_.cmd_timeout) {
       enter_fault("last_valid_cmd_age exceeds cmd_timeout");
       return;
     }
@@ -215,6 +224,7 @@ private:
   void clear_motion_input()
   {
     command_ = {};
+    motion_active_ = false;
     last_valid_cmd_time_.reset();
     endpoint_missing_since_.reset();
   }
@@ -235,6 +245,7 @@ private:
   std::optional<double> last_valid_cmd_time_;
   std::optional<double> endpoint_missing_since_;
   bool pending_stop_edge_{false};
+  bool motion_active_{false};
   std::string fault_reason_;
 };
 

@@ -1,0 +1,67 @@
+clock:
+  measurement_method: multi_frame_ros_header_offset_diagnostic
+  minimum_samples: 100
+
+converter_health:
+  overwrite_ratio_max: 0.08
+  ratio_definition: overwritten / received
+  evidence: >-
+    Approved Gate 2 operational ceiling. The 2026-09-02 formal-topology
+    retest measured 38 / 645 = 0.0589 with no driver packet loss.
+
+lidar_timing:
+  validated: true
+  topic: /lidar_points
+  imu_topic: /body_imu
+  point_time_field: timestamp
+  point_time_is_absolute: true
+  evidence: >-
+    Hesai XT16 live driver and C++ converter gate on 2026-09-01; raw frames
+    were 64000 points when the UDP stream was complete and converted output
+    preserved the input header stamp.
+  point_time_semantics:
+    validated: true
+    header_stamp_reference: Hesai scan reference time in header.stamp
+    point_time_reference: relative offset from the scan reference time
+    unit: seconds
+  lidar_imu_measurement_alignment:
+    validated: true
+    method: >-
+      Pending body-IMU adapter and SPARK runtime verification.
+    evidence: >-
+      SPARK reported IMU Initial Done, continuous 64000-point frames, valid
+      nearest-neighbor matches, and converged updates.
+  scan_line: 16
+  scan_rate_hz: 10
+  scan_rate_tolerance_hz: 1.0
+  timestamp_unit: 0
+  point_time_span_min_s: 0.05
+  point_time_span_max_s: 0.15
+  lidar_imu_offset_jitter_max_s: 0.011
+
+imu_stationary_thresholds:
+  validated: true
+  evidence: >-
+    Derived from the reviewed 60 s stationary /lowstate to /body_imu bag;
+    these limits are used only by stationary preflight.
+  gravity_min_mps2: 9.0
+  gravity_max_mps2: 10.3
+  stationary_gyro_max_radps: 0.09
+  acceleration_abs_max_mps2: 15.0
+  gyro_abs_max_radps: 0.11
+  acceleration_jump_max_mps2: 0.5
+
+qos:
+  validation_method: ros2 topic info -v plus subscriber reception
+  lidar_reliability: reliable
+  lidar_durability: volatile
+  imu_reliability: reliable
+  imu_durability: volatile
+  camera_color_reliability: reliable
+  camera_color_durability: volatile
+  camera_info_reliability: reliable
+  camera_info_durability: volatile
+  raw_depth_reliability: reliable
+  raw_depth_durability: volatile
+  depth_camera_info_reliability: reliable
+  depth_camera_info_durability: volatile

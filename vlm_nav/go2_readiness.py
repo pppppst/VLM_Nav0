@@ -17,8 +17,12 @@ class ReadinessInputs:
     map_to_odom: bool
     nav2: bool
     rgb: bool
-    aligned_depth: bool
-    camera_info: bool
+    raw_depth: bool
+    color_camera_info: bool
+    depth_camera_info: bool
+    rgbd_sync: bool
+    camera_geometry: bool
+    units_verified: bool
     camera_calibrated: bool
     vlm_api: bool
 
@@ -27,6 +31,8 @@ class ReadinessInputs:
 class ReadinessResult:
     system_ready: bool
     nav_ready: bool
+    vlm_input_ready: bool
+    vlm_autonomy_ready: bool
     vlm_gate_ready: bool
     control_armed: bool
     vlm_enabled: bool
@@ -54,21 +60,30 @@ def evaluate_readiness(
     nav_ready = system_ready and all(
         (inputs.obstacle_chain, inputs.slam, inputs.map_to_odom, inputs.nav2)
     )
-    vlm_gate_ready = nav_ready and all(
+    vlm_input_ready = nav_ready and all(
         (
             inputs.rgb,
-            inputs.aligned_depth,
-            inputs.camera_info,
+            inputs.raw_depth,
+            inputs.color_camera_info,
+            inputs.depth_camera_info,
+            inputs.rgbd_sync,
+            inputs.camera_geometry,
             inputs.camera_calibrated,
-            inputs.vlm_api,
         )
+    )
+    vlm_autonomy_ready = (
+        vlm_input_ready and inputs.units_verified and inputs.vlm_api
     )
     return ReadinessResult(
         system_ready=system_ready,
         nav_ready=nav_ready,
-        vlm_gate_ready=vlm_gate_ready,
+        vlm_input_ready=vlm_input_ready,
+        vlm_autonomy_ready=vlm_autonomy_ready,
+        vlm_gate_ready=vlm_autonomy_ready,
         control_armed=control_armed,
         vlm_enabled=vlm_enabled,
         nav_motion_allowed=nav_ready and control_armed,
-        vlm_navigation_allowed=vlm_gate_ready and control_armed and vlm_enabled,
+        vlm_navigation_allowed=(
+            vlm_autonomy_ready and control_armed and vlm_enabled
+        ),
     )

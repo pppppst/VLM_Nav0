@@ -60,5 +60,7 @@ qos:
   camera_color_durability: volatile
   camera_info_reliability: reliable
   camera_info_durability: volatile
-  aligned_depth_reliability: reliable
-  aligned_depth_durability: volatile
+  raw_depth_reliability: reliable
+  raw_depth_durability: volatile
+  depth_camera_info_reliability: reliable
+  depth_camera_info_durability: volatile

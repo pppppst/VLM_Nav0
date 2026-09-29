@@ -36,10 +36,12 @@ setup(
         "console_scripts": [
             "fastlio_odom_adapter = vlm_nav.fastlio_odom_adapter:main",
             "go2_readiness_waiter = vlm_nav.go2_readiness_waiter:main",
+            "minimal_cloud_probe = vlm_nav.minimal_cloud_probe:main",
             "go2_render_fastlio_config = vlm_nav.go2_config_renderer:main",
             "go2_sensor_preflight = vlm_nav.go2_sensor_preflight:main",
             "go2_camera_preflight = vlm_nav.go2_camera_preflight:main",
             "go2_derive_candidates = vlm_nav.go2_evidence:main",
+            "go2_gate5_pulse = vlm_nav.go2_gate5_pulse:main",
             "go2_safety_supervisor = vlm_nav.go2_safety_supervisor:main",
             "go2_nav_supervisor = vlm_nav.go2_nav_supervisor:main",
             "vlm_navigator = vlm_nav.vlm_navigator:main",

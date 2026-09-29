@@ -1,4 +1,4 @@
-"""Read-only RGB/aligned-depth/CameraInfo preflight for the Go2 D435."""
+"""Read-only raw RGB-D and dual-CameraInfo preflight for the Go2 D435."""
 
 from __future__ import annotations
 
@@ -24,12 +24,14 @@ class Go2CameraPreflight(Node):
         super().__init__("go2_camera_preflight")
         self.declare_parameter("rgb_topic", "/camera/camera/color/image_raw")
         self.declare_parameter(
-            "depth_topic", "/camera/camera/aligned_depth_to_color/image_raw"
+            "depth_topic", "/camera/camera/depth/image_rect_raw"
         )
         self.declare_parameter(
-            "camera_info_topic", "/camera/camera/color/camera_info"
+            "color_camera_info_topic", "/camera/camera/color/camera_info"
         )
-        self.declare_parameter("clock_threshold_s", 0.05)
+        self.declare_parameter(
+            "depth_camera_info_topic", "/camera/camera/depth/camera_info"
+        )
         self.duration = float(duration)
         self.started = time.monotonic()
         self.done = False
@@ -37,18 +39,15 @@ class Go2CameraPreflight(Node):
         self.health = CameraHealthAccumulator(
             minimum_samples=minimum_samples,
             sync_slop_s=sync_slop_s,
-            clock_threshold_s=float(self.get_parameter("clock_threshold_s").value),
+            minimum_sync_rate=0.90,
+            minimum_rate_hz=14.0,
+            maximum_rate_hz=16.0,
+            maximum_duplicate_rate=0.01,
         )
         image_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
             reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.VOLATILE,
-        )
-        info_qos = QoSProfile(
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10,
-            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
         self.create_subscription(
@@ -62,9 +61,15 @@ class Go2CameraPreflight(Node):
         )
         self.create_subscription(
             CameraInfo,
-            str(self.get_parameter("camera_info_topic").value),
-            self._on_camera_info,
-            info_qos,
+            str(self.get_parameter("color_camera_info_topic").value),
+            self._on_color_camera_info,
+            image_qos,
+        )
+        self.create_subscription(
+            CameraInfo,
+            str(self.get_parameter("depth_camera_info_topic").value),
+            self._on_depth_camera_info,
+            image_qos,
         )
         self.timer = self.create_timer(0.1, self._check_complete)
 
@@ -85,8 +90,8 @@ class Go2CameraPreflight(Node):
     def _on_depth(self, message: Image) -> None:
         self.health.add_depth(**self._image_values(message))
 
-    def _on_camera_info(self, message: CameraInfo) -> None:
-        self.health.add_camera_info(
+    def _camera_info_values(self, message: CameraInfo):
+        return dict(
             stamp=_stamp_seconds(message),
             local_receive_time=time.time(),
             width=int(message.width),
@@ -94,6 +99,12 @@ class Go2CameraPreflight(Node):
             frame_id=str(message.header.frame_id),
             k=list(message.k),
         )
+
+    def _on_color_camera_info(self, message: CameraInfo) -> None:
+        self.health.add_color_camera_info(**self._camera_info_values(message))
+
+    def _on_depth_camera_info(self, message: CameraInfo) -> None:
+        self.health.add_depth_camera_info(**self._camera_info_values(message))
 
     def _check_complete(self) -> None:
         if time.monotonic() - self.started < self.duration:

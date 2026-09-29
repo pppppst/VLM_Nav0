@@ -102,9 +102,148 @@ def test_readonly_collection_dry_run_never_contains_motion_topics(tmp_path):
     assert "/utlidar/cloud /utlidar/imu" in output
     assert "static_lidar_imu" in output
     assert "dynamic_lidar_imu" in output
-    assert "/camera/camera/aligned_depth_to_color/image_raw" in output
+    assert "/camera/camera/depth/image_rect_raw" in output
+    assert "/camera/camera/aligned_depth_to_color/image_raw" not in output
     assert "/api/sport/request" not in output
     assert "/cmd_vel" not in output
+
+
+def test_preflight_script_is_readonly_and_cleans_up_children():
+    script = ROOT / "scripts/run_go2_preflight.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    source = script.read_text()
+
+    assert "trap cleanup EXIT" in source
+    assert source.count("setsid ros2 run") == 2
+    assert 'kill -KILL -- "-${pid}"' in source
+    assert 'kill -0 -- "-$1"' in source
+    assert " +  " not in source
+    assert "source /opt/ros/humble/setup.bash" not in source
+    assert 'source "${script_dir}/common.sh"' in source
+    assert "bridge_dry_run" not in source
+    assert "/api/sport/request" not in source
+    assert "/cmd_vel" not in source
+    assert "--duration=30" in source
+    assert "within 600 seconds" in source
+
+    launch = (ROOT / "launch/go2_system.launch.py").read_text()
+    supervisor = (ROOT / "vlm_nav/go2_safety_supervisor.py").read_text()
+    assert '"sensor_preflight_max_age_s", default_value="600.0"' in launch
+    assert '"formal_report_max_age_s", 600.0' in supervisor
+
+
+def test_sport_publisher_inspector_is_readonly_and_requires_disarmed():
+    script = ROOT / "scripts/inspect_go2_sport_publishers.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    source = script.read_text()
+
+    assert "go2_bridge_state" in source
+    assert "DISARMED" in source
+    assert "ros2 topic info /api/sport/request -v" in source
+    assert "ss -uapne" in source
+    assert "lsof -nP -iUDP" in source
+    assert "<Verbosity>finest</Verbosity>" in source
+    assert "ros2 topic pub" not in source
+    assert "ros2 service call" not in source
+
+
+def test_manual_nav2_scripts_keep_arm_and_emergency_stop_fail_closed():
+    manual = ROOT / "scripts/manualnav2.sh"
+    stop = ROOT / "scripts/stopnav2.sh"
+    for script in (manual, stop):
+        subprocess.run(["bash", "-n", str(script)], check=True)
+
+    source = manual.read_text()
+    assert "run_go2_preflight.sh" in source
+    assert "target_stage:=nav2" in source
+    assert "start_bridge:=false" in source
+    assert "record_go2_nav2_manual.sh" in source
+    assert "inspect_go2_sport_publishers.sh" in source
+    assert "/twist_to_go2_sport_bridge/arm" in source
+    assert "/navigate_to_pose/_action/cancel_goal" in source
+    assert "stopnav2.sh" in source
+    assert "trap cleanup EXIT" in source
+    assert 'kill -KILL -- "-${pid}"' in source
+    assert 'kill -0 -- "-$1"' in source
+    assert "wait_for_nav2" in source
+    assert "confirm START_NAV" in source
+    assert source.index("wait_for_nav2") < source.index("confirm START_NAV")
+    assert "wait_for_preflight_inputs" in source
+    assert "confirm RETRY_PREFLIGHT" in source
+    assert source.index("wait_for_preflight_inputs") < source.index(
+        'echo "Reusing a fresh formal preflight report, or running the 30-second preflight..."'
+    )
+
+    stop_source = stop.read_text()
+    assert "/twist_to_go2_sport_bridge/disarm" in stop_source
+    assert "/cmd_vel" not in stop_source
+    assert "/api/sport" not in stop_source
+
+    cmake = (ROOT / "CMakeLists.txt").read_text()
+    assert "scripts/manualnav2.sh" in cmake
+    assert "scripts/stopnav2.sh" in cmake
+
+
+def test_footprint_sweep_debug_is_readonly_and_uses_go2_rectangle():
+    script = ROOT / "scripts/go2_footprint_sweep_debug.py"
+    spec = importlib.util.spec_from_file_location("go2_footprint_sweep_debug", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.yaw_offsets_degrees() == list(range(-90, 91, 5))
+    expected = [
+        (0.38, 0.18),
+        (0.38, -0.18),
+        (-0.38, -0.18),
+        (-0.38, 0.18),
+        (0.38, 0.18),
+    ]
+    for point, (expected_x, expected_y) in zip(module.rectangle_points(), expected):
+        assert point.x == pytest.approx(expected_x)
+        assert point.y == pytest.approx(expected_y)
+    source = script.read_text()
+    assert 'MarkerArray, "/vlm_nav/go2_footprint_sweep"' in source
+    assert '"map", "base_link", Time()' in source
+    for forbidden in ("cmd_vel", "/api/sport", "create_client", "set_parameters"):
+        assert forbidden not in source
+
+
+def test_gate5_pulse_arms_before_nonzero_and_is_bounded():
+    source = (ROOT / "vlm_nav/go2_gate5_pulse.py").read_text()
+
+    assert 'default=0.20' in source
+    assert 'args.speed <= 0.40' in source
+    assert 'default=0.50' in source
+    assert '"--settle-duration"' in source
+    assert 'args.settle_duration <= 5.0' in source
+    assert 'default=2.0' in source
+    assert 'args.duration <= 2.0' in source
+    assert 'args.duration <= 10.0' in source
+    assert '"linear": (' in source
+    assert '"yaw": (' in source
+    assert '"counterclockwise", 0.0, args.yaw_rate' in source
+    assert '"clockwise", 0.0, -args.yaw_rate' in source
+    assert "linear/yaw sequences require --execute-extended" in source
+    assert source.index("response = _call(node, arm)") < source.index(
+        '"forward", args.speed, 0.0'
+    )
+    assert "publisher.publish(Twist())" in source
+    assert "response = _call(node, disarm)" in source
+    assert "ros2\", \"bag\", \"record" in source
+
+
+def test_gate5_movetest_reuses_fail_closed_pulse_tool():
+    script = ROOT / "scripts/movetest.sh"
+    subprocess.run(["bash", "-n", str(script)], check=True)
+    source = script.read_text()
+
+    assert '"--execute"' in source
+    assert "require_disarmed_ready" in source
+    assert "--speed 0.40" in source
+    assert "--duration 6" in source
+    assert "--yaw-rate 0.50" in source
+    assert "--settle-duration 3" in source
+    assert source.count("ros2 run vlm_nav go2_gate5_pulse") == 2
 
 
 def test_candidate_cli_writes_yaml_and_keeps_validated_false(tmp_path):

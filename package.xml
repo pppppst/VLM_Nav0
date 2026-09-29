@@ -11,8 +11,12 @@
 
   <depend>diagnostic_msgs</depend>
   <depend>diagnostic_updater</depend>
+  <depend>dwb_core</depend>
+  <depend>dwb_plugins</depend>
   <depend>geometry_msgs</depend>
   <depend>message_filters</depend>
+  <depend>nav_2d_msgs</depend>
+  <depend>pluginlib</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
   <depend>rclcpp</depend>
@@ -23,6 +27,7 @@
   <depend>tf2</depend>
   <depend>tf2_ros</depend>
   <depend>unitree_api</depend>
+  <depend>unitree_go</depend>
 
   <build_depend>libpcl-all-dev</build_depend>
   <exec_depend>libpcl-common</exec_depend>

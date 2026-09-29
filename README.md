@@ -241,10 +241,11 @@ ros2 topic echo (接口)
 关键聚合状态。
 
 默认 `start_rviz.sh` 配置已经订阅 `/vlm_nav/markers` 和
-`/vlm_nav/debug_image`，并通过 `Camera RGB (live)` 面板直接显示
-`/camera/color/image_raw` 实时画面。RViz 中：
+`/vlm_nav/debug_image`，并通过 `Camera RGB (1 Hz preview)` 面板显示
+VLM 节点本地转发的 `/vlm_nav/camera_preview`。该预览复用 VLM 已有的 RGB
+订阅，不会为 RViz 再增加一路跨机 15 Hz 图像流。RViz 中：
 
-- `Camera RGB (live)`：相机原始 RGB 实时画面，不依赖 VLM 是否启用；
+- `Camera RGB (1 Hz preview)`：相机原始 RGB 低频预览，不依赖 VLM 是否启用；
 - 红色球体和文字：VLM 识别并经 RGB-D 投影后的目标；
 - 车体上方黄色文字：目标描述、导航状态、处理结论、置信度和 API 延迟；
 - `VLM Annotated Image`：带目标和语义证据像素标记的原始相机图。

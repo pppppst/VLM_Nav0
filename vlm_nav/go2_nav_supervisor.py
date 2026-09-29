@@ -58,6 +58,7 @@ class Go2NavSupervisor(Node):
         self.pending = {name: False for name in self.NAV2_NODES}
         self.lifecycle_requested_at = {name: 0.0 for name in self.NAV2_NODES}
         self.last_ready = None
+        self.last_readiness_signature = None
         self.system_ready_sub = self.create_subscription(
             Bool, "/vlm_nav/system_ready", self._on_system_ready, latched
         )
@@ -79,7 +80,7 @@ class Go2NavSupervisor(Node):
             lambda _message: self._received("costmap"),
             latched,
         )
-        self.clients = {
+        self.lifecycle_clients = {
             name: self.create_client(GetState, f"/{name}/get_state")
             for name in self.NAV2_NODES
         }
@@ -97,7 +98,7 @@ class Go2NavSupervisor(Node):
 
     def _request_lifecycle_states(self) -> None:
         now = time.monotonic()
-        for name, client in self.clients.items():
+        for name, client in self.lifecycle_clients.items():
             if self.pending[name]:
                 if now - self.lifecycle_requested_at[name] > self.lifecycle_timeout:
                     self.lifecycle_active[name] = False
@@ -123,7 +124,15 @@ class Go2NavSupervisor(Node):
             self.lifecycle_receipts[name] = time.monotonic()
         except Exception as error:  # service loss is a readiness loss, not a crash
             self.lifecycle_active[name] = False
-            self.get_logger().warn(f"cannot query lifecycle state for {name}: {error}")
+            self.get_logger().warning(f"cannot query lifecycle state for {name}: {error}")
+
+    def _topic_status(self, key: str, topic: str, now: float) -> dict:
+        receipt = self.receipts.get(key, 0.0)
+        return {
+            "present": bool(receipt),
+            "age": None if not receipt else now - receipt,
+            "publishers": self.count_publishers(topic),
+        }
 
     def _tick(self) -> None:
         self._request_lifecycle_states()
@@ -138,19 +147,73 @@ class Go2NavSupervisor(Node):
         system_contract = bool(
             self.system_ready
             and now - self.system_ready_receipt <= self.upstream_timeout
-            and self.system_ready_sub.get_publisher_count() == 1
+            and self.count_publishers("/vlm_nav/system_ready") == 1
         )
         lifecycle_contract = all(
             self.lifecycle_active[name]
             and now - self.lifecycle_receipts[name] <= self.lifecycle_timeout
             for name in self.NAV2_NODES
         )
+        topics = {
+            key: self._topic_status(key, topic, now)
+            for key, topic in (
+                ("obstacle", "/vlm_nav/obstacle_cloud"),
+                ("scan", "/scan"),
+                ("map", "/map"),
+                ("costmap", "/local_costmap/costmap_raw"),
+            )
+        }
+        conditions = {
+            "system_ready_value": self.system_ready,
+            "system_ready_fresh": bool(
+                self.system_ready_receipt
+                and now - self.system_ready_receipt <= self.upstream_timeout
+            ),
+            "system_ready_unique": self.count_publishers("/vlm_nav/system_ready") == 1,
+            "map_to_odom_tf": map_tf,
+        }
+        conditions.update({f"{key}_fresh": status["present"] and status["age"] <= self.maximum_age
+                           for key, status in topics.items()})
+        for name in self.NAV2_NODES:
+            conditions[f"{name}_active"] = self.lifecycle_active[name]
+            conditions[f"{name}_fresh"] = bool(
+                self.lifecycle_receipts[name]
+                and now - self.lifecycle_receipts[name] <= self.lifecycle_timeout
+            )
+        failed = tuple(name for name, value in conditions.items() if not value)
         ready = bool(
             system_contract
             and data_fresh
             and map_tf
             and lifecycle_contract
         )
+        signature = (ready, failed)
+        if signature != self.last_readiness_signature:
+            details = {
+                "system_ready": {
+                    "value": self.system_ready,
+                    "age": None if not self.system_ready_receipt else now - self.system_ready_receipt,
+                    "publishers": self.count_publishers("/vlm_nav/system_ready"),
+                },
+                "topics": topics,
+                "lifecycle": {
+                    name: {
+                        "active": self.lifecycle_active[name],
+                        "fresh": conditions[f"{name}_fresh"],
+                        "age": None if not self.lifecycle_receipts[name] else now - self.lifecycle_receipts[name],
+                        "service_ready": self.lifecycle_clients[name].service_is_ready(),
+                        "pending": self.pending[name],
+                    }
+                    for name in self.NAV2_NODES
+                },
+                "map_to_odom_tf": map_tf,
+            }
+            diagnostic = f"NAV readiness: ready={ready} failed={list(failed)} details={details}"
+            if ready:
+                self.get_logger().info(diagnostic)
+            else:
+                self.get_logger().warning(diagnostic)
+            self.last_readiness_signature = signature
         self._publish(ready)
 
     def _publish(self, ready: bool) -> None:

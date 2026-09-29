@@ -7,10 +7,19 @@ from vlm_nav.geometry import (
     depth_at_pixel,
     depth_at_pixel_with_reason,
     project_pixel,
+    scan_yaws,
     select_frontier,
     snap_to_free_cell,
     TargetTracker,
 )
+
+
+def test_scan_yaws_starts_at_initial_heading_without_duplicate_full_turn():
+    headings = list(scan_yaws(0.25, 8))
+
+    assert np.allclose(
+        headings, [0.25 + index * math.pi / 4.0 for index in range(8)]
+    )
 
 
 def test_depth_uses_near_median_and_rejects_sparse_pixels():

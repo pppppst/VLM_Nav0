@@ -36,10 +36,15 @@ def configure_go2_navigation(context):
         "waypoint_follower",
         "velocity_smoother",
     ]
+    # The real robot has no /clock; costmap nodes must use wall time too.
     for server in lifecycle_nodes:
         params.setdefault(server, {}).setdefault("ros__parameters", {})[
             "use_sim_time"
         ] = False
+    for costmap in ("local_costmap", "global_costmap"):
+        params.setdefault(costmap, {}).setdefault(costmap, {}).setdefault(
+            "ros__parameters", {}
+        )["use_sim_time"] = False
     handle = tempfile.NamedTemporaryFile(
         mode="w", prefix="vlm_nav2_go2_", suffix=".yaml", delete=False
     )

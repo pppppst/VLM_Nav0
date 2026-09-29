@@ -68,12 +68,12 @@ def generate_launch_description():
             DeclareLaunchArgument("go2_target_stage", default_value="fastlio"),
             DeclareLaunchArgument(
                 "go2_calibration_file",
-                default_value=os.path.join(share, "config", "go2_calibration.yaml"),
+                default_value=os.path.join(share, "config", "go2_calibration_xt16.yaml"),
             ),
             DeclareLaunchArgument(
                 "go2_spark_config_file",
                 default_value=os.path.join(
-                    share, "config", "spark_fast_lio_go2.yaml"
+                    share, "config", "spark_fast_lio_go2_xt16.yaml"
                 ),
             ),
             ranger,

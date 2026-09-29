@@ -12,18 +12,22 @@ measurement`。任何一级失败，只排查当前一级。
 - `NAV_READY`：`SYSTEM_READY` 加 obstacle chain、SLAM Toolbox、`map → odom`
   和 Nav2 正常。
 - `CONTROL_ARMED`：通过相应 safety gate 后，由操作者显式 ARM。
-- `VLM_ENABLED`：`NAV_READY` 加 RGB、aligned depth、CameraInfo、相机标定和
-  VLM API 后显式 enable。
+- `VLM_INPUT_READY`：`NAV_READY` 加 raw RGB-D、双 CameraInfo、窗口同步健康、
+  color↔depth 静态外参及 depth stamp 对应的 `map → depth optical` TF。
+- `VLM_AUTONOMY_READY`：`VLM_INPUT_READY` 加正式单位报告和 VLM API。
+- `VLM_ENABLED`：`VLM_AUTONOMY_READY` 后由操作者显式 enable。
 
 运行时 topic 的 ownership 固定为：`go2_safety_supervisor` 独占发布
 `/vlm_nav/system_ready`，`go2_nav_supervisor` 独占发布 `/vlm_nav/nav_ready`，
 bridge 发布 `/vlm_nav/control_armed`，VLM 节点发布 `/vlm_nav/vlm_enabled`。
+VLM 节点还独占发布 `/vlm_nav/vlm_api_ready`：首个 immutable snapshot 自动执行
+一次真实 Qwen 请求，通过后置 `true`；运行中的每次真实 target/frontier 响应都会
+刷新该状态，timeout、异常、空响应或 schema/type 无效时立即置 `false`。
 SYSTEM supervisor 持续检查原始传感器与 LIO 的本机接收 freshness、timestamp
 backward、基础 TF、bridge 状态和 Sport DDS 接收端；NAV supervisor 还要求
 obstacle/scan/map/costmap 新鲜、`map → odom` 和全部 Nav2 lifecycle 节点 ACTIVE。
-所有运行时 gate 都按 heartbeat age 判断，不接受已经失去发布者的 transient-local
-旧 `true`；Go2 VLM API monitor 后续必须持续发布 `/vlm_nav/vlm_api_ready`，单次
-手工发布不能保持 VLM enable。
+NAV/CONTROL 运行时 gate 按 heartbeat age 判断；API ready 是 VLM 节点根据真实
+请求结果维护的 transient-local 状态，不接受外部手工 publisher。
 
 直接低速 bridge 验证只要求 `SYSTEM_READY`，之后仍需显式 ARM；Nav2 自动运动
 要求 `NAV_READY + CONTROL_ARMED`；VLM 自动导航要求
@@ -105,10 +109,10 @@ finite/范数/最大值/跳变、IMU header 单调、共同覆盖窗口内的 Li
 并把整帧 `ring=1` 仅作为诊断现象。`scan_line` 不表示接收线数上限；
 `scan_rate` 必须由 topic Hz 和 point-time span 联合确认。
 
-`go2_camera_preflight` 只读订阅 RGB、aligned depth 和 color CameraInfo；检查
-至少三帧、图像元数据、时间单调、RGB/depth 像素尺寸一致、CameraInfo 内参与
-同一像素尺寸匹配，以及 RGB/depth 时间差。它不会接受
-`/camera/camera/depth/image_rect_raw` 代替 aligned depth。
+`go2_camera_preflight` 只读订阅 RGB、raw depth 和两套 CameraInfo；检查
+14–16 Hz、duplicate <1%、rollback=0、各图像与自己的 CameraInfo profile 匹配，
+并要求短窗口至少 90% 的 RGB/depth 能在 50 ms 内一一配对。Go2 gate 不再要求
+`/camera/camera/aligned_depth_to_color/image_raw`。
 
 D435 当前经设备枚举和 60 秒实测选定的候选低带宽 profile 是 depth/color 均为
 `640x480x15`；这是 D435 原生支持的离散 mode，不是软件插帧。只允许在 Go2
@@ -119,13 +123,20 @@ ros2 launch realsense2_camera rs_launch.py \
   depth_module.depth_profile:=640x480x15 \
   rgb_camera.color_profile:=640x480x15 \
   enable_sync:=true \
-  align_depth.enable:=true
+  align_depth.enable:=false
 ```
 
-该 profile 当前是候选而非完整 gate PASS：Go2 本机 aligned-depth 60 秒约
-14.23 Hz，未再出现 `USB SCP overflow`，但仍有启动期 libusb warning 和最长约
-368 ms 的偶发间隔。VLM 必须拒绝超过同步门槛的单个 RGB-D pair，不能使用旧
-depth 补配 RGB。
+最终双机拓扑复测中 RGB/raw depth 分别为 14.998/15.013 Hz，duplicate 和
+rollback 均为 0；aligned-depth 对照仅约 6.4–6.8 Hz，因此 Go2 正式 VLM 固定走
+raw depth。VLM target pixel 必须经 librealsense 官方 color→depth pixel 映射后
+才能读取 raw depth，禁止直接执行 `raw_depth[v_color, u_color]`。
+
+一次 VLM 请求只使用采集时冻结的 RGB、raw depth、双 CameraInfo、缓存的静态
+color↔depth 外参以及 depth stamp 对应的 map TF。单位验收由
+`raw_depth_probe.py units` 生成 profile 绑定的 JSON；节点启动时校验
+`verified/passed`、640×480×15、sync/alignment、topic、device scale、误差和
+snapshot fingerprint。报告缺失或不匹配时仍可诊断输入链，但拒绝 autonomous
+enable；不存在可动态设置的 `units_verified` ROS 参数。
 
 正式模式要求先用静止 rosbag 填写并审核 `config/go2_preflight.yaml` 中的 IMU
 阈值和 LiDAR timing 阈值。系统时间先用 chrony/NTP 状态确认；单次
@@ -201,7 +212,7 @@ build/install/log。若缺包，脚本打印一条需要在可输入 sudo 密码
 每个 Gate 失败时只排查当前层，不继续叠加系统。
 
 **Gate 1 — 基础与原始数据。** 构建固定依赖和 VLM_Nav，保持 Ranger 回归；
-配置 DDS/NTP，保存 LiDAR、IMU、RGB、aligned depth、CameraInfo 的 QoS 报告；
+配置 DDS/NTP，保存 LiDAR、IMU、RGB、raw depth、双 CameraInfo 的 QoS 报告；
 只读验证 LiDAR/IMU finite、频率、时间单调、point-level time 和实际测量时间对齐。
 稳定的 `header.stamp - system_now` 正偏移只记录，绝不进入 ready gate。
 
@@ -224,9 +235,10 @@ footprint 和 6DoF 姿态影响；只达到 NAV_READY，不 ARM。
 CONTROL_ARMED 下执行短 Nav2 goal，检查 roll/pitch/z、点云、LaserScan、costmap
 和 footprint。若 6DoF 确认破坏 Nav2，才启用文中 Plan B。
 
-**Gate 6 — VLM。** 标定并唯一发布 `base_link → camera_link`；验证 RGB-D、
-CameraInfo、API 和三维投影，但先不发 goal。只有 NAV_READY + CONTROL_ARMED +
-显式 VLM_ENABLED 同时成立后，才执行短 VLM 自动任务。
+**Gate 6 — VLM。** 标定并唯一发布 `base_link → camera_link`；验证 raw RGB-D、
+双 CameraInfo、静态 color↔depth 外参、depth stamp map TF、单位报告、API 和
+单像素三维投影，但先不发 goal。只有 NAV_READY + CONTROL_ARMED +
+VLM_AUTONOMY_READY + 显式 VLM_ENABLED 同时成立后，才执行短 VLM 自动任务。
 
 FAST-LIO 验收不能只看漂移，还必须检查 LiDAR/IMU finite、Hz、point time、单调
 时间、掉帧；LIO 无 NaN、无突跳/回退、静止不持续漂移、运动地图不撕裂、注册

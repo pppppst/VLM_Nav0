@@ -6,6 +6,14 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
   return 1 2>/dev/null || exit 1
 fi
 
+go2_required_rmem=16777216
+go2_actual_rmem="$(sysctl -n net.core.rmem_max 2>/dev/null)"
+if [[ ! "$go2_actual_rmem" =~ ^[0-9]+$ ]] || (( go2_actual_rmem < go2_required_rmem )); then
+  echo "ERROR: net.core.rmem_max=${go2_actual_rmem:-unavailable}, require >=${go2_required_rmem} for CycloneDDS large PointCloud2" >&2
+  return 1 2>/dev/null || exit 1
+fi
+unset go2_required_rmem go2_actual_rmem
+
 go2_has_subnet_address() {
   local interface="$1"
   ip -o -4 address show dev "$interface" 2>/dev/null \
