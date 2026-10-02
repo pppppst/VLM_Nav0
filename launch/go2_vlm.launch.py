@@ -48,6 +48,7 @@ def _build(context):
                     "camera_color_optical_frame->camera_depth_optical_frame",
                     "map->camera_depth_optical_frame",
                 ],
+                "localization_mode": LaunchConfiguration("localization_mode"),
                 "timeout": 30.0,
                 "stable_samples": 3,
             }
@@ -91,6 +92,7 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("enabled", default_value="false"),
             DeclareLaunchArgument("target_description", default_value="chair"),
+            DeclareLaunchArgument("localization_mode", default_value="slam"),
             DeclareLaunchArgument(
                 "calibration_file",
                 default_value=os.path.join(share, "config", "go2_calibration.yaml"),

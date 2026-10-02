@@ -6,8 +6,14 @@ if [[ ! -f "${script_dir}/common.sh" ]]; then
   script_dir="$(ros2 pkg prefix --share vlm_nav)/scripts"
 fi
 
-if (( $# != 1 )) || [[ -z "$1" ]]; then
-  echo "用法：$0 \"目标描述\"" >&2
+if (( $# != 2 )) || [[ -z "$1" || "$2" != map:=* ]]; then
+  echo "用法：$0 \"目标描述\" map:=<saved_map.yaml>" >&2
+  exit 2
+fi
+target_description="$1"
+map_path="${2#map:=}"
+if [[ ! -f "${map_path}" ]]; then
+  echo "ERROR: VLM AMCL navigation requires a valid saved map YAML" >&2
   exit 2
 fi
 if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
@@ -89,5 +95,6 @@ gnome-terminal \
 
 unset ALL_PROXY all_proxy
 export VLM_NAV_MODE=true
-export VLM_TARGET_DESCRIPTION="$1"
-exec "${script_dir}/manualnav2.sh"
+export VLM_TARGET_DESCRIPTION="${target_description}"
+exec "${script_dir}/manualnav2.sh" \
+  localization_mode:=amcl map:="${map_path}" amcl_scan_topic:=/scan

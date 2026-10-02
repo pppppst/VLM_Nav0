@@ -11,6 +11,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rosidl_runtime_py.utilities import get_message
 from tf2_ros import Buffer, TransformListener
+from vlm_nav.go2_readiness import valid_map
 
 
 class ReadinessWaiter(Node):
@@ -23,6 +24,9 @@ class ReadinessWaiter(Node):
         self.declare_parameter("timeout", 30.0)
         self.declare_parameter("stable_samples", 3)
         self.declare_parameter("required_message_count", 3)
+        self.localization_mode = self.declare_parameter("localization_mode", "slam").value
+        if self.localization_mode not in ("slam", "amcl"):
+            raise ValueError("localization_mode must be slam or amcl")
         self.required_topics = [topic for topic in (
             self.get_parameter("required_topics").get_parameter_value().string_array_value
         ) if topic]
@@ -44,7 +48,10 @@ class ReadinessWaiter(Node):
         self.done = False
         self.timer = self.create_timer(0.2, self.check)
 
-    def _on_message(self, topic):
+    def _on_message(self, topic, message=None):
+        if topic == "/map" and self.localization_mode == "amcl":
+            self.received_counts[topic] = int(valid_map(message))
+            return
         self.received_counts[topic] += 1
         if topic == "/cloud_registered_base":
             count = self.received_counts[topic]
@@ -74,10 +81,16 @@ class ReadinessWaiter(Node):
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.VOLATILE,
         )
+        if topic == "/map" and self.localization_mode == "amcl":
+            qos = QoSProfile(
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
         self.dynamic_subscriptions[topic] = self.create_subscription(
             message_type,
             topic,
-            lambda _message, topic=topic: self._on_message(topic),
+            lambda message, topic=topic: self._on_message(topic, message),
             qos,
         )
 
@@ -90,9 +103,12 @@ class ReadinessWaiter(Node):
                 continue
             self._ensure_subscription(topic, topics[topic])
             count = self.received_counts[topic]
-            if count < self.required_message_count:
+            required_count = self.required_message_count
+            if topic == "/map" and self.localization_mode == "amcl":
+                required_count = 1
+            if count < required_count:
                 missing_topics.append(
-                    f"{topic} ({count}/{self.required_message_count} messages)"
+                    f"{topic} ({count}/{required_count} messages)"
                 )
         missing_transforms = []
         for specification in self.required_transforms:

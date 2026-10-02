@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+localization_mode=slam
+map_path=""
+amcl_scan_topic=/scan_amcl
+for argument in "$@"; do
+  case "${argument}" in
+    localization_mode:=*) localization_mode="${argument#*:=}" ;;
+    map:=*) map_path="${argument#*:=}" ;;
+    amcl_scan_topic:=*) amcl_scan_topic="${argument#*:=}" ;;
+    *) echo "ERROR: unsupported argument: ${argument}" >&2; exit 2 ;;
+  esac
+done
+if [[ "${localization_mode}" != slam && "${localization_mode}" != amcl ]]; then
+  echo "ERROR: localization_mode must be slam or amcl" >&2
+  exit 2
+fi
+if [[ "${localization_mode}" == amcl && ! -f "${map_path}" ]]; then
+  echo "ERROR: AMCL localization requires a valid saved map YAML" >&2
+  exit 2
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ ! -f "${script_dir}/common.sh" ]]; then
   project_dir="$(ros2 pkg prefix --share vlm_nav)"
@@ -12,11 +32,25 @@ session_dir="$(mktemp -d /tmp/manualnav2.XXXXXX)"
 children=()
 child_names=()
 bridge_started=false
+bootstrap_pid=""
 vlm_mode="${VLM_NAV_MODE:-false}"
 vlm_index=-1
 
 group_alive() {
   kill -0 -- "-$1" 2>/dev/null
+}
+
+stop_bootstrap() {
+  local attempt
+  [[ -z "${bootstrap_pid}" ]] && return
+  kill -INT -- "-${bootstrap_pid}" 2>/dev/null || true
+  for attempt in {1..20}; do
+    group_alive "${bootstrap_pid}" || break
+    sleep 0.1
+  done
+  group_alive "${bootstrap_pid}" && kill -TERM -- "-${bootstrap_pid}" 2>/dev/null || true
+  wait "${bootstrap_pid}" 2>/dev/null || true
+  bootstrap_pid=""
 }
 
 cleanup() {
@@ -25,6 +59,7 @@ cleanup() {
   if [[ "${bridge_started}" == true ]]; then
     "${script_dir}/stopnav2.sh" >/dev/null 2>&1
   fi
+  stop_bootstrap
   for pid in "${children[@]}"; do
     kill -INT -- "-${pid}" 2>/dev/null
   done
@@ -173,12 +208,23 @@ echo "Reusing a fresh formal preflight report, or running the 30-second prefligh
 
 start_child nav2 ros2 launch vlm_nav go2_system.launch.py \
   sensor_preflight_report:=/tmp/go2_costmap_preflight.json \
-  target_stage:=nav2 bridge_dry_run:=false start_bridge:=false
+  target_stage:=nav2 bridge_dry_run:=false start_bridge:=false \
+  localization_mode:="${localization_mode}" map:="${map_path}" \
+  amcl_scan_topic:="${amcl_scan_topic}"
+if [[ "${localization_mode}" == amcl ]]; then
+  setsid ros2 run tf2_ros static_transform_publisher \
+    --x 0 --y 0 --z 0 --roll 0 --pitch 0 --yaw 0 \
+    --frame-id map --child-frame-id amcl_bootstrap \
+    </dev/null >"${session_dir}/amcl_bootstrap.log" 2>&1 &
+  bootstrap_pid=$!
+  echo "AMCL initialization: use RViz 2D Pose Estimate within 10 minutes."
+fi
 start_child rviz "${script_dir}/start_rviz.sh" \
   "${project_dir}/config/go2_costmaps.rviz"
 start_child bag "${script_dir}/record_go2_nav2_manual.sh"
 
 wait_for_nav2
+stop_bootstrap
 
 confirm START_NAV "确认 RViz 地图和 footprint 已显示，已用遥控器将 Go2 移到起点、机器人已静止且遥控输入已停止。"
 
@@ -210,7 +256,8 @@ if [[ "${vlm_mode}" == true ]]; then
     --roll 0 --pitch 0 --yaw 0 \
     --frame-id base_link --child-frame-id camera_link
   start_child vlm ros2 launch vlm_nav go2_vlm.launch.py \
-    enabled:=false target_description:="${target_description}"
+    enabled:=false target_description:="${target_description}" \
+    localization_mode:="${localization_mode}"
   vlm_index=$((${#children[@]} - 1))
   wait_for_value /vlm_nav/input_ready True
   wait_for_value /vlm_nav/vlm_api_ready True

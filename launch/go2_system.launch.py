@@ -62,10 +62,11 @@ def _static_transform(name, transform):
     )
 
 
-def _waiter(name, *, topics=(), transforms=(), timeout=30.0):
+def _waiter(name, *, topics=(), transforms=(), timeout=30.0, localization_mode="slam"):
     waiter_parameters = {
         "timeout": timeout,
         "stable_samples": 3,
+        "localization_mode": localization_mode,
     }
     if topics:
         waiter_parameters["required_topics"] = list(topics)
@@ -97,8 +98,48 @@ def _advance_after(waiter, actions, label):
     )
 
 
+def _localization_nodes(share, mode, map_path, scan_topic):
+    if mode not in ("slam", "amcl"):
+        raise RuntimeError("localization_mode must be slam or amcl")
+    if mode == "slam":
+        return [Node(
+            package="slam_toolbox",
+            executable="async_slam_toolbox_node",
+            name="slam_toolbox",
+            output="screen",
+            parameters=[os.path.join(share, "config", "slam_toolbox_go2.yaml")],
+        )]
+    if not map_path or not os.path.isfile(map_path):
+        raise RuntimeError("AMCL localization requires a valid saved map YAML")
+    if not scan_topic.strip():
+        raise RuntimeError("amcl_scan_topic must not be empty")
+    return [
+        Node(
+            package="nav2_map_server", executable="map_server", name="map_server",
+            output="screen", parameters=[{"use_sim_time": False, "yaml_filename": map_path}],
+        ),
+        Node(
+            package="nav2_amcl", executable="amcl", name="amcl", output="screen",
+            parameters=[os.path.join(share, "config", "go2_amcl.yaml"),
+                        {"scan_topic": scan_topic}],
+        ),
+        Node(
+            package="nav2_lifecycle_manager", executable="lifecycle_manager",
+            name="lifecycle_manager_localization", output="screen",
+            parameters=[{"use_sim_time": False, "autostart": True,
+                         "node_names": ["map_server", "amcl"]}],
+        ),
+    ]
+
+
 def _build(context):
     share = get_package_share_directory("vlm_nav")
+    localization_mode = LaunchConfiguration("localization_mode").perform(context)
+    amcl_scan_topic = LaunchConfiguration("amcl_scan_topic").perform(context)
+    # Validate before creating any sensor process; never fall back to SLAM.
+    localization = _localization_nodes(
+        share, localization_mode, LaunchConfiguration("map").perform(context), amcl_scan_topic
+    )
     calibration_path = LaunchConfiguration("calibration_file").perform(context)
     target_stage = LaunchConfiguration("target_stage").perform(context)
     preflight_report_path = LaunchConfiguration("sensor_preflight_report").perform(context)
@@ -239,25 +280,21 @@ def _build(context):
         parameters=[os.path.join(share, "config", "go2_laserscan.yaml")],
     )
     scan_waiter = _waiter("wait_go2_scan", topics=("/scan",), timeout=30.0)
-    slam = Node(
-        package="slam_toolbox",
-        executable="async_slam_toolbox_node",
-        name="slam_toolbox",
-        output="screen",
-        parameters=[os.path.join(share, "config", "slam_toolbox_go2.yaml")],
-    )
     slam_waiter = _waiter(
         "wait_go2_slam",
         topics=("/map",),
         transforms=("map->odom",),
-        timeout=120.0,
+        timeout=600.0 if localization_mode == "amcl" else 120.0,
+        localization_mode=localization_mode,
     )
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(share, "launch", "go2_navigation.launch.py")
         ),
         launch_arguments={
-            "overrides_file": os.path.join(share, "config", "nav2_go2.yaml")
+            "overrides_file": os.path.join(share, "config", "nav2_go2.yaml"),
+            "localization_mode": localization_mode,
+            "amcl_scan_topic": amcl_scan_topic,
         }.items(),
     )
 
@@ -265,7 +302,7 @@ def _build(context):
     after_base = [spark, fastlio_waiter]
     after_fastlio = [obstacle, obstacle_waiter] if stage_index >= 1 else []
     after_obstacle = [scan, scan_waiter] if stage_index >= 2 else []
-    after_scan = [slam, slam_waiter] if stage_index >= 3 else []
+    after_scan = [*localization, slam_waiter] if stage_index >= 3 else []
     after_slam = [nav2] if stage_index >= 4 else []
 
     handlers = [_advance_after(base_waiter, after_base, "base TF")]
@@ -276,7 +313,7 @@ def _build(context):
     if after_scan:
         handlers.append(_advance_after(scan_waiter, after_scan, "LaserScan"))
     if after_slam:
-        handlers.append(_advance_after(slam_waiter, after_slam, "SLAM"))
+        handlers.append(_advance_after(slam_waiter, after_slam, localization_mode))
 
     runtime_nodes = [
         *handlers,
@@ -316,6 +353,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("sensor_preflight_max_age_s", default_value="600.0"),
             DeclareLaunchArgument("target_stage", default_value="fastlio"),
+            DeclareLaunchArgument("localization_mode", default_value="slam"),
+            DeclareLaunchArgument("map", default_value=""),
+            DeclareLaunchArgument("amcl_scan_topic", default_value="/scan_amcl"),
             DeclareLaunchArgument("bridge_dry_run", default_value="true"),
             DeclareLaunchArgument("start_bridge", default_value="true"),
             OpaqueFunction(function=_build),

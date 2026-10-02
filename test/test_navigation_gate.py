@@ -26,6 +26,7 @@ from vlm_nav.vlm_navigator import (
     APPROACHING,
     APPROACH_STOPPING,
     API_ERROR,
+    DISARMED,
     FAILED,
     SCANNING,
     SEARCHING,
@@ -378,6 +379,37 @@ def test_easy_case_confirmation_enters_target_alignment():
     assert states == [TARGET_ALIGNING]
     assert node.easy_alignment_complete is False
     assert node.target_reference_position == (2.0, 0.0, 0.5)
+
+
+@pytest.mark.parametrize(
+    ("refreshed_target", "expected_cancels"),
+    [
+        ((2.34, 0.0, 0.5), []),
+        ((2.36, 0.0, 0.5), [True]),
+    ],
+)
+def test_visible_target_refresh_replans_only_after_confirmed_goal_drift(
+    refreshed_target, expected_cancels
+):
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.state = APPROACHING
+    node.target_reference_position = (2.0, 0.0, 0.5)
+    node.goal_pose = (2.0, 0.0, 0.0)
+    node.goal_kind = "approach"
+    node.goal_handle = object()
+    node.goal_pending = False
+    node.plan_pending = False
+    node.plan_kind = None
+    node.current_plan_pose = None
+    node.p = SimpleNamespace(confirmation_radius=0.35)
+    node.get_logger = lambda: SimpleNamespace(info=lambda _message: None)
+    cancelled = []
+    node.cancel_motion = lambda publish_stop: cancelled.append(publish_stop)
+
+    node.set_confirmed_target_reference_position(refreshed_target)
+
+    assert node.target_reference_position == refreshed_target
+    assert cancelled == expected_cancels
 
 
 def test_initial_arm_costmap_clear_blocks_scan_until_services_complete():
@@ -1444,6 +1476,70 @@ def test_api_failure_does_not_overwrite_failed_state():
     assert node.api_failures == 4
 
 
+def test_target_api_failure_disarms_only_after_three_consecutive_failures():
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.state = APPROACHING
+    node.api_failures = 0
+    node.rejected_results = 0
+    node.last_api_error = "none"
+    node.last_api_latency = 0.0
+    node.last_result_age = 0.0
+    node.vlm_api_ready = True
+    node.vlm_api_status_reason = "valid target response"
+    node.vlm_api_last_update = 0.0
+    node.vlm_api_ready_pub = SimpleNamespace(publish=lambda _message: None)
+    node.p = SimpleNamespace(
+        api_failure_limit=3,
+        require_external_safety_gates=True,
+    )
+    enabled = {"value": True}
+    node.get_parameter = lambda name: SimpleNamespace(value=enabled["value"])
+
+    def set_parameters(parameters):
+        assert len(parameters) == 1
+        assert parameters[0].name == "enabled"
+        assert parameters[0].value is False
+        enabled["value"] = False
+        node.state = DISARMED
+        return [SimpleNamespace(successful=True)]
+
+    node.set_parameters = set_parameters
+    node.get_logger = lambda: SimpleNamespace(
+        error=lambda _message: None,
+        warn=lambda _message: None,
+    )
+    node.is_current_scan_result = lambda _snapshot: False
+    node.is_current_depth_reobserve_result = lambda _snapshot: False
+    node.log_worker_result = lambda *_args: None
+    node.cancel_motion = lambda publish_stop: pytest.fail(
+        "parameter disable owns the fail-safe reset"
+    )
+    node.set_state = lambda state: pytest.fail(
+        f"API failure threshold must disable the task, not enter {state}"
+    )
+    snapshot = SimpleNamespace(
+        request_kind="target",
+        captured_monotonic=time.monotonic(),
+    )
+
+    for expected_failures in (1, 2):
+        node.handle_worker_result(
+            WorkerResult(snapshot, None, 0.2, "JSONDecodeError: truncated")
+        )
+        assert node.api_failures == expected_failures
+        assert enabled["value"] is True
+        assert node.state == APPROACHING
+
+    node.handle_worker_result(
+        WorkerResult(snapshot, None, 0.2, "JSONDecodeError: truncated")
+    )
+
+    assert node.api_failures == 3
+    assert enabled["value"] is False
+    assert node.state == DISARMED
+    assert node.vlm_api_ready is False
+
+
 def test_vlm_result_is_published_and_forwarded_to_image_recorder():
     node = VLMNavigator.__new__(VLMNavigator)
     node.state = TARGET_CONFIRMING
@@ -1580,6 +1676,38 @@ def test_missing_semantic_evidence_never_enters_target_grounding():
 
     node.handle_worker_result(semantic_gate_completed(result))
 
+    assert node.log_dispositions == ["accepted_no_target"]
+
+
+def test_no_target_observation_keeps_confirmed_goal_and_is_not_api_failure():
+    node = semantic_gate_node()
+    node.state = APPROACHING
+    node.api_failures = 2
+    node.target_reference_position = (2.0, -0.5, 0.4)
+    node.target_tracker = SimpleNamespace(
+        reset=lambda: pytest.fail("a temporary no-target view must keep tracking")
+    )
+    node.clear_vlm_grounding_markers = lambda: pytest.fail(
+        "a temporary no-target view must keep the confirmed target"
+    )
+    node.cancel_motion = lambda **_kwargs: pytest.fail(
+        "the existing Nav2 approach must continue"
+    )
+    result = VLMResult(
+        target_visible=False,
+        object_match=False,
+        qualifier_match=False,
+        relation_match=False,
+        confidence=0.0,
+        target_pixel=None,
+        evidence_pixel=None,
+    )
+
+    node.handle_worker_result(semantic_gate_completed(result))
+
+    assert node.api_failures == 0
+    assert node.state == APPROACHING
+    assert node.target_reference_position == (2.0, -0.5, 0.4)
     assert node.log_dispositions == ["accepted_no_target"]
 
 

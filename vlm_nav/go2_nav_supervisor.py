@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import time
+import math
 
 import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from lifecycle_msgs.msg import State
 from lifecycle_msgs.srv import GetState
 from nav2_msgs.msg import Costmap
@@ -14,7 +16,8 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Bool
-from tf2_ros import Buffer, TransformListener
+from tf2_ros import Buffer, TransformException, TransformListener
+from vlm_nav.go2_readiness import valid_map
 
 
 class Go2NavSupervisor(Node):
@@ -30,6 +33,16 @@ class Go2NavSupervisor(Node):
 
     def __init__(self) -> None:
         super().__init__("go2_nav_supervisor")
+        self.localization_mode = self.declare_parameter("localization_mode", "slam").value
+        if self.localization_mode not in ("slam", "amcl"):
+            raise ValueError("localization_mode must be slam or amcl")
+        self.scan_topic = self.declare_parameter("amcl_scan_topic", "/scan_amcl").value
+        if self.localization_mode == "slam":
+            self.scan_topic = "/scan"
+        else:
+            self.NAV2_NODES = (*self.NAV2_NODES, "map_server", "amcl")
+        self.map_valid = False
+        self.amcl_pose_valid = False
         self.maximum_age = float(self.declare_parameter("maximum_data_age_s", 2.0).value)
         self.upstream_timeout = float(
             self.declare_parameter("system_ready_timeout_s", 1.0).value
@@ -69,11 +82,15 @@ class Go2NavSupervisor(Node):
             sensor,
         )
         self.create_subscription(
-            LaserScan, "/scan", lambda _message: self._received("scan"), sensor
+            LaserScan, self.scan_topic, lambda _message: self._received("scan"), sensor
         )
         self.create_subscription(
-            OccupancyGrid, "/map", lambda _message: self._received("map"), latched
+            OccupancyGrid, "/map", self._on_map, latched
         )
+        if self.localization_mode == "amcl":
+            self.create_subscription(
+                PoseWithCovarianceStamped, "/amcl_pose", self._on_amcl_pose, latched
+            )
         self.create_subscription(
             Costmap,
             "/local_costmap/costmap_raw",
@@ -95,6 +112,47 @@ class Go2NavSupervisor(Node):
 
     def _received(self, key: str) -> None:
         self.receipts[key] = time.monotonic()
+
+    def _on_map(self, message) -> None:
+        self.map_valid = valid_map(message)
+        self._received("map")
+
+    def _on_amcl_pose(self, message) -> None:
+        pose = message.pose.pose
+        q = pose.orientation
+        self.amcl_pose_valid = bool(
+            message.header.frame_id == "map"
+            and all(math.isfinite(value) for value in (
+                pose.position.x, pose.position.y, pose.position.z,
+                q.x, q.y, q.z, q.w, *message.pose.covariance,
+            ))
+            and abs(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w - 1.0) < 0.01
+            and all(message.pose.covariance[i] >= 0.0 for i in (0, 7, 14, 21, 28, 35))
+        )
+        self._received("amcl_pose")
+
+    def _amcl_conditions(self) -> dict:
+        ros_now = self.get_clock().now().nanoseconds * 1e-9
+        try:
+            transform = self.tf_buffer.lookup_transform("odom", "base_link", rclpy.time.Time())
+            stamp = transform.header.stamp.sec + transform.header.stamp.nanosec * 1e-9
+            odom_fresh = abs(ros_now - stamp) <= self.maximum_age
+        except TransformException:
+            odom_fresh = False
+        try:
+            transform = self.tf_buffer.lookup_transform("map", "odom", rclpy.time.Time())
+            stamp = transform.header.stamp.sec + transform.header.stamp.nanosec * 1e-9
+            map_tf_fresh = abs(ros_now - stamp) <= self.maximum_age
+        except TransformException:
+            map_tf_fresh = False
+        return {
+            "map_received_once": "map" in self.receipts,
+            "map_valid": self.map_valid,
+            "amcl_pose_received_once": "amcl_pose" in self.receipts,
+            "amcl_pose_valid": self.amcl_pose_valid,
+            "map_to_odom_fresh": map_tf_fresh,
+            "odom_to_base_link_fresh": odom_fresh,
+        }
 
     def _request_lifecycle_states(self) -> None:
         now = time.monotonic()
@@ -137,9 +195,12 @@ class Go2NavSupervisor(Node):
     def _tick(self) -> None:
         self._request_lifecycle_states()
         now = time.monotonic()
+        fresh_keys = ("obstacle", "scan", "map", "costmap")
+        if self.localization_mode == "amcl":
+            fresh_keys = ("obstacle", "scan", "costmap")
         data_fresh = all(
             key in self.receipts and now - self.receipts[key] <= self.maximum_age
-            for key in ("obstacle", "scan", "map", "costmap")
+            for key in fresh_keys
         )
         map_tf = self.tf_buffer.can_transform(
             "map", "odom", rclpy.time.Time(), Duration(seconds=0.0)
@@ -158,7 +219,7 @@ class Go2NavSupervisor(Node):
             key: self._topic_status(key, topic, now)
             for key, topic in (
                 ("obstacle", "/vlm_nav/obstacle_cloud"),
-                ("scan", "/scan"),
+                ("scan", self.scan_topic),
                 ("map", "/map"),
                 ("costmap", "/local_costmap/costmap_raw"),
             )
@@ -172,8 +233,12 @@ class Go2NavSupervisor(Node):
             "system_ready_unique": self.count_publishers("/vlm_nav/system_ready") == 1,
             "map_to_odom_tf": map_tf,
         }
-        conditions.update({f"{key}_fresh": status["present"] and status["age"] <= self.maximum_age
-                           for key, status in topics.items()})
+        conditions.update({f"{key}_fresh": topics[key]["present"] and topics[key]["age"] <= self.maximum_age
+                           for key in fresh_keys})
+        localization_conditions = (
+            self._amcl_conditions() if self.localization_mode == "amcl" else {}
+        )
+        conditions.update(localization_conditions)
         for name in self.NAV2_NODES:
             conditions[f"{name}_active"] = self.lifecycle_active[name]
             conditions[f"{name}_fresh"] = bool(
@@ -186,6 +251,7 @@ class Go2NavSupervisor(Node):
             and data_fresh
             and map_tf
             and lifecycle_contract
+            and all(localization_conditions.values())
         )
         signature = (ready, failed)
         if signature != self.last_readiness_signature:

@@ -57,6 +57,17 @@ def test_valid_response_is_converted_to_immutable_contract():
     assert result.evidence_pixel == Pixel(110, 35)
 
 
+def test_target_prompt_defines_a_canonical_no_target_observation():
+    prompt = build_prompt("red fire extinguisher", 640, 480)
+
+    assert (
+        '{"target_visible":false,"object_match":false,'
+        '"qualifier_match":false,"relation_match":false,'
+        '"confidence":0.0,"target_pixel":null,"evidence_pixel":null}'
+        in prompt
+    )
+
+
 def test_two_element_pixel_arrays_are_parsed_safely():
     payload = valid_payload()
     payload["target_pixel"] = [100, 50]

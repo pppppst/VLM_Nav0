@@ -10,7 +10,8 @@
 
 ```bash
 cd /home/isee-pst/unitree_ros2
-./VLM_Nav/scripts/VLMNav-go.sh "红色灭火器"
+./VLM_Nav/scripts/VLMNav-go.sh "红色灭火器" \
+  map:=/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml
 ```
 
 将目标描述替换为现场唯一目标并保留引号。脚本依次完成网络和 NTP 检查、D435 单

@@ -1,0 +1,16 @@
+# AMCL-only overlay, merged after nav2_go2.yaml. Existing footprint and
+# inflation parameters remain unchanged.
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      plugins: [static_layer, inflation_layer]
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      plugins: [static_layer, inflation_layer]
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_subscribe_transient_local: true

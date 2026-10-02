@@ -739,6 +739,15 @@ class VLMNavigator(Node):
             self.set_parameters([Parameter("enabled", value=False)])
 
     def set_vlm_api_ready(self, ready, reason):
+        if (
+            not ready
+            and getattr(self.p, "require_external_safety_gates", False)
+            and self.get_parameter("enabled").value
+            and self.api_failures + 1 < max(1, int(self.p.api_failure_limit))
+        ):
+            self.vlm_api_status_reason = str(reason)
+            self.vlm_api_last_update = time.monotonic()
+            return
         self.vlm_api_ready = bool(ready)
         self.vlm_api_status_reason = str(reason)
         self.vlm_api_last_update = time.monotonic()
@@ -2267,11 +2276,7 @@ class VLMNavigator(Node):
                 self.set_state(TARGET_CONFIRMING)
             return
         first_confirmation = self.target_reference_position is None
-        if first_confirmation or not self.easy_case_enabled():
-            if self.easy_case_enabled():
-                self.target_reference_position = center
-            else:
-                self.set_confirmed_target_reference_position(center)
+        self.set_confirmed_target_reference_position(center)
         if first_confirmation:
             self.cancel_motion(publish_stop=True)
             if self.easy_case_enabled():
@@ -2285,7 +2290,35 @@ class VLMNavigator(Node):
         self.publish_grounded_markers(self.target_reference_position)
 
     def set_confirmed_target_reference_position(self, target):
-        self.target_reference_position = tuple(float(value) for value in target)
+        refreshed = tuple(float(value) for value in target)
+        self.target_reference_position = refreshed
+        active_goal = None
+        if (
+            getattr(self, "state", None) == APPROACHING
+            and getattr(self, "goal_kind", None) in ("approach", "easy_approach")
+            and (
+                getattr(self, "goal_handle", None) is not None
+                or getattr(self, "goal_pending", False)
+            )
+        ):
+            active_goal = getattr(self, "goal_pose", None)
+        elif (
+            getattr(self, "state", None) == APPROACHING
+            and getattr(self, "plan_pending", False)
+            and getattr(self, "plan_kind", None) in ("approach", "easy_approach")
+        ):
+            active_goal = getattr(self, "current_plan_pose", None)
+        if active_goal is None:
+            return
+        drift = math.hypot(
+            refreshed[0] - active_goal[0], refreshed[1] - active_goal[1]
+        )
+        if drift <= float(self.p.confirmation_radius):
+            return
+        self.get_logger().info(
+            f"Visible target moved {drift:.3f}m in map; replanning approach"
+        )
+        self.cancel_motion(publish_stop=True)
 
     # ---------- navigation ----------
 

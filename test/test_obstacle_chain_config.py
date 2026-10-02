@@ -158,6 +158,7 @@ def test_every_python_test_is_registered_with_ament_cmake_pytest():
         "test_go2_profile.py",
         "test_go2_preflight.py",
         "test_go2_readiness.py",
+        "test_go2_localization.py",
         "test_go2_bridge_config.py",
         "test_go2_bridge_runtime.py",
         "test_go2_operational_config.py",

@@ -5,8 +5,10 @@
     # Measured relative to base_link; shared with the obstacle filter.
     min_height: -0.35
     max_height: 0.20
-    angle_min: -3.141592653589793
-    angle_max: 3.141592653589793
+    # base_link +X is forward: retain +/-120 deg, exclude rear 120 deg.
+    # Shared SLAM/AMCL scan only; SPARK's input cloud is unchanged.
+    angle_min: -2.0943951023931953
+    angle_max: 2.0943951023931953
     angle_increment: 0.008726646259972
     # UTLiDAR live probe: median period 0.0651 s; observed XY range <= 7.71 m.
     scan_time: 0.065

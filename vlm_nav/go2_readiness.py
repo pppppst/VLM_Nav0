@@ -1,6 +1,19 @@
 """Layered Go2 readiness gates without coupling motion and VLM enablement."""
 
 from dataclasses import dataclass
+import math
+
+
+def valid_map(message) -> bool:
+    """Static maps are data, not heartbeats; reject unusable metadata/payloads."""
+    return bool(
+        message.header.frame_id == "map"
+        and message.info.width > 0
+        and message.info.height > 0
+        and math.isfinite(message.info.resolution)
+        and message.info.resolution > 0
+        and len(message.data) == message.info.width * message.info.height
+    )
 
 
 @dataclass(frozen=True)

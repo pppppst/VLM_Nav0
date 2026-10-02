@@ -95,10 +95,12 @@ esac''',
     make_fake_command(
         scripts,
         "manualnav2.sh",
-        'printf "%s|%s\\n" "$VLM_NAV_MODE" "$VLM_TARGET_DESCRIPTION"',
+        'printf "%s|%s|%s\\n" "$VLM_NAV_MODE" "$VLM_TARGET_DESCRIPTION" "$*"',
     )
     report = tmp_path / "units.json"
     report.write_text("{}")
+    saved_map = tmp_path / "lab.yaml"
+    saved_map.write_text("image: lab.pgm\n")
     env = {
         **os.environ,
         "PATH": f"{fake_bin}:{os.environ['PATH']}",
@@ -110,14 +112,16 @@ esac''',
     }
 
     completed = subprocess.run(
-        ["bash", str(scripts / "VLMNav-go.sh"), "红色灭火器"],
+        ["bash", str(scripts / "VLMNav-go.sh"), "红色灭火器", f"map:={saved_map}"],
         env=env,
         text=True,
         capture_output=True,
         check=True,
     )
 
-    assert completed.stdout.rstrip().endswith("true|红色灭火器")
+    assert completed.stdout.rstrip().endswith(
+        f"true|红色灭火器|localization_mode:=amcl map:={saved_map} amcl_scan_topic:=/scan"
+    )
     recorded_calls = calls.read_text()
     assert "go2_camera_preflight" not in recorded_calls
     assert "gnome-terminal" in recorded_calls

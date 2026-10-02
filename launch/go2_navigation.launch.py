@@ -20,6 +20,10 @@ def deep_merge(destination, source):
 
 
 def configure_go2_navigation(context):
+    localization_mode = LaunchConfiguration("localization_mode").perform(context)
+    if localization_mode not in ("slam", "amcl"):
+        raise RuntimeError("localization_mode must be slam or amcl")
+    share = get_package_share_directory("vlm_nav")
     bringup = get_package_share_directory("nav2_bringup")
     default_params = os.path.join(bringup, "params", "nav2_params.yaml")
     overrides = LaunchConfiguration("overrides_file").perform(context)
@@ -27,6 +31,12 @@ def configure_go2_navigation(context):
         params = yaml.safe_load(stream)
     with open(overrides, encoding="utf-8") as stream:
         deep_merge(params, yaml.safe_load(stream))
+    if localization_mode == "amcl":
+        with open(
+            os.path.join(share, "config", "nav2_go2_static_map.yaml"),
+            encoding="utf-8",
+        ) as stream:
+            deep_merge(params, yaml.safe_load(stream))
     lifecycle_nodes = [
         "controller_server",
         "smoother_server",
@@ -128,6 +138,8 @@ def configure_go2_navigation(context):
             executable="go2_nav_supervisor",
             name="go2_nav_supervisor",
             output="screen",
+            parameters=[{"localization_mode": localization_mode,
+                         "amcl_scan_topic": LaunchConfiguration("amcl_scan_topic")}],
         ),
     ]
 
@@ -136,6 +148,8 @@ def generate_launch_description():
     share = get_package_share_directory("vlm_nav")
     return LaunchDescription(
         [
+            DeclareLaunchArgument("localization_mode", default_value="slam"),
+            DeclareLaunchArgument("amcl_scan_topic", default_value="/scan_amcl"),
             DeclareLaunchArgument(
                 "overrides_file",
                 default_value=os.path.join(share, "config", "nav2_go2.yaml"),
