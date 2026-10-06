@@ -6,7 +6,7 @@ amcl:
     odom_frame_id: odom
     base_frame_id: base_link
     scan_topic: /scan_amcl
-    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    robot_model_type: "nav2_amcl::OmniMotionModel"
     laser_model_type: likelihood_field_prob
     do_beamskip: false
     alpha1: 0.1

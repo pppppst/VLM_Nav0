@@ -1,0 +1,25 @@
+/map:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local
+/tf_static:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local
+/vlm_nav/markers:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local
+/vlm_nav/vlm_enabled:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local
+/vlm_nav/output_text:
+  history: keep_last
+  depth: 1
+  reliability: reliable
+  durability: transient_local

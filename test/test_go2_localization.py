@@ -212,7 +212,8 @@ def test_readiness_static_map_and_required_gates(ros, mode):
 
 def test_amcl_config_and_static_costmap_overlay():
     params = yaml.safe_load((ROOT / "config/go2_amcl.yaml").read_text())["amcl"]["ros__parameters"]
-    assert params["robot_model_type"] == "nav2_amcl::DifferentialMotionModel"
+    # Temporary field comparison: only the motion-model selection changes.
+    assert params["robot_model_type"] == "nav2_amcl::OmniMotionModel"
     assert params["laser_model_type"] == "likelihood_field_prob"
     assert params["scan_topic"] == "/scan_amcl"
     assert params["set_initial_pose"] is False

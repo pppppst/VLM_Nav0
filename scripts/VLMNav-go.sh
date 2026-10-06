@@ -96,5 +96,6 @@ gnome-terminal \
 unset ALL_PROXY all_proxy
 export VLM_NAV_MODE=true
 export VLM_TARGET_DESCRIPTION="${target_description}"
+export VLM_NAV_ENTRY="$(readlink -f "${BASH_SOURCE[0]}")"
 exec "${script_dir}/manualnav2.sh" \
   localization_mode:=amcl map:="${map_path}" amcl_scan_topic:=/scan
