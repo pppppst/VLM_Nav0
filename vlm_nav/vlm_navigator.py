@@ -107,8 +107,10 @@ def quaternion_yaw(quaternion):
 
 
 class VLMNavigator(Node):
-    def __init__(self):
-        super().__init__("vlm_nav")
+    def __init__(self, *, observation_only=False, parameter_overrides=None):
+        super().__init__("multi_agent_go2_rgbd" if observation_only else "vlm_nav",
+                         parameter_overrides=parameter_overrides)
+        self.observation_only = observation_only
         defaults = {
             "enabled": False,
             "target_description": "chair",
@@ -551,6 +553,10 @@ class VLMNavigator(Node):
         self.frontier_path_length = 0.0
         self.frontier_scene_rgb = None
 
+        if observation_only:
+            # Cooperative adapter reuses RGB-D/TF grounding, owns every motion goal.
+            self.create_timer(0.05, self.resolve_pending_rgbd)
+            return
         sample_period = 1.0 / max(0.1, float(self.p.vlm_sample_rate))
         self.sample_timer = self.create_timer(sample_period, self.sample_latest_frame)
         self.result_timer = self.create_timer(0.05, self.drain_worker_results)
@@ -796,6 +802,8 @@ class VLMNavigator(Node):
 
     def on_parameters_changed(self, parameters):
         values = {parameter.name: parameter.value for parameter in parameters}
+        if getattr(self, 'observation_only', False) and values.get('enabled', False):
+            return SetParametersResult(successful=False, reason='cooperative observer cannot enable autonomy')
         requested_enabled = bool(
             values.get("enabled", self.get_parameter("enabled").value)
         )

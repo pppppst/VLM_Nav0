@@ -14,3 +14,5 @@ Task 4: READY barrier, early C, original permit EXIT identity, order, old READY/
 Ruling: a twice-failed bound C approach pauses for a new task instead of silently selecting another basket. Keeps C identity stable; field operator may need to reposition before restarting.
 Task 5: FIFO/token/entry/exit/freeze and swept footprint/replan guard tests RED → GREEN; total 22 passed.
 Ruling: swept path uses conservative circumcircle envelope, with a ponytail comment; live stopping margin is mandatory and unset until measured. May restrict narrow clearances, never silently shrinks footprint.
+Task 6: Go2 adapter ABC parsing, invalid depth, timeout/cancel, pending action cancellation and passive observer tests passed (5). Actual motion and camera not executed.
+Ruling: add opt-in observation_only mode to VLMNavigator, reusing existing raw-depth synchronization/projection without its autonomy timers; existing default entry behavior unchanged.
