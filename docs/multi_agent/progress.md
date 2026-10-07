@@ -16,3 +16,7 @@ Task 5: FIFO/token/entry/exit/freeze and swept footprint/replan guard tests RED 
 Ruling: swept path uses conservative circumcircle envelope, with a ponytail comment; live stopping margin is mandatory and unset until measured. May restrict narrow clearances, never silently shrinks footprint.
 Task 6: Go2 adapter ABC parsing, invalid depth, timeout/cancel, pending action cancellation and passive observer tests passed (5). Actual motion and camera not executed.
 Ruling: add opt-in observation_only mode to VLMNavigator, reusing existing raw-depth synchronization/projection without its autonomy timers; existing default entry behavior unchanged.
+Task 7: installed interfaces/nodes, dual-fake ROS DONE, bridge parser and launch-description checks passed. 47 cooperative pytest cases; ament contains 47 pytest + 1 parser + 2 CTest wrapper entries (50 reported), no skip/error/failure. Installed executables use co-nav-real.
+Ruling: use system Python3.10 for ament/rosidl build and same-ABI co-nav-real only for entrypoints/tests — avoids setuptools/packaging conflict without upgrading either environment.
+Safety regressions: resource restart fencing, phase-before-deposit, door-before-basket, delayed odometry and missing footprint all reproduced before fixes and passed afterward.
+Task 8: baseline 273 Python cases passed again on work branch; evidence/docs/whole-branch review in progress.

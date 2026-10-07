@@ -82,7 +82,10 @@ def test_init_snapshots_relative_map_and_installed_configs(tmp_path):
         item["original"].endswith("nav2_bringup/params/nav2_params.yaml")
         for item in manifest["installed_configs"]
     )
-    assert manifest["source"]["branch"] == "VLM_nav_go"
+    assert manifest["source"]["branch"] == subprocess.run(
+        ["git", "branch", "--show-current"], cwd=ROOT, capture_output=True,
+        text=True, check=True,
+    ).stdout.strip()
     assert manifest["source"]["commit"]
     assert manifest["package_share"] == str(vlm_share.resolve())
 

@@ -137,6 +137,12 @@ class Go2Adapter:
 
     def on_odometry(self,message):
         now=time.monotonic()
+        stamp=message.header.stamp.sec+message.header.stamp.nanosec*1e-9
+        ros_now=self.node.get_clock().now().nanoseconds*1e-9
+        if abs(ros_now-stamp)>self.config['odom_max_age']:
+            self.stationary_since=None
+            self.odom_at=0.0
+            return
         if self.odom_at and now-self.odom_at>self.config['odom_max_age']:
             self.stationary_since=None
         self.odom_at=now
@@ -323,7 +329,11 @@ class Go2Adapter:
                 self.motion_fault=True  # keep handle occupied; no replacement movement
         scan=self.scan
         if not scan:return
+        if not self.get_health().nav_ready or not self.get_health().localization_valid:
+            self.stop_motion('scan health lost')
+            return
         if now>scan['deadline']:
+            scan['reply'].set_exception(TimeoutError('scan timeout'))
             self.stop_motion('scan timeout')
             return
         phase=scan['phase']

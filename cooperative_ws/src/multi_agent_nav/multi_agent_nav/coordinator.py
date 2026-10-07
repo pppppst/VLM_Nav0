@@ -59,7 +59,7 @@ class Coordinator:
         for robot in ROBOTS:
             state = self.states.get(robot)
             if not state or now-self.received_at[robot] > self.lost_timeout or not (
-                state.pose_valid and state.localization_valid and state.nav_ready and state.stopped):
+                state.pose_valid and state.localization_valid and state.nav_ready and state.stopped) or state.token:
                 return StartReply(False, reason=f'{robot}: fresh healthy stopped state required')
         self.task_id = uuid.uuid4().hex
         self.phase, self.started, self.reason = 'SEARCH_AB', now, ''
@@ -79,6 +79,7 @@ class Coordinator:
         if self.resources:
             for robot in ROBOTS:
                 self.resources.freeze(robot, reason)
+                if robot in self.commands:self.resources.cancel_queued(robot,self.commands[robot].command_id)
         return [self.control(r, 'PAUSE') for r in ROBOTS] if self.task_id else []
 
     def _complete_commands(self):
@@ -89,6 +90,7 @@ class Coordinator:
             if state.reply not in ('SUCCEEDED','FAILED','CANCELED') or not state.stopped:
                 continue
             self.acked[robot] = command.sequence
+            self.resources.cancel_queued(robot,command.command_id)
             if command.kind == 'SEARCH_VIEWPOINT':
                 self.planner.visited.add((robot, command.phase, command.viewpoint_id))
                 self.reservations.pop(command.viewpoint_id, None)
@@ -105,7 +107,7 @@ class Coordinator:
             for robot in ROBOTS:
                 state = self.states.get(robot)
                 if not state or now-self.received_at[robot] > self.lost_timeout or not (
-                    state.pose_valid and state.localization_valid and state.nav_ready):
+                    state.pose_valid and state.localization_valid and state.nav_ready) or state.run_state in ('STOPPING','PAUSED'):
                     self.pause(f'{robot}: health/heartbeat lost')
             if now-self.started > self.task_timeout:
                 self.pause('task timeout')

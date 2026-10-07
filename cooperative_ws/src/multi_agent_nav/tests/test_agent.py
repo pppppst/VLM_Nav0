@@ -72,3 +72,12 @@ def test_fake_has_no_ros_or_hardware_and_supports_cancel():
     fake.advance(1)
     assert fake.results.pop().status == 'CANCELED'
     assert fake.get_health().stopped
+
+def test_deposit_cannot_execute_before_ready_and_phase_sync():
+    agent=machine()
+    cmd=replace(command('APPROACH_DEPOSIT'),target_id='C',phase='DEPOSIT')
+    assert not agent.accept(cmd,0).accepted
+    agent._state.ready=True
+    assert not agent.accept(cmd,0).accepted
+    agent.accept(replace(cmd,action='SYNC'),0)
+    assert agent.accept(cmd,0).accepted

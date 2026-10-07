@@ -41,7 +41,7 @@ class FakeAdapter:
     def start_navigation(self, local_goal, task_id, command_id, goal_kind):
         goal_id = uuid.uuid4().hex
         self.active[goal_id] = [self.now+self.delay, local_goal,
-                               GoalResult(task_id, command_id, goal_id, goal_kind, 'SUCCEEDED')]
+                               GoalResult(task_id, command_id, goal_id, goal_kind, 'SUCCEEDED'),self.now,self.pose]
         self.path = [self.pose, local_goal]
         self.calls.append((goal_kind, local_goal, command_id))
         return goal_id
@@ -69,8 +69,11 @@ class FakeAdapter:
 
     def advance(self, now):
         self.now = now
-        for goal_id, (due, pose, result) in list(self.active.items()):
+        for goal_id, (due, pose, result,started,origin) in list(self.active.items()):
             if due > now:
+                t=max(0,min(1,(now-started)/(due-started)))
+                self.pose=Pose2D(origin.x+t*(pose.x-origin.x),origin.y+t*(pose.y-origin.y),
+                                 origin.yaw+t*(pose.yaw-origin.yaw))
                 continue
             if result.status == 'SUCCEEDED' and self.aborts:
                 result.status = 'ABORTED'

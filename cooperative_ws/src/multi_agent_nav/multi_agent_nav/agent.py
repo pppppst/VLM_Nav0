@@ -15,6 +15,7 @@ class AgentMachine:
         self.effects = []
         self.goal_kind = ''
         self.sync_received = None
+        self.phase = 'IDLE'
         self.peer_received = None
         self.last_sequence = 0
         self.paused = False
@@ -42,7 +43,7 @@ class AgentMachine:
     def accept(self, command, now):
         # SYNC alone establishes a task; EXECUTE can never silently replace it.
         if command.action == 'SYNC' and command.task_id != self.context.task_id:
-            if self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
+            if self._state.token or self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
                 return CommandReply(False, 'not stopped for new task')
             candidate = replace(self.context, task_id=command.task_id)
             reply = validate_command(command, candidate)
@@ -60,6 +61,7 @@ class AgentMachine:
             return reply
         if command.action == 'SYNC':
             self.sync_received = now
+            self.phase = command.phase
             return reply
         if command.action in ('PAUSE', 'CANCEL'):
             if command.action == 'CANCEL' and (not self.command or command.cancel_command_id != self.command.command_id):
@@ -83,6 +85,12 @@ class AgentMachine:
             return reply
         if command.sequence <= self.last_sequence:
             return CommandReply(command.command_id == self._state.command_id, 'duplicate/stale command')
+        if command.phase != self.phase:
+            return CommandReply(False, 'phase must be synchronized before execution')
+        if command.kind == 'APPROACH_PICKUP' and (self.phase != 'SEARCH_AB' or self._state.ready):
+            return CommandReply(False, 'pickup phase/READY mismatch')
+        if command.kind in ('APPROACH_DEPOSIT','EXIT') and (self.phase != 'DEPOSIT' or not self._state.ready):
+            return CommandReply(False, 'deposit requires READY and deposit phase')
         if self.paused or self._state.run_state == 'STOPPING':
             return CommandReply(False, 'paused: new task required')
         if self.command and self._state.reply not in ('SUCCEEDED', 'FAILED', 'CANCELED'):
@@ -137,7 +145,7 @@ class AgentMachine:
                 self._state.requested_command_id = self.command.command_id
                 self._state.run_state = 'WAITING_RESOURCE'
                 return
-        if self.command.kind == 'APPROACH_DEPOSIT' and self._state.resource_id != 'basket':
+        if self.command.kind == 'APPROACH_DEPOSIT' and not self.transit_goal and self._state.resource_id != 'basket':
             self._state.requested_resource = 'basket'
             self._state.requested_command_id = self.command.command_id
             self._state.run_state = 'WAITING_RESOURCE'
@@ -248,6 +256,10 @@ class AgentMachine:
 
     def _monitor_region(self, health):
         from .region_guard import footprint_intersects
+        import math
+        if len(health.footprint)<3 or not all(len(p)==2 and all(math.isfinite(v) for v in p) for p in health.footprint):
+            self.stop('invalid footprint monitor')
+            return
         if self._state.token and health.localization_valid:
             polygon=self.guard.regions[self._state.resource_id]['polygon']
             intersects=footprint_intersects(health.pose,health.footprint,polygon)

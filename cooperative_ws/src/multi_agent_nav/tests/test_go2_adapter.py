@@ -85,3 +85,13 @@ def test_observation_only_node_cannot_enable_old_autonomy(monkeypatch,tmp_path):
         assert not node.set_parameters([Parameter('enabled',value=True)])[0].successful
     finally:
         node.destroy_node();rclpy.shutdown()
+
+def test_delayed_odometry_cannot_confirm_physical_stop():
+    adapter=Go2Adapter.__new__(Go2Adapter)
+    adapter.config={'odom_max_age':.5,'stationary_speed':.02}
+    adapter.node=SimpleNamespace(get_clock=lambda:SimpleNamespace(now=lambda:SimpleNamespace(nanoseconds=10_000_000_000)))
+    adapter.stationary_since=1;adapter.odom_at=1
+    v=SimpleNamespace(linear=SimpleNamespace(x=0,y=0,z=0),angular=SimpleNamespace(z=0))
+    message=SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(sec=1,nanosec=0)),twist=SimpleNamespace(twist=v))
+    adapter.on_odometry(message)
+    assert adapter.stationary_since is None and adapter.odom_at==0
