@@ -8,3 +8,4 @@ Ruling: legacy install must precede go2_ws in test source order — stale legacy
 Baseline: 273 passed in 8.87s on original VLM_nav_go, isolated Domain31. Evidence /tmp/go2-coop/evidence/baseline-verified.log.
 Ruling: source deduplication did not reorder AMENT_PREFIX_PATH; explicitly prepend go2_ws/install/vlm_nav for baseline. Cooperative install will be prepended after build.
 Task 1: protocol/config tests RED (missing package) → GREEN 2 passed. Codec round-trip deferred until generated ROS interfaces are built in Task 7.
+Task 2: SE(2), held-out rigid fit, degeneracy/reflection tests RED (missing module) → GREEN; total 8 passed. No field transform generated.
