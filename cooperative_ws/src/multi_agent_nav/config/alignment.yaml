@@ -1,0 +1,17 @@
+common_frame_id: lab_ref
+alignment_id: ''
+validated: false
+simulation: false
+report: null
+robots:
+  go2:
+    local_map_id: ''
+    map_version: ''
+    transform:
+    - 0.0
+    - 0.0
+    - 0.0
+  ranger:
+    local_map_id: ''
+    map_version: ''
+    transform: null

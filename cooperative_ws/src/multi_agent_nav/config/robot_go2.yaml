@@ -1,0 +1,31 @@
+robot_id: go2
+map_path: null
+domain_id: 0
+footprint:
+- - 0.38
+  - 0.18
+- - 0.38
+  - -0.18
+- - -0.38
+  - -0.18
+- - -0.38
+  - 0.18
+path_topic: null
+path_source_verified: false
+stop_margin: null
+stationary_speed: 0.02
+stationary_duration: 0.5
+odom_max_age: 0.5
+scan_angles:
+- 0.0
+- 1.5707963267948966
+- 3.141592653589793
+- -1.5707963267948966
+standoff_distance: 0.9
+model: null
+endpoint: null
+api_key_env: DASHSCOPE_API_KEY
+api_timeout: 20.0
+vision_mode: abc
+camera_calibrated: false
+peer_obstacle_verified: false

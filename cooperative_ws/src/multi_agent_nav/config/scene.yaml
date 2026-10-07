@@ -1,0 +1,16 @@
+scenario_id: lab
+enabled: false
+simulation: false
+targets:
+  A: 现场填写A
+  B: 现场填写B
+  C: 现场填写共同篮子C
+viewpoints:
+  go2: []
+  ranger: []
+wait_points: {}
+exit_points: {}
+resources: {}
+heartbeat_hz: 2.0
+lost_timeout: 3.0
+task_timeout: 600.0
