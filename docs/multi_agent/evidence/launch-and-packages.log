@@ -1,0 +1,11 @@
+Arguments (pass arguments as '<name>:=<value>'):
+
+  No arguments.
+Arguments (pass arguments as '<name>:=<value>'):
+
+    'config_dir':
+        no description given
+        (default: '/tmp/go2-coop/install/multi_agent_nav/share/multi_agent_nav/config')
+multi_agent_nav	/home/isee-pst/unitree_ros2/VLM_Nav/cooperative_ws/src/multi_agent_nav	(ros.ament_cmake)
+multi_agent_task_msgs	/home/isee-pst/unitree_ros2/VLM_Nav/cooperative_ws/src/multi_agent_task_msgs	(ros.ament_cmake)
+vlm_nav	/home/isee-pst/unitree_ros2/VLM_Nav	(ros.ament_cmake)

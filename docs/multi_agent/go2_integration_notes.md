@@ -22,11 +22,16 @@ No applicable AGENTS.md found. Input plans were the only untracked files.
 | config/cyclonedds_go2_multi_agent_bridge.xml | Reuse domain-specific NIC restriction | Domain0=enp4s0, Domain40=wlo1; discovery isolation remains field acceptance |
 
 Python: /home/isee-pst/venv/co-nav-real/bin/python, Python 3.10.12, system-site-packages.
-Source Humble, then legacy workspace, then **go2_ws last**, then cooperative install.
-The legacy workspace shadows the newer Go2 Sport binary if sourced last: its binary
-lacks sport_response_topic, causing baseline runtime test failure. Keep ROS PYTHONPATH
+Source Humble, go2_ws dependencies, then cooperative install. Do not add the legacy
+workspace last. Source deduplication did not reliably reorder preexisting prefixes;
+the test script explicitly prepends `/tmp/go2-coop/install/vlm_nav` to AMENT_PREFIX_PATH.
+The legacy workspace's Sport binary lacks sport_response_topic, causing baseline
+runtime test failure when selected. Keep ROS PYTHONPATH
 when prepending the repository. No system packages or existing overlays were modified.
 
 New package base paths must both be passed to colcon because the root is itself a ROS package.
 Baseline uses Domain31 + ROS_LOCALHOST_ONLY=1; runtime Sport test is dry_run and remapped.
 Production deployment remains Domain0, no 0↔31 bridge.
+
+Final local evidence: [test_results.md](test_results.md); operation commands:
+[go2_runbook.md](go2_runbook.md); remote follow-up: [ranger_handoff.md](ranger_handoff.md).

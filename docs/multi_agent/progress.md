@@ -19,4 +19,16 @@ Ruling: add opt-in observation_only mode to VLMNavigator, reusing existing raw-d
 Task 7: installed interfaces/nodes, dual-fake ROS DONE, bridge parser and launch-description checks passed. 47 cooperative pytest cases; ament contains 47 pytest + 1 parser + 2 CTest wrapper entries (50 reported), no skip/error/failure. Installed executables use co-nav-real.
 Ruling: use system Python3.10 for ament/rosidl build and same-ABI co-nav-real only for entrypoints/tests — avoids setuptools/packaging conflict without upgrading either environment.
 Safety regressions: resource restart fencing, phase-before-deposit, door-before-basket, delayed odometry and missing footprint all reproduced before fixes and passed afterward.
-Task 8: baseline 273 Python cases passed again on work branch; evidence/docs/whole-branch review in progress.
+Task 8: completed within the authorized local scope. Final baseline 273 Python cases
+and 21 gtest cases (3 CTest executables) passed. New cooperative pytest 49 cases,
+including a three-process isolated ROS mission, and native parser-only route check passed.
+colcon test-result reports 73 entries: 49 pytest + 1 parser + 2 wrapper + 21 baseline gtest;
+it excludes the separately recorded 273 baseline Python cases and is not 73 distinct new cases.
+Independent whole-branch review found two Important defects; both were reproduced RED
+and fixed GREEN: retired-task SYNC revival and executing-path startup latency.
+Ruling: first-path waiting is bounded by robot path_start_timeout, only while physically
+stopped with a permitted stationary stopping envelope; movement or later path loss pauses.
+Code fix commit d5c9680; final evidence, commands and unexecuted field acceptance
+are in test_results.md, go2_runbook.md and ranger_handoff.md.
+Original user input files, old scripts, legacy messages/routes and existing overlays remain preserved.
+No Ranger access, bridge activation, live task launch or real motion was performed.
