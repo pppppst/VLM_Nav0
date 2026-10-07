@@ -1,0 +1,20 @@
+{
+  "yaml_path": "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml",
+  "image_path": "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.pgm",
+  "yaml_sha256": "b928cdb28dab483674c49ab269ee9818cf8cf5d4fd147f2314d193e93877532f",
+  "image_sha256": "90ab030608cba960b42922507a851760a7de2405b27665a65781c40e99eabe36",
+  "map_digest": "c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02",
+  "classification": "user_designated_map_files_verified",
+  "runtime_active_map_verified": false,
+  "source": "user supplied active map; on-disk YAML/image checked; Domain0 query blocked by NIC preflight",
+  "local_map_id": "lab_rear120_20261001_IwQjMX",
+  "map_version": "sha256:c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02",
+  "image_width": 222,
+  "image_height": 312,
+  "resolution": 0.05,
+  "origin": [
+    -6.52,
+    -5.34,
+    0.0
+  ]
+}

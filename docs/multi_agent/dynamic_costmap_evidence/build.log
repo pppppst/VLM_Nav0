@@ -1,0 +1,8 @@
+Starting >>> multi_agent_task_msgs
+Starting >>> vlm_nav
+Finished <<< multi_agent_task_msgs [0.26s]
+Finished <<< vlm_nav [0.27s]
+Starting >>> multi_agent_nav
+Finished <<< multi_agent_nav [0.24s]
+
+Summary: 3 packages finished [0.66s]

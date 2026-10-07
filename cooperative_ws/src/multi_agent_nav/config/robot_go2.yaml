@@ -1,6 +1,6 @@
 robot_id: go2
-map_path: null
-map_digest: null
+map_path: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml
+map_digest: c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02
 domain_id: 0
 footprint:
 - - 0.38

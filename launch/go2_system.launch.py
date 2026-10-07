@@ -295,6 +295,7 @@ def _build(context):
             "overrides_file": os.path.join(share, "config", "nav2_go2.yaml"),
             "localization_mode": localization_mode,
             "amcl_scan_topic": amcl_scan_topic,
+            "costmap_overrides_file": LaunchConfiguration("costmap_overrides_file"),
         }.items(),
     )
 
@@ -356,6 +357,7 @@ def generate_launch_description():
             DeclareLaunchArgument("localization_mode", default_value="slam"),
             DeclareLaunchArgument("map", default_value=""),
             DeclareLaunchArgument("amcl_scan_topic", default_value="/scan_amcl"),
+            DeclareLaunchArgument("costmap_overrides_file", default_value=""),
             DeclareLaunchArgument("bridge_dry_run", default_value="true"),
             DeclareLaunchArgument("start_bridge", default_value="true"),
             OpaqueFunction(function=_build),

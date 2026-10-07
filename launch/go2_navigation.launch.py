@@ -9,14 +9,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
-
-def deep_merge(destination, source):
-    for key, value in source.items():
-        if isinstance(value, dict) and isinstance(destination.get(key), dict):
-            deep_merge(destination[key], value)
-        else:
-            destination[key] = value
+from vlm_nav.go2_nav2_config import load_nav2_parameters
 
 
 def configure_go2_navigation(context):
@@ -27,16 +20,11 @@ def configure_go2_navigation(context):
     bringup = get_package_share_directory("nav2_bringup")
     default_params = os.path.join(bringup, "params", "nav2_params.yaml")
     overrides = LaunchConfiguration("overrides_file").perform(context)
-    with open(default_params, encoding="utf-8") as stream:
-        params = yaml.safe_load(stream)
-    with open(overrides, encoding="utf-8") as stream:
-        deep_merge(params, yaml.safe_load(stream))
+    static_map = None
     if localization_mode == "amcl":
-        with open(
-            os.path.join(share, "config", "nav2_go2_static_map.yaml"),
-            encoding="utf-8",
-        ) as stream:
-            deep_merge(params, yaml.safe_load(stream))
+        static_map = os.path.join(share, "config", "nav2_go2_static_map.yaml")
+    params = load_nav2_parameters(default_params, overrides, static_map,
+        LaunchConfiguration("costmap_overrides_file", default="").perform(context))
     lifecycle_nodes = [
         "controller_server",
         "smoother_server",
@@ -154,6 +142,7 @@ def generate_launch_description():
                 "overrides_file",
                 default_value=os.path.join(share, "config", "nav2_go2.yaml"),
             ),
+            DeclareLaunchArgument("costmap_overrides_file", default_value=""),
             OpaqueFunction(function=configure_go2_navigation),
         ]
     )

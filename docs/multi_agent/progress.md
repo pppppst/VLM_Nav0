@@ -46,3 +46,18 @@ pytest (49 existing + 29 field preparation); parser-only 1; colcon 102 entries,
 zero errors/failures/skips. Separate new evidence and unexecuted field checklist:
 field_preparation_results.md and go2_field_checklist.md. No Ranger, bridge,
 live Domain0 participant or hardware motion was used.
+
+Dynamic costmap stage (2026-10-07), base 2575a54: traced defaults→Go2→AMCL static
+overlay and added explicit final cooperative costmap overlay. Legacy defaults,
+AMCL input/model/parameters and original scripts/configs remain unchanged. Shared
+merge helper feeds normal Nav2 and an isolated costmap-only acceptance host; no
+motion servers/publishers or bridge. Native Humble costmap synthetic marking and
+clearing passed in localhost Domain31; never used as field verification.
+User designated lab_rear120_20261001_IwQjMX/lab.yaml; YAML and 222×312 PGM checked,
+Go2 identity/path/version/digest filled. Ranger transform/report and all semantic
+scene points remain unset. New read-only collector stopped at enp4s0 NO-CARRIER/
+no 192.168.123.x address, before any Domain0 ROS initialization. On-hardware
+marking/clearing, active-map RPC confirmation and scene collection remain pending.
+Rebuilt final checks: 273 Python + 21 gtest baseline; 84 cooperative cases
+(previous78 +6 this stage); parser1; colcon108 entries, zero failures/skips/errors.
+Full live retains20 configuration gaps. Commands/evidence in dynamic_costmap_stage.md.

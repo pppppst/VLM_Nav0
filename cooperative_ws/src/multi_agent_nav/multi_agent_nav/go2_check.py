@@ -51,7 +51,7 @@ def parser():
     p.add_argument('--map-yaml',help='print file digests for a candidate map; does not write configuration')
     p.add_argument('--require-ready',action='store_true',help='exit 1 if reported prerequisites are incomplete')
     p.add_argument('--allow-motion',action='store_true',help='required in addition to an explicit motion action')
-    p.add_argument('--goal',nargs=3,type=float,metavar=('X','Y','YAW'),help='measured local Go2 map pose; approach treats X/Y as object position')
+    p.add_argument('--goal',nargs=3,type=float,metavar=('X','Y','YAW'),help='measured local Go2 map pose; inspect only probes costmap footprint; approach treats X/Y as object position')
     p.add_argument('--timeout',type=float,default=15.,help='inspection/action deadline in seconds')
     p.add_argument('--cancel-after',type=float,help='explicit cancellation acceptance during navigate/scan')
     return p
@@ -134,6 +134,11 @@ def run_ros(config,args):
         readonly_ready=not report['go2_local_gates'] and map_matches and health.localization_valid and health.stopped and report['costmap_valid']
         if args.action=='inspect':
             report['local_observation_ready']=readonly_ready
+            if args.goal:
+                probe=Pose2D(*args.goal)
+                report['costmap_probe']={'local_map_pose':asdict(probe),
+                    'footprint_free':adapter.costmap_candidate_free(probe,health.footprint)
+                    if report['costmap_valid'] and health.footprint else None}
             return 0 if readonly_ready or not args.require_ready else 1
         gates=go2_local_gates(config,motion=motion)
         if not map_matches:gates.append('active map_server YAML does not match configured map_path')
@@ -219,7 +224,7 @@ def main(argv=None):
     if not math.isfinite(args.timeout) or args.timeout<=0:p.error('positive finite timeout required')
     if args.action in MOTION and not args.allow_motion:p.error('motion requires --allow-motion and an explicit action')
     if args.offline and args.action!='inspect':p.error('--offline supports inspection only')
-    if args.action in ('plan','approach','navigate') and (not args.goal or not all(math.isfinite(v) for v in args.goal)):
+    if (args.goal and not all(math.isfinite(v) for v in args.goal)) or (args.action in ('plan','approach','navigate') and not args.goal):
         p.error('finite measured --goal X Y YAW required')
     if args.cancel_after is not None and (args.action not in MOTION or not math.isfinite(args.cancel_after) or not 0<args.cancel_after<args.timeout):
         p.error('--cancel-after requires motion and 0 < seconds < timeout')

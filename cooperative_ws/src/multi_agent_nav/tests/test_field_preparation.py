@@ -221,6 +221,7 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         def __init__(self,*args,**kwargs):
             super().__init__('go2',delay=.5);self.costmap=None;self.planned=False
         def costmap_transform(self):return None if self.planned and change=='costmap' else Pose2D()
+        def costmap_candidate_free(self,*args):return True
         def tick(self):self.advance(now[0])
         def get_health(self):
             h=replace(super().get_health(),motion_terminal=terminal)
@@ -249,6 +250,7 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         with pytest.raises(check.StopUnconfirmed):check.run_ros(c,args)
     else:assert check.run_ros(c,args)==expected
     report=json.loads(capsys.readouterr().out)
+    if action=='inspect':assert report['costmap_probe']['footprint_free'] is True
     assert report['live_gates']  # Ranger/alignment remain incomplete, even for a local unit goal.
     if action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error'):
         assert 'navigate' not in calls and 'stop' not in calls and not report['motion_sent']

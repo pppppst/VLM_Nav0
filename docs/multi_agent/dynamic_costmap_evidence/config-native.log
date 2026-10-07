@@ -1,0 +1,34 @@
+....Domain31 synthetic native costmaps: plugins/full payload/marking/clearing/no-motion publishers PASS
+native_1.log: [INFO] [1791358760.766868558] [go2_costmap_acceptance.lifecycle_manager_costmaps]: Creating
+[INFO] [1791358760.767928829] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[INFO] [1791358760.772567662] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mStarting managed nodes bringup...[0m[0m
+[INFO] [1791358760.772602094] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mConfiguring /go2_costmap_acceptance/local_costmap/local_costmap[0m[0m
+[INFO] [1791358760.782943591] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mConfiguring /go2_costmap_acceptance/global_costmap/global_costmap[0m[0m
+[INFO] [1791358760.787254725] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mActivating /go2_costmap_acceptance/local_costmap/local_costmap[0m[0m
+[INFO] [1791358761.038209984] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mActivating /go2_costmap_acceptance/global_costmap/global_costmap[0m[0m
+[INFO] [1791358762.039122102] [go2_costmap_acceptance.lifecycle_manager_costmaps]: [34m[1mManaged nodes are active[0m[0m
+[INFO] [1791358763.039275526] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [1791358763.039380010] [go2_costmap_acceptance.lifecycle_manager_costmaps]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_costmaps)
+[INFO] [1791358763.040677743] [go2_costmap_acceptance.lifecycle_manager_costmaps]: Destroying lifecycle_manager_costmaps
+
+native_0.log: FO] [1791358760.787325964] [go2_costmap_acceptance.local_costmap.local_costmap]: Activating
+[INFO] [1791358760.787343774] [go2_costmap_acceptance.local_costmap.local_costmap]: Checking transform
+[INFO] [1791358760.787394828] [go2_costmap_acceptance.local_costmap.local_costmap]: start
+[INFO] [1791358761.037852603] [go2_costmap_acceptance.local_costmap.local_costmap]: StaticLayer: Resizing static layer to 120 X 120 at 0.050000 m/pix
+[INFO] [1791358761.037972521] [go2_costmap_acceptance.global_costmap.global_costmap]: StaticLayer: Resizing costmap to 120 X 120 at 0.050000 m/pix
+[INFO] [1791358761.038342963] [go2_costmap_acceptance.global_costmap.global_costmap]: Activating
+[INFO] [1791358761.038357211] [go2_costmap_acceptance.global_costmap.global_costmap]: Checking transform
+[INFO] [1791358761.038427262] [go2_costmap_acceptance.global_costmap.global_costmap]: start
+[INFO] [1791358763.039261278] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [1791358763.039353889] [go2_costmap_acceptance.global_costmap.global_costmap]: Running Nav2 LifecycleNode rcl preshutdown (global_costmap)
+[INFO] [1791358763.039397819] [go2_costmap_acceptance.global_costmap.global_costmap]: Deactivating
+[INFO] [1791358764.038601393] [go2_costmap_acceptance.global_costmap.global_costmap]: Cleaning up
+[INFO] [1791358764.040123529] [go2_costmap_acceptance.global_costmap.global_costmap]: Destroying bond (global_costmap) to lifecycle manager.
+[INFO] [1791358764.040165085] [go2_costmap_acceptance.local_costmap.local_costmap]: Running Nav2 LifecycleNode rcl preshutdown (local_costmap)
+[INFO] [1791358764.040185269] [go2_costmap_acceptance.local_costmap.local_costmap]: Deactivating
+[INFO] [1791358764.187555766] [go2_costmap_acceptance.local_costmap.local_costmap]: Cleaning up
+[INFO] [1791358764.188839251] [go2_costmap_acceptance.local_costmap.local_costmap]: Destroying bond (local_costmap) to lifecycle manager.
+[INFO] [1791358764.191860963] [go2_costmap_acceptance.local_costmap.local_costmap]: Destroying
+
+.
+5 passed in 3.91s

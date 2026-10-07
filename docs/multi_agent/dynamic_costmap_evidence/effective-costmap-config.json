@@ -1,0 +1,110 @@
+{
+  "classification": "static_effective_config_only",
+  "field_runtime_verified": false,
+  "load_order": [
+    {
+      "path": "/opt/ros/humble/share/nav2_bringup/params/nav2_params.yaml",
+      "sha256": "21f6a890657da341a854efce403c895304a3ebc1a8f91f466348e720f2641380"
+    },
+    {
+      "path": "/tmp/go2-coop/install/vlm_nav/share/vlm_nav/config/nav2_go2.yaml",
+      "sha256": "ceb0bbf5d439b298b0c4e9da56f89df30db80bb1f6e0267d61e4d76160ddcf3e"
+    },
+    {
+      "path": "/tmp/go2-coop/install/vlm_nav/share/vlm_nav/config/nav2_go2_static_map.yaml",
+      "sha256": "3f02adf875320afc7868bce2c5d0e4bdd063570caf054d60ccead879156cadf0"
+    },
+    {
+      "path": "/tmp/go2-coop/install/multi_agent_nav/share/multi_agent_nav/config/nav2_go2_cooperative_costmap.yaml",
+      "sha256": "2ba27ca7e2eb83324f0ab6486c6ce75e5a603201d151a8d31684bd8deb069c84"
+    }
+  ],
+  "global_costmap": {
+    "plugins": [
+      "static_layer",
+      "obstacle_layer",
+      "inflation_layer"
+    ],
+    "footprint": "[[0.38, 0.18], [0.38, -0.18], [-0.38, -0.18], [-0.38, 0.18]]",
+    "footprint_padding": 0.0,
+    "global_frame": "map",
+    "robot_base_frame": "base_link",
+    "always_send_full_costmap": true,
+    "obstacle_layer": {
+      "plugin": "nav2_costmap_2d::ObstacleLayer",
+      "enabled": true,
+      "observation_sources": "go2_cloud",
+      "scan": {
+        "topic": "/scan",
+        "max_obstacle_height": 2.0,
+        "clearing": true,
+        "marking": true,
+        "data_type": "LaserScan",
+        "raytrace_max_range": 3.0,
+        "raytrace_min_range": 0.0,
+        "obstacle_max_range": 2.5,
+        "obstacle_min_range": 0.0
+      },
+      "go2_cloud": {
+        "topic": "/vlm_nav/obstacle_cloud",
+        "sensor_frame": "base_link",
+        "data_type": "PointCloud2",
+        "marking": true,
+        "clearing": true,
+        "raytrace_min_range": 0.1,
+        "raytrace_max_range": 8.0,
+        "obstacle_min_range": 0.1,
+        "obstacle_max_range": 8.0,
+        "min_obstacle_height": -0.15,
+        "max_obstacle_height": 0.75
+      }
+    }
+  },
+  "local_costmap": {
+    "plugins": [
+      "static_layer",
+      "voxel_layer",
+      "inflation_layer"
+    ],
+    "footprint": "[[0.38, 0.18], [0.38, -0.18], [-0.38, -0.18], [-0.38, 0.18]]",
+    "footprint_padding": 0.0,
+    "global_frame": "odom",
+    "robot_base_frame": "base_link",
+    "always_send_full_costmap": true,
+    "voxel_layer": {
+      "plugin": "nav2_costmap_2d::VoxelLayer",
+      "enabled": true,
+      "publish_voxel_map": true,
+      "origin_z": -0.2,
+      "z_resolution": 0.0625,
+      "z_voxels": 16,
+      "max_obstacle_height": 2.0,
+      "mark_threshold": 0,
+      "observation_sources": "go2_cloud",
+      "scan": {
+        "topic": "/scan",
+        "max_obstacle_height": 2.0,
+        "clearing": true,
+        "marking": true,
+        "data_type": "LaserScan",
+        "raytrace_max_range": 3.0,
+        "raytrace_min_range": 0.0,
+        "obstacle_max_range": 2.5,
+        "obstacle_min_range": 0.0
+      },
+      "go2_cloud": {
+        "topic": "/vlm_nav/obstacle_cloud",
+        "sensor_frame": "base_link",
+        "data_type": "PointCloud2",
+        "marking": true,
+        "clearing": true,
+        "raytrace_min_range": 0.1,
+        "raytrace_max_range": 8.0,
+        "obstacle_min_range": 0.1,
+        "obstacle_max_range": 8.0,
+        "min_obstacle_height": -0.15,
+        "max_obstacle_height": 0.75
+      }
+    }
+  }
+}

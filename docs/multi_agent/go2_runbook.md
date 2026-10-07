@@ -7,6 +7,9 @@ Go2 deposit **and whole-body exit** before Ranger. No physical arm.
 
 Field preparation and independent Go2 checks: [go2_field_checklist.md](go2_field_checklist.md).
 The independent entry defaults to read-only and does not unlock cooperative tasks.
+Dynamic costmap final overlay, isolated stationary acceptance and Go2 map/scene
+collection: [dynamic_costmap_stage.md](dynamic_costmap_stage.md). The default AMCL
+profile remains unchanged; select the cooperative override explicitly.
 
 ## Build and offline validation
 

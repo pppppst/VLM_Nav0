@@ -1,5 +1,9 @@
 # Go2 现场接入准备与单机 adapter 验收
 
+后续基于2575a54的动态覆盖修复、用户指定Go2地图身份和RViz采点方法见
+[dynamic_costmap_stage.md](dynamic_costmap_stage.md)。本页保留上一阶段记录；新的
+独立配置已修复动态层覆盖，旧默认AMCL配置仍保持原样，真机动态层尚未验收。
+
 基准：`go2-cooperative-task-layer` / `1ba2589`。本轮读取代码、修正接口并做
 无硬件测试；下面的 Domain0 命令交给现场执行，本轮没有连接真实 ROS 图、
 Ranger、bridge，也没有发送真机目标。完整协同仍需两台真实 agent、标定和场景。

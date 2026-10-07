@@ -1,0 +1,13 @@
+READ-ONLY nodes: ros2 node list --no-daemon
+READ-ONLY map_server: ros2 param dump /map_server
+READ-ONLY amcl: ros2 param dump /amcl
+READ-ONLY local_costmap_local_costmap: ros2 param dump /local_costmap/local_costmap
+READ-ONLY global_costmap_global_costmap: ros2 param dump /global_costmap/global_costmap
+READ-ONLY go2_costmap_acceptance_local_costmap_local_costmap: ros2 param dump /go2_costmap_acceptance/local_costmap/local_costmap
+READ-ONLY go2_costmap_acceptance_global_costmap_global_costmap: ros2 param dump /go2_costmap_acceptance/global_costmap/global_costmap
+READ-ONLY map: ros2 param get /map_server yaml_filename
+READ-ONLY topics: ros2 topic list -t --no-daemon
+READ-ONLY cloud_qos: ros2 topic info /vlm_nav/obstacle_cloud -v --no-daemon
+READ-ONLY adapter: ros2 run multi_agent_nav multi_agent_go2_check --config-dir /tmp/go2-field/config --timeout 15
+READ-ONLY bag: timeout --signal=INT --kill-after=5 15 ros2 bag record --output /tmp/go2-field/evidence/readonly-20261007_155758/mark /tf /tf_static /map /odometry /clicked_point /vlm_nav/obstacle_cloud /go2_costmap_acceptance/local_costmap/costmap_raw /go2_costmap_acceptance/global_costmap/costmap_raw /local_costmap/costmap_raw /global_costmap/costmap_raw
+COLLECTION_ONLY: evaluate evidence before any verified flag; keep Go2 stationary.

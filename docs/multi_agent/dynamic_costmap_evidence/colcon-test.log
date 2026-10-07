@@ -1,0 +1,6 @@
+Starting >>> multi_agent_task_msgs
+Finished <<< multi_agent_task_msgs [0.02s]
+Starting >>> multi_agent_nav
+Finished <<< multi_agent_nav [15.4s]
+
+Summary: 2 packages finished [15.6s]

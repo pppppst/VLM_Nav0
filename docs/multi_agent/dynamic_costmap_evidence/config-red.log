@@ -1,0 +1,33 @@
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_effective_cooperative_costmaps_keep_dynamic_layers_and_other_parameters _
+cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py:17: in test_effective_cooperative_costmaps_keep_dynamic_layers_and_other_parameters
+    from vlm_nav.go2_nav2_config import load_nav2_parameters
+E   ModuleNotFoundError: No module named 'vlm_nav.go2_nav2_config'
+_________ test_actual_navigation_launch_applies_optional_overlay_last __________
+cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py:46: in test_actual_navigation_launch_applies_optional_overlay_last
+    assert params['local_costmap']['local_costmap']['ros__parameters']['plugins']==['static_layer','voxel_layer','inflation_layer']
+E   AssertionError: assert ['static_laye...lation_layer'] == ['static_laye...lation_layer']
+E     At index 1 diff: 'inflation_layer' != 'voxel_layer'
+E     Right contains one more item: 'inflation_layer'
+E     Full diff:
+E     - ['static_layer', 'voxel_layer', 'inflation_layer']
+E     ?                 ---------------
+E     + ['static_layer', 'inflation_layer']
+___ test_isolated_acceptance_launch_has_only_costmaps_and_lifecycle_manager ____
+cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py:50: in test_isolated_acceptance_launch_has_only_costmaps_and_lifecycle_manager
+    module=load_launch(COOP/'launch/go2_costmap_acceptance.launch.py')
+cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py:13: in load_launch
+    module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+<frozen importlib._bootstrap_external>:879: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1016: in get_code
+    ???
+<frozen importlib._bootstrap_external>:1073: in get_data
+    ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/isee-pst/unitree_ros2/VLM_Nav/cooperative_ws/src/multi_agent_nav/launch/go2_costmap_acceptance.launch.py'
+=========================== short test summary info ============================
+FAILED cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py::test_effective_cooperative_costmaps_keep_dynamic_layers_and_other_parameters
+FAILED cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py::test_actual_navigation_launch_applies_optional_overlay_last
+FAILED cooperative_ws/src/multi_agent_nav/tests/test_dynamic_costmap_config.py::test_isolated_acceptance_launch_has_only_costmaps_and_lifecycle_manager
+3 failed, 1 passed in 0.17s

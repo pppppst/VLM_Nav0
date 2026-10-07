@@ -1,0 +1,4 @@
+--show-args acceptance/system: exit 0; no launched nodes
+--help/--offline: exit 0
+--offline --config-dir /tmp/go2-field/config --require-ready: exit 1 (expected)
+Go2 map file gates pass; complete cooperative gates remain closed.

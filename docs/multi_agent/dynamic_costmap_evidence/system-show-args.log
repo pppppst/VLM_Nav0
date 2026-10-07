@@ -1,0 +1,53 @@
+Arguments (pass arguments as '<name>:=<value>'):
+
+    'calibration_file':
+        no description given
+        (default: '/tmp/go2-coop/install/vlm_nav/share/vlm_nav/config/go2_calibration_xt16.yaml')
+
+    'spark_config_file':
+        no description given
+        (default: '/tmp/go2-coop/install/vlm_nav/share/vlm_nav/config/spark_fast_lio_go2_xt16.yaml')
+
+    'sensor_preflight_report':
+        no description given
+        (default: '')
+
+    'sensor_preflight_config':
+        no description given
+        (default: '/tmp/go2-coop/install/vlm_nav/share/vlm_nav/config/go2_preflight_xt16.yaml')
+
+    'hesai_config_file':
+        no description given
+        (default: '/home/isee-pst/Documents/liang/hesai_xt16_ws/src/HesaiLidar_ROS_2.0/config/config.yaml')
+
+    'sensor_preflight_max_age_s':
+        no description given
+        (default: '600.0')
+
+    'target_stage':
+        no description given
+        (default: 'fastlio')
+
+    'localization_mode':
+        no description given
+        (default: 'slam')
+
+    'map':
+        no description given
+        (default: '')
+
+    'amcl_scan_topic':
+        no description given
+        (default: '/scan_amcl')
+
+    'costmap_overrides_file':
+        no description given
+        (default: '')
+
+    'bridge_dry_run':
+        no description given
+        (default: 'true')
+
+    'start_bridge':
+        no description given
+        (default: 'true')

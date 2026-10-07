@@ -39,3 +39,8 @@ Final local evidence: [test_results.md](test_results.md); operation commands:
 Field preparation from `1ba2589`: [go2_field_checklist.md](go2_field_checklist.md)
 lists actual fields, unresolved live gates and independent read-only adapter commands.
 This entry never supplies a fake Ranger, task READY or protected-resource permit.
+The next stage supplies an explicit final cooperative costmap overlay and native
+costmap-only stationary acceptance host, with legacy AMCL defaults unchanged:
+[dynamic_costmap_stage.md](dynamic_costmap_stage.md). Go2's user-designated map
+files now have identity/version/digest; runtime map and dynamic effects remain
+pending because enp4s0 field discovery preflight failed.
