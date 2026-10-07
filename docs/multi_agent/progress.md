@@ -12,3 +12,5 @@ Task 2: SE(2), held-out rigid fit, degeneracy/reflection tests RED (missing modu
 Task 3: agent/fake tests RED → GREEN; current goal identity, duplicates, internal goals, pause/stationary confirmation and fake cancel covered. Region integration follows Task 5.
 Task 4: READY barrier, early C, original permit EXIT identity, order, old READY/mixed mode/clock and restart tests RED → GREEN; 18 passed total.
 Ruling: a twice-failed bound C approach pauses for a new task instead of silently selecting another basket. Keeps C identity stable; field operator may need to reposition before restarting.
+Task 5: FIFO/token/entry/exit/freeze and swept footprint/replan guard tests RED → GREEN; total 22 passed.
+Ruling: swept path uses conservative circumcircle envelope, with a ponytail comment; live stopping margin is mandatory and unset until measured. May restrict narrow clearances, never silently shrinks footprint.

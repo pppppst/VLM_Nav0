@@ -1,6 +1,7 @@
 import uuid
 from .models import *
 from .planner import RulePlanner
+from .resource_manager import ResourceManager
 
 class Coordinator:
     def __init__(self, scene, alignment_id, map_ids, simulation, gates=None):
@@ -12,7 +13,8 @@ class Coordinator:
         self.sequence = {r:0 for r in ROBOTS}
         self.acked = {r:0 for r in ROBOTS}
         self.planner = RulePlanner()
-        self.resources = None  # attached in Task 5; never expire held permits
+        self.resources = ResourceManager()
+        self.releases = {}
         self.started = 0.0
         self.c_observation = ''
         self.lost_timeout = scene.get('lost_timeout', 3.0)
@@ -158,7 +160,31 @@ class Coordinator:
         return output
 
     def _resource_feedback(self, state, now):
-        pass
+        if not state.token or state.task_id!=self.task_id:
+            return
+        feedback=ResourceFeedback(state.task_id,state.robot_id,state.permit_command_id,
+            state.resource_id,state.token,state.resource_status,state.localization_valid,
+            state.resource_status in ('EXIT_CONFIRMED','CANCEL_OUTSIDE'),state.stopped)
+        if self.resources.update(feedback,now) and feedback.status in ('EXIT_CONFIRMED','CANCEL_OUTSIDE'):
+            self.releases[state.robot_id]=feedback
 
     def _resource_commands(self, now):
-        return []
+        output=[]
+        for robot,state in self.states.items():
+            release=self.releases.get(robot)
+            if release:
+                if state.token==release.token:
+                    output.append(self.control(robot,'GRANT_RESOURCE',kind='RELEASE',
+                        resource_id=release.resource_id,token=release.token,parent_command_id=release.parent_command_id))
+                else:
+                    del self.releases[robot]
+            if not state.requested_resource or robot not in self.commands:
+                continue
+            cmd=self.commands[robot]
+            if state.requested_command_id!=cmd.command_id or state.requested_resource not in self.scene['resources']:
+                continue
+            permit=self.resources.request(ResourceRequest(self.task_id,robot,cmd.command_id,state.requested_resource),now)
+            if permit.granted:
+                output.append(self.control(robot,'GRANT_RESOURCE',resource_id=permit.request.resource_id,
+                    token=permit.token,parent_command_id=permit.request.parent_command_id))
+        return output

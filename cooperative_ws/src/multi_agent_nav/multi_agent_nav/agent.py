@@ -67,6 +67,9 @@ class AgentMachine:
             self.stop('coordinator pause/cancel')
             return reply
         if command.action == 'GRANT_RESOURCE':
+            if command.kind == 'RELEASE' and command.token == self._state.token and command.parent_command_id == self._state.permit_command_id:
+                self._state.token = self._state.resource_id = self._state.permit_command_id = self._state.resource_status = ''
+                return reply
             owner = self.command.parent_command_id if self.command and self.command.kind == 'EXIT' else (self.command.command_id if self.command else '')
             if not command.token or command.parent_command_id != owner or command.resource_id != self._state.requested_resource:
                 # Repeated grants for an already-held token are harmless.
@@ -76,7 +79,7 @@ class AgentMachine:
             self._state.resource_status = 'RESERVED'
             self._state.requested_resource = ''
             if self.selected_goal:
-                self.on_path(PathResult(True, self.health.path), self.selected_goal, now)
+                self.effects.append(Effect('PLAN', self.selected_goal))
             return reply
         if command.sequence <= self.last_sequence:
             return CommandReply(command.command_id == self._state.command_id, 'duplicate/stale command')
@@ -114,6 +117,16 @@ class AgentMachine:
         self.health.path = result.path
         self.health.path_valid = True
         if self.guard:
+            check_path = result.path
+            if self._state.resource_id in self.guard.regions and self._state.resource_id != 'basket':
+                self.transit_goal = self.guard.transit_exit(self._state.resource_id, self.context.robot_id, result.path)
+                if self.transit_goal is None:
+                    self.stop('missing door transit exit')
+                    return
+                # Precompute transit path through adapter, not a straight-line substitute.
+                if goal != self.transit_goal:
+                    self.effects.append(Effect('PLAN_TRANSIT', self.transit_goal))
+                    return
             decision = self.guard.check(self.health.pose, self.health.footprint, result.path,
                                        {self._state.resource_id: self._state.token} if self._state.token else {}, self.health)
             if decision.action == 'STOP':
@@ -124,11 +137,11 @@ class AgentMachine:
                 self._state.requested_command_id = self.command.command_id
                 self._state.run_state = 'WAITING_RESOURCE'
                 return
-            if self._state.resource_id in self.guard.regions and self._state.resource_id != 'basket':
-                self.transit_goal = self.guard.transit_exit(self._state.resource_id, self.context.robot_id, result.path)
-                if self.transit_goal is None:
-                    self.stop('missing door transit exit')
-                    return
+        if self.command.kind == 'APPROACH_DEPOSIT' and self._state.resource_id != 'basket':
+            self._state.requested_resource = 'basket'
+            self._state.requested_command_id = self.command.command_id
+            self._state.run_state = 'WAITING_RESOURCE'
+            return
         nav_goal = self.transit_goal or goal
         kind = 'DOOR_TRANSIT' if self.transit_goal else NAV_KIND[self.command.kind]
         self.effects.append(Effect('NAVIGATE', (nav_goal, kind)))
@@ -234,5 +247,17 @@ class AgentMachine:
         return self.take_effects()
 
     def _monitor_region(self, health):
-        # Task 5 adds footprint/permit supervision here.
-        pass
+        from .region_guard import footprint_intersects
+        if self._state.token and health.localization_valid:
+            polygon=self.guard.regions[self._state.resource_id]['polygon']
+            intersects=footprint_intersects(health.pose,health.footprint,polygon)
+            if intersects:
+                self._state.resource_status='ENTERED'
+            elif self._state.resource_status=='ENTERED' and health.stopped and self._state.run_state in ('EXIT_STOP','TRANSIT_STOP'):
+                self._state.resource_status='EXIT_CONFIRMED'
+        if self._state.run_state=='NAVIGATING':
+            decision=self.guard.check(health.pose,health.footprint,health.path,
+                {self._state.resource_id:self._state.token} if self._state.token else {},health)
+            if decision.action!='ALLOW':
+                # A replanned path requires cancellation and physical stop before new permission.
+                self.stop('replanned path needs permit or boundary monitor failed')
