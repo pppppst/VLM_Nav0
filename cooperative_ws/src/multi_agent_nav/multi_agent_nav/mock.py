@@ -25,7 +25,8 @@ def make_machine(config,robot,simulation):
     alignment=config['alignment'];entry=alignment['robots'][robot]
     context=AgentContext(robot,'',entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],simulation)
     frame=FrameAdapter(entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],entry['transform'])
-    machine=AgentMachine(context,frame,config['scene'].get('lost_timeout',3.0))
+    machine=AgentMachine(context,frame,config['scene'].get('lost_timeout',3.0),
+        config[f'robot_{robot}'].get('path_start_timeout',1.0))
     regions={}
     for key,region in config['scene']['resources'].items():
         value=dict(region,polygon=frame.polygon_to_local(region['polygon']))

@@ -16,6 +16,9 @@ unset CYCLONEDDS_URI
 mkdir -p "${coop_output}/evidence"
 cd "${coop_repo}"
 "${coop_python}" -m pytest -q test | tee "${coop_output}/evidence/baseline-final.log"
+ctest --test-dir "${coop_output}/build/vlm_nav" \
+  -R '^(test_obstacle_cloud_filter|test_go2_bridge_state|test_componentwise_min_speed)$' \
+  --output-on-failure | tee "${coop_output}/evidence/baseline-cpp.log"
 "${coop_python}" -m pytest -q cooperative_ws/src/multi_agent_nav/tests | tee "${coop_output}/evidence/cooperative.log"
 colcon --log-base "${coop_output}/log" test --base-paths "${coop_repo}" "${coop_repo}/cooperative_ws/src" \
   --build-base "${coop_output}/build" --install-base "${coop_output}/install" \

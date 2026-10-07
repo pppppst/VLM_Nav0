@@ -5,8 +5,15 @@ NAV_KIND = {'SEARCH_VIEWPOINT':'VIEWPOINT_NAV', 'APPROACH_PICKUP':'PICKUP_NAV',
             'WAIT':'WAIT_NAV', 'APPROACH_DEPOSIT':'DEPOSIT_NAV', 'EXIT':'EXIT_NAV'}
 
 class AgentMachine:
-    def __init__(self, context, frame, lost_timeout=3.0):
+    def __init__(self, context, frame, lost_timeout=3.0, path_start_timeout=1.0):
+        import math
+        if not math.isfinite(path_start_timeout) or path_start_timeout <= 0:
+            raise ValueError('path_start_timeout must be finite and positive')
         self.context, self.frame, self.lost_timeout = context, frame, lost_timeout
+        self.path_start_timeout = path_start_timeout
+        self.retired_tasks = set()
+        self.navigation_started_at = 0.0
+        self.path_acquired = False
         self._state = AgentState(robot_id=context.robot_id, task_id=context.task_id,
             local_map_id=context.local_map_id, map_version=context.map_version,
             common_frame_id=context.common_frame_id, alignment_id=context.alignment_id,
@@ -43,12 +50,16 @@ class AgentMachine:
     def accept(self, command, now):
         # SYNC alone establishes a task; EXECUTE can never silently replace it.
         if command.action == 'SYNC' and command.task_id != self.context.task_id:
+            if command.task_id in self.retired_tasks:
+                return CommandReply(False, 'retired task')
             if self._state.token or self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
                 return CommandReply(False, 'not stopped for new task')
             candidate = replace(self.context, task_id=command.task_id)
             reply = validate_command(command, candidate)
             if not reply.accepted:
                 return reply
+            if self.context.task_id:
+                self.retired_tasks.add(self.context.task_id)
             self.context = candidate
             self._state.task_id = command.task_id
             self._state.ready = self._state.deposited = self._state.exited = False
@@ -154,7 +165,8 @@ class AgentMachine:
         kind = 'DOOR_TRANSIT' if self.transit_goal else NAV_KIND[self.command.kind]
         self.effects.append(Effect('NAVIGATE', (nav_goal, kind)))
 
-    def navigation_started(self, goal_id, goal_kind):
+    def navigation_started(self, goal_id, goal_kind, now=0.0):
+        self.navigation_started_at, self.path_acquired = now, False
         self._state.goal_id, self.goal_kind = goal_id, goal_kind
         self._state.run_state, self._state.reply = 'NAVIGATING', 'EXECUTING'
         self._state.stopped = False
@@ -238,7 +250,7 @@ class AgentMachine:
                 self._state.run_state = 'PAUSED'
             return self.take_effects()
         if self.guard and self.command:
-            self._monitor_region(health)
+            self._monitor_region(health, now)
         if health.stopped and health.motion_terminal:
             if self._state.run_state == 'RETRY_STOP':
                 self._state.run_state = 'PLANNING'
@@ -254,7 +266,7 @@ class AgentMachine:
                 self._state.run_state, self._state.reply = 'IDLE', 'SUCCEEDED'
         return self.take_effects()
 
-    def _monitor_region(self, health):
+    def _monitor_region(self, health, now=0.0):
         from .region_guard import footprint_intersects
         import math
         if len(health.footprint)<3 or not all(len(p)==2 and all(math.isfinite(v) for v in p) for p in health.footprint):
@@ -268,6 +280,17 @@ class AgentMachine:
             elif self._state.resource_status=='ENTERED' and health.stopped and self._state.run_state in ('EXIT_STOP','TRANSIT_STOP'):
                 self._state.resource_status='EXIT_CONFIRMED'
         if self._state.run_state=='NAVIGATING':
+            if health.path_valid and health.path:
+                self.path_acquired = True
+            elif not self.path_acquired and health.stopped and now-self.navigation_started_at < self.path_start_timeout:
+                # Only inspect the stationary stopping envelope while awaiting the
+                # first executing path. Never substitute the preflight path.
+                decision=self.guard.check(health.pose,health.footprint,[health.pose],
+                    {self._state.resource_id:self._state.token} if self._state.token else {},
+                    replace(health,path_valid=True))
+                if decision.action!='ALLOW':
+                    self.stop('unsafe stationary envelope while awaiting executing path')
+                return
             decision=self.guard.check(health.pose,health.footprint,health.path,
                 {self._state.resource_id:self._state.token} if self._state.token else {},health)
             if decision.action!='ALLOW':

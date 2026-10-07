@@ -53,7 +53,7 @@ class AgentRunner:
                     elif effect.kind=='NAVIGATE':
                         goal,kind=effect.payload
                         goal_id=self.adapter.start_navigation(goal,command.task_id,command.command_id,kind)
-                        self.machine.navigation_started(goal_id,kind)
+                        self.machine.navigation_started(goal_id,kind,now)
                         continue
                     else:continue
                     self.pending.append((future,(command.task_id,command.command_id),effect.kind,goal))

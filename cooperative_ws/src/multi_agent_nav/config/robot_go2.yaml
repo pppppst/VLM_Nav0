@@ -12,6 +12,7 @@ footprint:
   - 0.18
 path_topic: null
 path_source_verified: false
+path_start_timeout: 1.0
 stop_margin: null
 stationary_speed: 0.02
 stationary_duration: 0.5
