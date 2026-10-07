@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="17" failures="0" disabled="0" errors="0" time="0" timestamp="2026-10-07T12:17:54" name="AllTests">
+  <testsuite name="Go2BridgeState" tests="17" failures="0" disabled="0" errors="0" time="0" timestamp="2026-10-07T12:17:54">
+    <testcase name="StartsDisarmed" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="RejectsNonFiniteCommand" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="RejectsLateralVelocity" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="ClampsAcceptedCommand" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="AcceptsPositiveYaw" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="AcceptsNegativeYaw" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="CommandTimeoutFaultsAndStopsOnce" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="ExplicitZeroStopsWithoutWatchdogFault" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="LateZeroCannotClearFault" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="EndpointLossUsesDebounce" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="FaultNeverAutomaticallyRearms" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="DisarmedRejectsAndDoesNotCacheNonzeroCommand" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="ArmDoesNotRequireOrActivateCachedCommand" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="DisarmStopsOnce" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="ExternalSafetyGateFaultsAndStopsOnce" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="RejectsUnsupportedTwistAxes" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+    <testcase name="SportEndpointHealthDebouncesOnlyAfterFirstHealthySample" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.Go2BridgeState" />
+  </testsuite>
+</testsuites>

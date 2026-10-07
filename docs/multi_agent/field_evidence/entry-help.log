@@ -1,0 +1,24 @@
+usage: multi_agent_go2_check [-h] [--config-dir CONFIG_DIR]
+                             [--action {inspect,plan,approach,navigate,scan}]
+                             [--offline] [--map-yaml MAP_YAML]
+                             [--require-ready] [--allow-motion]
+                             [--goal X Y YAW] [--timeout TIMEOUT]
+                             [--cancel-after CANCEL_AFTER]
+
+Independent Go2 adapter acceptance. No task topics, peer, bridge, startup or
+ARM.
+
+options:
+  -h, --help            show this help message and exit
+  --config-dir CONFIG_DIR
+  --action {inspect,plan,approach,navigate,scan}
+  --offline             configuration report only; never initialize ROS
+  --map-yaml MAP_YAML   print file digests for a candidate map; does not write
+                        configuration
+  --require-ready       exit 1 if reported prerequisites are incomplete
+  --allow-motion        required in addition to an explicit motion action
+  --goal X Y YAW        measured local Go2 map pose; approach treats X/Y as
+                        object position
+  --timeout TIMEOUT     inspection/action deadline in seconds
+  --cancel-after CANCEL_AFTER
+                        explicit cancellation acceptance during navigate/scan

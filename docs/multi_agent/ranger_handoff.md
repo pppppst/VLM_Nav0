@@ -59,6 +59,11 @@ Both PCs use separate occupancy maps. Fit common_from_ranger from ≥3 separated
 non-collinear fixed references plus held-out references; set actual map versions
 and the same alignment_id. Rebuilding a map invalidates the previous alignment.
 No task-time calibration changes; missing/invalid configuration blocks live start.
+Each robot configuration now includes `map_digest`: SHA256 of concatenated YAML
+and referenced image SHA256 hex strings. Use `map_file_info` or the offline Go2
+check entry to calculate it; verify each PC's own actual files and active map locally.
+The Go2 PC does not need a copied Ranger map file. Remote map identity and digest
+must still be filled consistently; unknown values remain unset.
 
 ## Pending communication setup
 

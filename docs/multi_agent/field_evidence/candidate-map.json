@@ -1,0 +1,41 @@
+{
+  "mode": "configuration_only",
+  "map_files": {
+    "yaml_path": "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab/lab.yaml",
+    "image_path": "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab/lab.pgm",
+    "yaml_sha256": "4f5cdcee77334beabb0b420fc570533e681e02469fc9a65a698b277b3d55d3ef",
+    "image_sha256": "0eec6bfa18ad94db3750094edfcb04d574dc1f38e5ce4e6a5b392eff9063fc0f",
+    "map_digest": "bdce1a6996c9c046aa1ae353448b7116f970c01deda836a619d01286d28e00ea"
+  },
+  "go2_local_gates": [
+    "go2: map identity/version missing",
+    "go2: readable map YAML/image missing"
+  ],
+  "live_gates": [
+    "go2: map identity/version missing",
+    "go2: readable map YAML/image missing",
+    "basket resource polygon missing",
+    "measured positive stop margin missing",
+    "Go2 costmap_source_verified field verification required",
+    "Go2 camera_calibrated field verification required",
+    "Go2 vision_validated field verification required",
+    "validated alignment report missing",
+    "scene disabled: field coordinates missing",
+    "go2: map identity/transform missing",
+    "go2: map path missing",
+    "go2: measured viewpoints missing/invalid",
+    "go2: wait_points missing/invalid",
+    "go2: exit_points missing/invalid",
+    "ranger: map identity/transform missing",
+    "ranger: map path missing",
+    "ranger: map_digest missing",
+    "ranger: measured viewpoints missing/invalid",
+    "ranger: wait_points missing/invalid",
+    "ranger: exit_points missing/invalid",
+    "measured A/B/C target descriptions missing",
+    "Go2 path_source_verified field verification required",
+    "Go2 peer_obstacle_verified field verification required",
+    "executing Nav2 path source missing"
+  ],
+  "motion_sent": false
+}

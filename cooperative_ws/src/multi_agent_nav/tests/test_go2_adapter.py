@@ -57,7 +57,8 @@ def test_motion_pending_cancel_then_late_handle_is_canceled_and_identity_retaine
     adapter=Go2Adapter.__new__(Go2Adapter)
     adapter.motions={};adapter.results=deque();adapter.motion_fault=False
     sent=Future();terminal=Future()
-    handle=SimpleNamespace(accepted=True,get_result_async=lambda:terminal)
+    handle=SimpleNamespace(accepted=True,get_result_async=lambda:terminal,
+        goal_id=SimpleNamespace(uuid=[1]*16))
     canceled=[]
     handle.cancel_goal_async=lambda:canceled.append(True)
     client=SimpleNamespace(send_goal_async=lambda _:sent)
@@ -66,6 +67,7 @@ def test_motion_pending_cancel_then_late_handle_is_canceled_and_identity_retaine
     assert adapter.motions and not reply.done()
     sent.set_result(handle)
     assert canceled
+    assert adapter.last_action_uuid=='01'*16
     terminal.set_result(SimpleNamespace(status=5))
     assert not adapter.motions and reply.result()=='CANCELED'
     result=adapter.results.pop()

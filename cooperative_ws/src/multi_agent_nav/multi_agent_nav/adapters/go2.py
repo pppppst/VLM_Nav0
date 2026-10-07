@@ -8,8 +8,22 @@ import uuid
 import os
 import numpy as np
 from vlm_nav.vlm_client import OpenAICompatibleVLMClient, validate_vlm_result, build_prompt
-from vlm_nav.geometry import classify_standoff_cell, normalize_angle
+from vlm_nav.geometry import normalize_angle
 from ..models import *
+
+def make_observer(config,read_only=False,node_name=None):
+    from pathlib import Path
+    import yaml
+    from ament_index_python.packages import get_package_share_directory
+    from rclpy.parameter import Parameter
+    from vlm_nav.vlm_navigator import VLMNavigator
+    base=yaml.safe_load((Path(get_package_share_directory('vlm_nav'))/'config/robot_go2.yaml').read_text())['vlm_nav']['ros__parameters']
+    base.update(enabled=False,camera_extrinsic_calibrated=config.get('camera_calibrated',False),
+        publish_stop_command=not read_only,
+        behavior_costmap_topic=config.get('costmap_topic','/local_costmap/costmap_raw'),
+        arrival_odom_topic=config.get('odom_topic','/odometry'))
+    return VLMNavigator(observation_only=True,node_name=node_name,
+        parameter_overrides=[Parameter(k,value=v) for k,v in base.items()])
 
 class ABCClient(OpenAICompatibleVLMClient):
     def __init__(self, config):
@@ -117,21 +131,29 @@ class AsyncVision:
 
 class Go2Adapter:
     simulation=False
-    def __init__(self,observer,config,frame):
+    def __init__(self,observer,config,frame,read_only=False):
         from nav_msgs.msg import Odometry,Path
+        from nav2_msgs.msg import Costmap
+        from rclpy.qos import qos_profile_sensor_data,QoSProfile,DurabilityPolicy
         self.node,self.config,self.frame=observer,config,frame
+        self.read_only=read_only
         self.results=deque()
         self.motions={}
+        self.last_action_uuid=''
         self.plans={}
         self.path=[]
         self.path_at=0.0
         self.odom_at=0.0
         self.stationary_since=None
+        self.costmap=None
+        self.costmap_at=0.0
         self.motion_fault=False
         self.scan=None
         self.client=None
         self.vision=AsyncVision(config['api_timeout'])
-        self.node.create_subscription(Odometry,'/odometry',self.on_odometry,10)
+        self.node.create_subscription(Odometry,config.get('odom_topic','/odometry'),self.on_odometry,qos_profile_sensor_data)
+        self.node.create_subscription(Costmap,config.get('costmap_topic','/local_costmap/costmap_raw'),
+            self.on_costmap,QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL))
         if config.get('path_topic'):
             self.node.create_subscription(Path,config['path_topic'],self.on_path_update,10)
 
@@ -147,10 +169,69 @@ class Go2Adapter:
             self.stationary_since=None
         self.odom_at=now
         v=message.twist.twist
-        speed=max(abs(v.linear.x),abs(v.linear.y),abs(v.linear.z),abs(v.angular.z))
-        if speed<=self.config['stationary_speed']:
+        linear=math.sqrt(sum(getattr(v.linear,k,0.)**2 for k in ('x','y','z')))
+        angular=math.sqrt(sum(getattr(v.angular,k,0.)**2 for k in ('x','y','z')))
+        if linear<=self.config.get('stationary_linear_speed',self.config.get('stationary_speed',.02)) and angular<=self.config.get('stationary_angular_speed',self.config.get('stationary_speed',.02)):
             if self.stationary_since is None:self.stationary_since=now
         else:self.stationary_since=None
+
+    def on_costmap(self,message):
+        self.costmap=None
+        meta=message.metadata
+        stamp=message.header.stamp.sec+message.header.stamp.nanosec*1e-9
+        now=self.node.get_clock().now().nanoseconds*1e-9
+        if not message.header.frame_id or not math.isfinite(meta.resolution) or meta.resolution<=0 or meta.size_x*meta.size_y<=0 or len(message.data)!=meta.size_x*meta.size_y:
+            return
+        if abs(now-stamp)>self.config.get('costmap_max_age',1.):return
+        q=meta.origin.orientation
+        if not all(math.isfinite(v) for v in (meta.origin.position.x,meta.origin.position.y,q.x,q.y,q.z,q.w)) or abs(sum(v*v for v in (q.x,q.y,q.z,q.w))-1.)>.01:
+            return
+        self.costmap=message
+        self.costmap_at=time.monotonic()
+
+    def costmap_transform(self):
+        """Map pose → costmap frame, at the payload stamp; no odom-as-map shortcut."""
+        from rclpy.time import Time
+        from vlm_nav.vlm_navigator import quaternion_yaw
+        message=self.costmap
+        if message is None or time.monotonic()-self.costmap_at>self.config.get('costmap_max_age',1.):return None
+        stamp=message.header.stamp.sec+message.header.stamp.nanosec*1e-9
+        if abs(self.node.get_clock().now().nanoseconds*1e-9-stamp)>self.config.get('costmap_max_age',1.):return None
+        try:
+            if message.header.frame_id=='map':return Pose2D()
+            tf=self.node.tf_buffer.lookup_transform(message.header.frame_id,'map',Time.from_msg(message.header.stamp)).transform
+            pose=Pose2D(tf.translation.x,tf.translation.y,quaternion_yaw(tf.rotation))
+            return pose if pose.valid else None
+        except Exception:return None
+
+    def costmap_candidate_free(self,candidate):
+        from vlm_nav.vlm_navigator import quaternion_yaw
+        transform=self.costmap_transform()
+        if transform is None:return False
+        c,s=math.cos(transform.yaw),math.sin(transform.yaw)
+        x=c*candidate.x-s*candidate.y+transform.x
+        y=s*candidate.x+c*candidate.y+transform.y
+        meta=self.costmap.metadata
+        yaw=quaternion_yaw(meta.origin.orientation)
+        c,s=math.cos(yaw),math.sin(yaw)
+        dx,dy=x-meta.origin.position.x,y-meta.origin.position.y
+        x,y=c*dx+s*dy,-s*dx+c*dy
+        local_yaw=normalize_angle(candidate.yaw+transform.yaw-yaw)
+        footprint=self.config['footprint']
+        # Conservative centered rectangle also covers asymmetric footprints.
+        length,width=2*max(abs(p[0]) for p in footprint),2*max(abs(p[1]) for p in footprint)
+        c,s=math.cos(local_yaw),math.sin(local_yaw)
+        if any(not (0<=x+c*px-s*py<meta.size_x*meta.resolution and 0<=y+s*px+c*py<meta.size_y*meta.resolution)
+            for px in (-length/2,length/2) for py in (-width/2,width/2)):return False
+        raw=np.asarray(self.costmap.data,dtype=np.int16).reshape(meta.size_y,meta.size_x)
+        # Nav2 253/254 are inscribed/lethal and 255 unknown. Unknown body cells veto too.
+        # Test the actual pose, including any cell intersecting the body rectangle;
+        # do not snap it to a cell center. Projection of a half-cell is conservative.
+        gy,gx=np.indices(raw.shape)
+        dx,dy=(gx+.5)*meta.resolution-x,(gy+.5)*meta.resolution-y
+        half_cell=meta.resolution*(abs(c)+abs(s))/2
+        body=(np.abs(c*dx+s*dy)<=length/2+half_cell) & (np.abs(-s*dx+c*dy)<=width/2+half_cell)
+        return bool(body.any()) and not np.any(body & (raw>=self.config.get('costmap_blocked_cost',253)))
 
     def on_path_update(self,message):
         from vlm_nav.vlm_navigator import quaternion_yaw
@@ -159,10 +240,11 @@ class Go2Adapter:
             return
         stamp=message.header.stamp.sec+message.header.stamp.nanosec*1e-9
         ros_now=self.node.get_clock().now().nanoseconds*1e-9
-        if abs(ros_now-stamp)>self.config.get('path_max_age',1.0):
+        if abs(ros_now-stamp)>self.config.get('path_max_age',1.0) or stamp<getattr(self,'path_after_stamp',0.):
             self.path=[]
             return
         self.path=[Pose2D(p.pose.position.x,p.pose.position.y,quaternion_yaw(p.pose.orientation)) for p in message.poses]
+        if not all(p.valid for p in self.path):self.path=[]
         self.path_at=time.monotonic()
 
     def get_health(self):
@@ -182,6 +264,7 @@ class Go2Adapter:
         gates=self.node.nav_ready and self.node.control_armed and all(now-v<=self.node.p.external_gate_timeout for v in self.node.external_gate_receipts.values())
         ready=gates and self.node.navigator.server_is_ready() and self.node.path_planner.server_is_ready() and self.node.spinner.server_is_ready() and not self.motion_fault
         ready=ready and self.node.depth_units_verified and self.node.vlm_input_ready(now)
+        ready=ready and self.costmap_transform() is not None
         path_valid=bool(self.path) and now-self.path_at<=self.config.get('path_max_age',1.0) and self.config.get('path_source_verified',False)
         return Health(pose,valid,ready,stopped,list(self.path),path_valid,self.config['footprint'],not self.motions,
                       'path source/health pending' if not path_valid else '')
@@ -221,9 +304,7 @@ class Go2Adapter:
 
     def select_approach(self,local_object,excluded_candidates):
         output=Future()
-        grid=self.node.grid
-        message=self.node.map_message
-        if grid is None or message is None or time.monotonic()-self.node.last_behavior_costmap_received>1.0:
+        if self.costmap_transform() is None:
             output.set_result(ApproachResult(reason='local map/costmap unavailable'))
             return output
         candidates=[]
@@ -231,12 +312,7 @@ class Go2Adapter:
         for angle in np.linspace(-math.pi,math.pi,8,endpoint=False):
             candidate=Pose2D(local_object.x+distance*math.cos(angle),local_object.y+distance*math.sin(angle),normalize_angle(angle+math.pi))
             if candidate in excluded_candidates:continue
-            footprint=self.config['footprint']
-            status,xy=classify_standoff_cell((candidate.x,candidate.y),grid,message.info.origin.position.x,message.info.origin.position.y,message.info.resolution,
-                free_snap_distance=0,footprint_yaw=candidate.yaw,
-                footprint_length=max(p[0] for p in footprint)-min(p[0] for p in footprint),
-                footprint_width=max(p[1] for p in footprint)-min(p[1] for p in footprint),min_occupied_cells=1,allow_unknown=False)
-            if status=='known_free':candidates.append(candidate)
+            if self.costmap_candidate_free(candidate):candidates.append(candidate)
         health=self.get_health()
         candidates.sort(key=lambda p:math.hypot(p.x-health.pose.x,p.y-health.pose.y))
         def attempt():
@@ -245,16 +321,18 @@ class Go2Adapter:
                 output.set_result(ApproachResult(reason='no locally reachable candidate'))
                 return
             candidate=candidates.pop(0)
+            if not self.costmap_candidate_free(candidate):attempt();return
             future=self.compute_path(candidate)
             def done(f):
                 if output.done():return
-                if f.result().reachable:output.set_result(ApproachResult(candidate))
+                if f.result().reachable and self.costmap_candidate_free(candidate):output.set_result(ApproachResult(candidate))
                 else:attempt()
             future.add_done_callback(done)
         attempt()
         return output
 
     def _motion(self,client,goal,task_id,command_id,kind):
+        if getattr(self,'read_only',False):raise RuntimeError('read-only adapter cannot send motion goals')
         goal_id=uuid.uuid4().hex
         motion={'handle':None,'cancel':False,'reply':Future(),'task':task_id,'command':command_id,'kind':kind,'since':time.monotonic()}
         self.motions[goal_id]=motion
@@ -267,6 +345,7 @@ class Go2Adapter:
                 handle=done.result()
                 if not handle.accepted:finish('ABORTED');return
                 motion['handle']=handle
+                self.last_action_uuid=bytes(handle.goal_id.uuid).hex()
                 if motion['cancel']:handle.cancel_goal_async()
                 def completed(done):
                     try:finish({4:'SUCCEEDED',5:'CANCELED',6:'ABORTED'}.get(done.result().status,'ABORTED'))
@@ -285,6 +364,7 @@ class Go2Adapter:
         goal=NavigateToPose.Goal()
         goal.pose=self.node.make_pose_stamped(local_goal.x,local_goal.y,local_goal.yaw)
         self.path=[]  # a preflight path is NOT an executing/replanned path
+        self.path_after_stamp=self.node.get_clock().now().nanoseconds*1e-9
         return self._motion(self.node.navigator,goal,task_id,command_id,goal_kind)[0]
 
     def cancel_navigation(self,goal_id):
@@ -300,6 +380,7 @@ class Go2Adapter:
         return future
 
     def stop_motion(self,reason):
+        if getattr(self,'read_only',False):raise RuntimeError('read-only adapter cannot publish stopping commands')
         from geometry_msgs.msg import Twist
         self.vision.cancel()
         if self.scan:
@@ -313,6 +394,7 @@ class Go2Adapter:
         return future
 
     def start_scan(self,target_descriptions,scan_id):
+        if getattr(self,'read_only',False):raise RuntimeError('read-only adapter cannot start Spin/scan')
         if self.scan or self.motions:raise RuntimeError('motion not serial')
         reply=Future()
         self.scan={'reply':reply,'id':scan_id,'targets':target_descriptions,'index':0,'phase':'SPIN',
@@ -370,6 +452,6 @@ class Go2Adapter:
                                                           self.frame,scan['id'],scan['index'])
             scan['index']+=1;scan['phase']='SPIN'
 
-    def close(self):
-        self.stop_motion('shutdown')
+    def close(self,stop=True):
+        if stop and not getattr(self,'read_only',False):self.stop_motion('shutdown')
         self.vision.close()

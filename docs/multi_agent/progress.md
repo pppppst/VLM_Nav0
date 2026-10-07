@@ -32,3 +32,17 @@ Code fix commit d5c9680; final evidence, commands and unexecuted field acceptanc
 are in test_results.md, go2_runbook.md and ranger_handoff.md.
 Original user input files, old scripts, legacy messages/routes and existing overlays remain preserved.
 No Ranger access, bridge activation, live task launch or real motion was performed.
+
+Field preparation (2026-10-07), baseline branch head 1ba2589: added independent
+Go2 check entry (default passive, offline without ROS); map YAML/image digests and
+per-PC file checks; real raw Costmap footprint/TF/stamp filtering; separate linear
+and angular stationary thresholds; stricter finite field data and unchanged closed
+cooperative gates. Existing AMCL overlay drops dynamic layers; executing path
+exporter remains unverified. Neither issue was hidden with synthetic field values.
+Review regressions fixed unsnapped footprint coverage, pre-send revalidation and
+sole independent motion ownership; cleanup errors preserve stop reconciliation.
+Final rebuilt evidence: 273 original Python + 21 gtest baseline; 78 cooperative
+pytest (49 existing + 29 field preparation); parser-only 1; colcon 102 entries,
+zero errors/failures/skips. Separate new evidence and unexecuted field checklist:
+field_preparation_results.md and go2_field_checklist.md. No Ranger, bridge,
+live Domain0 participant or hardware motion was used.

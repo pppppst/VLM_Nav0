@@ -1,0 +1,6 @@
+--help: exit 0
+--offline: exit 0; motion_sent=false
+--offline --require-ready: exit 1 (expected; 24 live gaps)
+--offline --map-yaml maps/lab/lab.yaml: exit 0 (candidate only)
+--offline --config-dir /tmp/go2-nonexistent-field-directory: exit 1 (expected)
+ROS initialization is skipped by every offline check.

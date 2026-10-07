@@ -1,0 +1,8 @@
+Field preparation review regressions (no hardware)
+Actual unsnapped candidate footprint, changed preflight health/costmap/owner, entry owner recognition: RED reproduced before fixes.
+Exclusive motion entry and unconfirmed-stop marker persisted: regression checks pass.
+Cleanup transport failure RED: 1 failed, 11 passed, 17 deselected; StopUnconfirmed expected, raw RuntimeError observed.
+Final targeted source checks: 35 passed in 0.59s (29 field-preparation + 6 Go2 adapter).
+Final installed full cooperative checks: 78 passed; original baseline: 273 Python + 21 gtest cases passed.
+Domain31 localhost for ROS tests. Runtime dispatch tests stub rclpy.init (no Domain0 participant).
+Independent read-only follow-up review: original three Important issues resolved; no remaining Critical/Important in the reviewed scope. Unsnapped-costmap repro and pure lock checks independently rerun; no ROS participant or hardware.

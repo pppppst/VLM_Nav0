@@ -32,16 +32,9 @@ class AgentNode(Node):
             self.machine=machine
         elif not gates:
             if robot!='go2':raise ValueError('Ranger live adapter must be installed on Ranger PC')
-            from vlm_nav.vlm_navigator import VLMNavigator
-            from ament_index_python.packages import get_package_share_directory
-            from pathlib import Path
-            import yaml
-            from .adapters.go2 import Go2Adapter
+            from .adapters.go2 import Go2Adapter,make_observer
             machine,frame=make_machine(config,robot,False)
-            base=yaml.safe_load((Path(get_package_share_directory('vlm_nav'))/'config/robot_go2.yaml').read_text())['vlm_nav']['ros__parameters']
-            base['enabled']=False
-            base['camera_extrinsic_calibrated']=config['robot_go2']['camera_calibrated']
-            self.observer=VLMNavigator(observation_only=True,parameter_overrides=[Parameter(k,value=v) for k,v in base.items()])
+            self.observer=make_observer(config['robot_go2'])
             self.adapter=Go2Adapter(self.observer,config['robot_go2'],frame)
             self.machine=machine
         else:

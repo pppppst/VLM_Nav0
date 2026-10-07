@@ -107,8 +107,8 @@ def quaternion_yaw(quaternion):
 
 
 class VLMNavigator(Node):
-    def __init__(self, *, observation_only=False, parameter_overrides=None):
-        super().__init__("multi_agent_go2_rgbd" if observation_only else "vlm_nav",
+    def __init__(self, *, observation_only=False, parameter_overrides=None, node_name=None):
+        super().__init__(node_name or ("multi_agent_go2_rgbd" if observation_only else "vlm_nav"),
                          parameter_overrides=parameter_overrides)
         self.observation_only = observation_only
         defaults = {
@@ -316,7 +316,7 @@ class VLMNavigator(Node):
         self.diagnostics_pub = self.create_publisher(
             DiagnosticArray, "~/diagnostics", 10
         )
-        self.stop_pub = self.create_publisher(Twist, self.p.stop_cmd_topic, 10)
+        self.stop_pub = self.create_publisher(Twist, self.p.stop_cmd_topic, 10) if self.p.publish_stop_command else None
 
         map_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -1196,7 +1196,7 @@ class VLMNavigator(Node):
         self.state_pub.publish(message)
 
     def publish_stop(self):
-        if not bool(self.p.publish_stop_command) or not rclpy.ok():
+        if not bool(self.p.publish_stop_command) or self.stop_pub is None or not rclpy.ok():
             return
         message = Twist()
         for _ in range(3):

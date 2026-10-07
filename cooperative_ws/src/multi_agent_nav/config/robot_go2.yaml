@@ -1,5 +1,6 @@
 robot_id: go2
 map_path: null
+map_digest: null
 domain_id: 0
 footprint:
 - - 0.38
@@ -13,10 +14,19 @@ footprint:
 path_topic: null
 path_source_verified: false
 path_start_timeout: 1.0
+path_max_age: 1.0
+pose_max_age: 1.0
+costmap_topic: /local_costmap/costmap_raw
+costmap_source_verified: false
+costmap_max_age: 1.0
+costmap_blocked_cost: 253
 stop_margin: null
-stationary_speed: 0.02
+stationary_linear_speed: 0.02
+stationary_angular_speed: 0.02
 stationary_duration: 0.5
 odom_max_age: 0.5
+odom_topic: /odometry
+cancel_timeout: 5.0
 scan_angles:
 - 0.0
 - 1.5707963267948966
@@ -30,3 +40,4 @@ api_timeout: 20.0
 vision_mode: abc
 camera_calibrated: false
 peer_obstacle_verified: false
+vision_validated: false

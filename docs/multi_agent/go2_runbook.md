@@ -5,6 +5,9 @@ ROS: Humble. New sources: `cooperative_ws/src` (root `vlm_nav` remains a separat
 Task semantics: Go2=A, Ranger=B; both fresh READY before C; same C observation;
 Go2 deposit **and whole-body exit** before Ranger. No physical arm.
 
+Field preparation and independent Go2 checks: [go2_field_checklist.md](go2_field_checklist.md).
+The independent entry defaults to read-only and does not unlock cooperative tasks.
+
 ## Build and offline validation
 
 ```bash
@@ -99,6 +102,7 @@ Required live data/acceptance:
   map, Ranger transform from measured correspondences and an independent check.
   alignment.report must retain source/common/held-out points, thresholds and
   identities; startup recomputes the fit and checks the configured transform.
+  map_digest binds each PC's YAML/image content; only local files are read on each PC.
 - Measured scene viewpoints, wait/exit points, doorway and C protection polygons,
   and doorway transit exits for each robot. Regions must cover selected approach
   and exit paths. Live templates have no invented coordinates.
@@ -109,6 +113,9 @@ Required live data/acceptance:
   samples, full-body dynamic obstacle detection and actual motion-direction coverage.
   Configure path_source_verified/camera_calibrated/vision_validated/
   peer_obstacle_verified only with field evidence. Existing AMCL input is unchanged.
+  costmap_source_verified additionally requires valid fresh full raw payload, TF and
+  active dynamic layers. The existing AMCL static-map overlay removes dynamic layers;
+  it must receive separate field review before cooperative obstacle acceptance.
 - Sole task goal ownership, existing NAV_READY/CONTROL_ARMED gates, both real agents
   fresh/located/stopped, identical protocol and alignment version. No auto ARM.
 

@@ -1,4 +1,5 @@
 robot_id: ranger
 map_path: null
+map_digest: null
 domain_id: 0
 adapter: not_installed

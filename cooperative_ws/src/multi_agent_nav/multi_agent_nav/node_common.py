@@ -27,4 +27,5 @@ def settings(node):
         from ament_index_python.packages import get_package_share_directory
         directory=str(Path(get_package_share_directory('multi_agent_nav'))/'config')
     config=load_config(directory)
-    return config,False,prefix,live_gates(config)
+    local_robot=node.get_parameter('robot_id').value if node.has_parameter('robot_id') else 'go2'
+    return config,False,prefix,live_gates(config,local_robot=local_robot)

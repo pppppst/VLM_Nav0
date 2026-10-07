@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="2" failures="0" disabled="0" errors="0" time="0" timestamp="2026-10-07T12:17:54" name="AllTests">
+  <testsuite name="ObstacleCloudFilter" tests="2" failures="0" disabled="0" errors="0" time="0" timestamp="2026-10-07T12:17:54">
+    <testcase name="RejectsInvalidParameters" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.ObstacleCloudFilter" />
+    <testcase name="PreservesHeaderFieldsAndStageCounts" status="run" result="completed" time="0" timestamp="2026-10-07T12:17:54" classname="vlm_nav.ObstacleCloudFilter" />
+  </testsuite>
+</testsuites>

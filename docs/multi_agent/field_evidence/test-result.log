@@ -1,0 +1,8 @@
+/tmp/go2-coop/build/multi_agent_nav/Testing/20261007-0418/Test.xml: 2 tests, 0 errors, 0 failures, 0 skipped
+/tmp/go2-coop/build/multi_agent_nav/test_results/multi_agent_nav/bridge_routes_parser.xml: 1 test, 0 errors, 0 failures, 0 skipped
+/tmp/go2-coop/build/multi_agent_nav/test_results/multi_agent_nav/cooperative_logic.xunit.xml: 78 tests, 0 errors, 0 failures, 0 skipped
+/tmp/go2-coop/build/vlm_nav/test_results/vlm_nav/test_componentwise_min_speed.gtest.xml: 2 tests, 0 errors, 0 failures, 0 skipped
+/tmp/go2-coop/build/vlm_nav/test_results/vlm_nav/test_go2_bridge_state.gtest.xml: 17 tests, 0 errors, 0 failures, 0 skipped
+/tmp/go2-coop/build/vlm_nav/test_results/vlm_nav/test_obstacle_cloud_filter.gtest.xml: 2 tests, 0 errors, 0 failures, 0 skipped
+
+Summary: 102 tests, 0 errors, 0 failures, 0 skipped

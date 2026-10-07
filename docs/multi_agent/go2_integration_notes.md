@@ -13,7 +13,7 @@ No applicable AGENTS.md found. Input plans were the only untracked files.
 | vlm_nav.vlm_client, LatestFrameWorker | Validated API results and bounded asynchronous inference | Existing request is single-target; add ABC envelope without planner calls |
 | NavigateToPose /navigate_to_pose, ComputePathToPose /compute_path_to_pose, Spin /spin | New adapter owns action handles | Bind task/command/goal; cancel ACK alone is insufficient |
 | map→base_link, /odometry | Map pose and independent stationary confirmation | Never label odometry as map pose |
-| /local_costmap/costmap_raw, /map | Local approach candidates | Validate full footprint and local path |
+| /local_costmap/costmap_raw, /map | Raw Costmap now filters actual approach footprint; /map remains static map input | Validate stamp, full payload, origin yaw and map→costmap TF; AMCL final static overlay still needs dynamic-layer field acceptance |
 | Executing Nav2 path | RegionGuard input | No existing cooperative path subscription found; live requires verified fresh path source |
 | /vlm_nav/nav_ready, /vlm_nav/control_armed | Preserve external gates | No auto ARM; live field validation required |
 | /vlm_nav/obstacle_cloud | Existing marking + clearing, measured footprint ±0.38×±0.18 | Filter height -0.20..0.20: peer-body detection and rear coverage need field checks; unchanged |
@@ -35,3 +35,7 @@ Production deployment remains Domain0, no 0↔31 bridge.
 
 Final local evidence: [test_results.md](test_results.md); operation commands:
 [go2_runbook.md](go2_runbook.md); remote follow-up: [ranger_handoff.md](ranger_handoff.md).
+
+Field preparation from `1ba2589`: [go2_field_checklist.md](go2_field_checklist.md)
+lists actual fields, unresolved live gates and independent read-only adapter commands.
+This entry never supplies a fake Ranger, task READY or protected-resource permit.
