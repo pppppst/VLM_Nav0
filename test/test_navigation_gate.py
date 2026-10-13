@@ -1824,6 +1824,7 @@ def safety_test_node():
         tf_failure_timeout=3.0,
         max_travel_radius=3.0,
         approach_cancel_radius=0.89,
+        target_success_radius=0.81,
         target_confirmation_timeout=20.0,
         goal_timeout=120.0,
     )

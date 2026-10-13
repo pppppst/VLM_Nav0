@@ -30,7 +30,7 @@ def adapter():
         last_behavior_costmap_received=time.monotonic(),
         tf_buffer=S(lookup_transform=lambda *args:S(transform=S(
             translation=S(x=0,y=0),rotation=S(x=0,y=0,z=0,w=1)))))
-    a.costmap=None;a.costmap_at=0
+    a.costmap=None;a.costmap_at=0;a.global_costmap=None;a.global_costmap_at=0
     a.get_health=lambda:S(pose=Pose2D())
     return a
 
@@ -39,12 +39,29 @@ def test_explicit_missing_config_is_not_silently_replaced(tmp_path):
 
 def test_live_gates_reject_incomplete_scene_and_unverified_costmap():
     c=load_config();c['scene']['enabled']=True
+    c['robot_go2']['costmap_source_verified']=False
     c['scene']['resources']={'door':{'polygon':[[0,0],[1,0],[1,1]]}}
     c['scene']['exit_points']={'go2':[2,2,0]}
     errors=live_gates(c)
     assert any('basket' in e for e in errors)
     assert any('ranger' in e and ('exit' in e or 'viewpoint' in e) for e in errors)
     assert any('costmap_source_verified' in e for e in errors)
+
+def test_empty_resources_allow_independent_exploration_but_not_cooperative_live():
+    from multi_agent_nav.go2_exploration import exploration_gates
+    c=load_config()
+    c['scene']['resources']={}
+    c['robot_go2'].update(stop_margin=.1,costmap_source_verified=True,
+        camera_calibrated=True,path_topic='/fixture/path',path_source_verified=True)
+    assert exploration_gates(c)==[]
+    assert any('basket' in e for e in live_gates(c))
+    c['robot_go2']['stop_margin']=None
+    assert any('stop margin' in e for e in exploration_gates(c))
+
+@pytest.mark.parametrize('resources',[None,[],{'door':{'polygon':[[0,0],[1,0]]}}])
+def test_independent_motion_rejects_missing_or_malformed_resources(resources):
+    c=load_config();c['scene']['resources']=resources
+    assert any('resource' in e for e in go2_local_gates(c,motion=True))
 
 def test_actual_costmap_vetoes_static_free_map_and_bad_updates():
     a=adapter()
@@ -83,6 +100,95 @@ def test_actual_footprint_is_not_snapped_to_grid_cell_center():
     a=adapter();m=costmap();m.data[40*80+44]=254
     a.on_costmap(m)
     assert not a.costmap_candidate_free(Pose2D(.099,0,0))
+
+def test_far_goal_uses_global_grid_and_does_not_replace_local_grid():
+    a=adapter();local=costmap()
+    local.metadata.size_x=local.metadata.size_y=30
+    local.metadata.origin.position.x=local.metadata.origin.position.y=-1.5
+    local.data=[0]*900
+    a.on_costmap(local)
+    global_grid=costmap();global_grid.header.frame_id='map'
+    a.on_costmap(global_grid,global_goal=True)
+    assert not a.costmap_candidate_free(Pose2D(3.,0.))
+    assert a.costmap_candidate_free(Pose2D(3.,0.),global_goal=True)
+    assert a.costmap is local and a.global_costmap is global_grid
+    assert not a.costmap_candidate_free(Pose2D(4.,0.),global_goal=True)
+
+@pytest.mark.parametrize('value',[253,254,255])
+def test_global_goal_preserves_obstacle_and_unknown_veto(value):
+    a=adapter();a.on_costmap(costmap())
+    grid=costmap();grid.header.frame_id='map';grid.data[40*80+72]=value
+    a.on_costmap(grid,global_goal=True)
+    assert not a.costmap_candidate_free(Pose2D(3.,0.),global_goal=True)
+    assert a.costmap_candidate_free(Pose2D())
+
+
+def test_global_goal_header_age_uses_its_own_budget():
+    a=adapter();a.config['goal_costmap_max_age']=3.
+    a.node.get_clock=lambda:S(now=lambda:S(nanoseconds=12_000_000_000))
+    grid=costmap();grid.header.frame_id='map'
+    a.on_costmap(grid,global_goal=True)
+    a.on_costmap(grid)
+    assert a.costmap_candidate_free(Pose2D(),global_goal=True)
+    assert a.costmap_transform() is None
+    a.node.get_clock=lambda:S(now=lambda:S(nanoseconds=13_001_000_000))
+    assert a.costmap_transform(global_goal=True) is None
+    a.on_costmap(grid,global_goal=True)
+    assert a.global_costmap is None
+
+
+def test_global_goal_receipt_age_expires_without_cache_reads_renewing(monkeypatch):
+    now=[10.]
+    monkeypatch.setattr('multi_agent_nav.adapters.go2.time.monotonic',lambda:now[0])
+    a=adapter();a.config['goal_costmap_max_age']=3.
+    grid=costmap();grid.header.frame_id='map'
+    a.on_costmap(grid,global_goal=True);a.on_costmap(grid)
+    now[0]=12.
+    assert a.costmap_candidate_free(Pose2D(),global_goal=True)
+    assert a.global_costmap_at==10.
+    assert a.costmap_transform() is None
+    now[0]=13.001
+    assert a.costmap_transform(global_goal=True) is None
+
+
+@pytest.mark.parametrize('value',[0.,-1.,float('nan'),float('inf'),True,None])
+def test_global_goal_age_config_must_be_positive_finite(value):
+    c=load_config();c['robot_go2']['goal_costmap_max_age']=value
+    assert 'Go2 positive finite goal_costmap_max_age required' in go2_local_gates(c,motion=True)
+
+@pytest.mark.parametrize('fault',['missing','payload','stamp','receipt','tf'])
+def test_bad_global_goal_grid_blocks_without_invalidating_local_health(fault):
+    a=adapter();a.on_costmap(costmap())
+    if fault!='missing':
+        grid=costmap();grid.header.frame_id='map'
+        a.on_costmap(costmap(),global_goal=True)
+        if fault=='payload':grid.data=[]
+        if fault=='stamp':grid.header.stamp=stamp(1.)
+        if fault=='tf':grid.header.frame_id='missing_frame'
+        a.on_costmap(grid,global_goal=True)
+        if fault=='receipt':a.global_costmap_at-=2.
+        if fault=='tf':
+            def missing_tf(*args):raise RuntimeError('unit missing TF')
+            a.node.tf_buffer.lookup_transform=missing_tf
+            a.costmap.header.frame_id='map'
+    assert a.costmap_transform(global_goal=True) is None
+    assert not a.costmap_candidate_free(Pose2D(),global_goal=True)
+    assert a.costmap_transform() is not None
+
+@pytest.mark.parametrize('enabled',[False,True])
+def test_global_goal_subscription_only_enabled_for_exploration(enabled):
+    subscriptions=[]
+    node=S(create_subscription=lambda typ,topic,callback,qos:subscriptions.append((topic,qos)))
+    a=Go2Adapter(node,dict(api_timeout=1.,goal_costmap_topic='/global_costmap/costmap_raw'),None,
+        global_goal_checks=enabled)
+    try:
+        topics=[topic for topic,qos in subscriptions]
+        assert ('/global_costmap/costmap_raw' in topics)==enabled
+        if enabled:
+            from rclpy.qos import DurabilityPolicy,ReliabilityPolicy
+            qos=next(qos for topic,qos in subscriptions if topic=='/global_costmap/costmap_raw')
+            assert qos.durability==DurabilityPolicy.TRANSIENT_LOCAL and qos.reliability==ReliabilityPolicy.RELIABLE
+    finally:a.vision.close()
 
 def test_approach_rechecks_costmap_when_planning_finishes():
     a=adapter();a.on_costmap(costmap())
@@ -129,6 +235,7 @@ def test_old_or_nonfinite_path_cannot_become_current_executing_path():
     from nav_msgs.msg import Path
     from geometry_msgs.msg import PoseStamped
     a=adapter();a.path_after_stamp=10.;a.path=[]
+    a.motions={'nav':{'handle':object(),'cancel':False,'kind':'VIEWPOINT_NAV'}}
     m=Path();m.header.frame_id='map';m.header.stamp=stamp(9.9)
     m.poses=[PoseStamped()]
     a.on_path_update(m)
@@ -188,7 +295,15 @@ def test_full_gates_only_read_the_current_pcs_map_files():
     ('navigate',[],False,'',1),('navigate',[],True,'permit',1),
     ('navigate',[],True,'moving',1),('navigate',[],True,'terminal',1),
     ('navigate',[],True,'costmap',1),('navigate',[],True,'owner',1),
-    ('navigate',[],True,'cleanup',1),('navigate',[],True,'stop_error',1)])
+    ('navigate',[],True,'cleanup',1),('navigate',[],True,'stop_error',1),
+    ('navigate',[],True,'path_finished',0),
+    ('navigate',[],True,'path_timeout',1),
+    ('navigate',[],True,'no_path_moving',1),
+    ('navigate',[],True,'evidence_error',0),
+    ('navigate',[],True,'rgbd_warmup',0),
+    ('navigate',[],True,'rgbd_unavailable',1),
+    ('navigate',[],True,'rgbd_deadline',1),
+    ('navigate',[],True,'no_path_stopped',1)])
 def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,tmp_path,capsys,action,owners,terminal,change,expected):
     """Exercise entry dispatch/cleanup with ROS initialization stubbed, never a live domain participant."""
     import json
@@ -205,36 +320,55 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     monkeypatch.setenv('CYCLONEDDS_URI','file://'+get_package_share_directory('vlm_nav')+'/config/cyclonedds_go2.xml')
     monkeypatch.setattr(rclpy,'init',lambda **kw:None)
     monkeypatch.setattr(rclpy,'ok',lambda:False)
-    monkeypatch.setattr(check,'time',S(monotonic=lambda:now[0]))
+    monkeypatch.setattr(check,'time',S(monotonic=lambda:now[0],time=lambda:100.))
     c=load_config();path=tmp_path/'map.yaml';path.write_text('image: map.pgm\n')
     (tmp_path/'map.pgm').write_bytes(b'unit-fixture')
     c['alignment']['robots']['go2'].update(local_map_id='fixture',map_version='1')
     c['robot_go2'].update(map_path=str(path),map_digest=map_file_info(path)['map_digest'],
         costmap_source_verified=True,camera_calibrated=True,stop_margin=.1,
-        path_topic='/unit/path',path_source_verified=True)
+        path_topic='/unit/path',path_source_verified=False)
     c['scene']['resources']={'basket':{'polygon':[[100,100],[102,100],[102,102],[100,102]]}}
     f=Future();f.set_result(S(values=[S(string_value=str(path))]))
+    def rgbd_ready(t):
+        if change=='rgbd_warmup':return t>=5.
+        if change=='rgbd_deadline':return t>=12.
+        return change!='rgbd_unavailable'
     node=S(nav_ready=True,control_armed=True,depth_units_verified=True,
         create_client=lambda *args:S(call_async=lambda request:f),
-        vlm_input_ready=lambda t:True,destroy_node=lambda:None,get_node_names=lambda:owners)
+        vlm_input_ready=rgbd_ready,destroy_node=lambda:None,get_node_names=lambda:owners)
     class StubGo2(FakeAdapter):
         def __init__(self,*args,**kwargs):
-            super().__init__('go2',delay=.5);self.costmap=None;self.planned=False
+            super().__init__('go2',delay=20. if change in ('path_timeout','no_path_moving','no_path_stopped') else .5)
+            self.costmap=None;self.planned=False;self.nav_started=None
         def costmap_transform(self):return None if self.planned and change=='costmap' else Pose2D()
-        def costmap_candidate_free(self,*args):return True
-        def tick(self):self.advance(now[0])
+        def costmap_candidate_free(self,candidate):return True
+        def tick(self):
+            self.advance(now[0])
+            if change=='path_finished' and not self.active:self.path=[]
         def get_health(self):
             h=replace(super().get_health(),motion_terminal=terminal)
+            h.nav_ready=h.nav_ready and node.vlm_input_ready(now[0])
             if self.planned and change=='permit':h.nav_ready=False
             if self.planned and change=='moving':h.stopped=False
             if self.planned and change=='terminal':h.motion_terminal=False
             if change=='cleanup' and 'navigate' in calls:h.motion_terminal=False
+            if self.nav_started is not None and self.active:
+                if change=='path_timeout' and now[0]-self.nav_started>5.:h.path_valid=False
+                if change in ('no_path_moving','no_path_stopped'):
+                    h.path=[];h.path_valid=False;h.stopped=change=='no_path_stopped'
             return h
         def compute_path(self,*args):
             f=super().compute_path(*args);self.planned=True
             if change=='owner':owners.append('multi_agent_task_agent')
             return f
-        def start_navigation(self,*args):calls.append('navigate');return super().start_navigation(*args)
+        def start_navigation(self,*args):
+            calls.append('navigate')
+            self.nav_started=now[0]
+            if change=='path_finished':self.now=now[0]
+            return super().start_navigation(*args)
+        def cancel_navigation(self,goal_id):
+            calls.append('cancel')
+            return super().cancel_navigation(goal_id)
         def stop_motion(self,reason):
             calls.append('stop')
             if change=='stop_error':raise RuntimeError('unit transport failure')
@@ -245,18 +379,76 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     def spin(**kw):now[0]+=.05
     monkeypatch.setattr(rclpy.executors,'SingleThreadedExecutor',lambda:S(
         add_node=lambda n:None,spin_once=spin,shutdown=lambda:None))
-    args=check.parser().parse_args(['--action',action,'--timeout','5','--goal','1','0','0','--allow-motion'])
+    args=check.parser().parse_args(['--action',action,'--timeout','12','--goal','1','0','0','--allow-motion'])
+    events=None
+    if change=='evidence_error':
+        class BrokenEvidence:
+            def write(self,line):raise OSError('unit disk failure')
+        events=BrokenEvidence();args.output_dir=str(tmp_path)
+        write_text=check.Path.write_text
+        def failed_result_write(path,*a,**kw):
+            if path.name=='result.json':raise OSError('unit disk failure')
+            return write_text(path,*a,**kw)
+        monkeypatch.setattr(check.Path,'write_text',failed_result_write)
     if change in ('cleanup','stop_error'):
         with pytest.raises(check.StopUnconfirmed):check.run_ros(c,args)
-    else:assert check.run_ros(c,args)==expected
+    else:assert check.run_ros(c,args,events)==expected
     report=json.loads(capsys.readouterr().out)
     if action=='inspect':assert report['costmap_probe']['footprint_free'] is True
     assert report['live_gates']  # Ranger/alignment remain incomplete, even for a local unit goal.
-    if action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error'):
+    if change=='evidence_error':
+        assert report['evidence_write_failed'] and report['stop_confirmed']
+        assert 'stop' in calls and ('close',False) in calls
+    elif action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error','path_finished','path_timeout','no_path_moving','no_path_stopped','rgbd_warmup'):
         assert 'navigate' not in calls and 'stop' not in calls and not report['motion_sent']
     else:
         assert 'navigate' in calls and 'stop' in calls
         assert report['stop_confirmed']==(change not in ('cleanup','stop_error'))
+        if change in ('path_timeout','no_path_moving','no_path_stopped'):
+            assert 'cancel' in calls
+            assert report['result']=='executing path/resource guard failed'
+            if change=='path_timeout':assert now[0]-2.>5.
+            if change=='no_path_stopped':assert now[0]-2.>=1.
+    if change=='rgbd_warmup':assert now[0]>=5.
+    if change in ('rgbd_unavailable','rgbd_deadline'):
+        assert now[0]>=12. and not report['motion_sent']
+
+
+def test_offline_single_robot_config_does_not_require_cooperative_certification(capsys):
+    from multi_agent_nav.go2_check import main
+    import json
+    assert main(['--offline','--require-ready'])==0
+    report=json.loads(capsys.readouterr().out)
+    assert report['single_robot_experiment_gates']==[]
+    assert any('path_source_verified' in reason for reason in report['live_gates'])
+    assert report['path_monitoring']['receive_timeout_s']==5.
+    assert report['path_monitoring']['plan_age_checked'] is False
+
+@pytest.mark.parametrize('action',['navigate','scan'])
+def test_rejected_motion_keeps_evidence_without_exploration_viewpoints(action,monkeypatch,tmp_path,capsys):
+    import json
+    import multi_agent_nav.go2_check as check
+    config=load_config();config['robot_go2']['stop_margin']=None
+    monkeypatch.setattr(check,'load_config',lambda _:config)
+    output=tmp_path/'evidence'
+    args=['--action',action,'--allow-motion','--output-dir',str(output)]
+    if action=='navigate':args+=['--goal','1','0','0']
+    assert check.main(args)==1
+    report=json.loads((output/'result.json').read_text())
+    assert report['rejected'] and not report['motion_sent']
+    assert json.loads((output/'events.jsonl').read_text())['state']=='REJECTED'
+    assert 'KeyError' not in capsys.readouterr().err
+
+def test_stop_observation_write_failure_does_not_interrupt_confirmation(monkeypatch):
+    import multi_agent_nav.go2_check as check
+    now=[0.];calls=[]
+    adapter=S(stop_motion=lambda reason:calls.append('stop'),
+        get_health=lambda:S(stopped=now[0]>=.2,motion_terminal=now[0]>=.2,pose=Pose2D()))
+    monkeypatch.setattr(check.time,'monotonic',lambda:now[0])
+    def spin():now[0]+=.1
+    def record(event):raise OSError('unit disk failure')
+    assert check.stop_owned(adapter,spin,1.,record)
+    assert calls==['stop'] and now[0]>=.2 and adapter.evidence_write_failed
 
 def test_independent_motion_lock_excludes_second_entry_and_releases_after_exit():
     from multi_agent_nav.go2_check import motion_slot

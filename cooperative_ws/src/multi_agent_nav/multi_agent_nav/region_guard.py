@@ -61,9 +61,9 @@ class RegionGuard:
                 raise ValueError('invalid resource polygon')
 
     def check(self, pose, footprint, path, permits, health):
-        if not self.regions: return GuardDecision('ALLOW')
         if not health.localization_valid or not pose.valid or not health.path_valid or not path or not footprint or self.stop_margin is None or self.stop_margin<0:
             return GuardDecision('STOP',reason='invalid pose/path/footprint/stopping margin')
+        if not self.regions: return GuardDecision('ALLOW')
         radius=max(math.hypot(x,y) for x,y in footprint)
         # ponytail: circumcircle swept envelope is conservative at turns; exact swept polygon if field clearance is too restrictive.
         for key,region in sorted(self.regions.items(),key=lambda pair: pair[0]=='basket'):

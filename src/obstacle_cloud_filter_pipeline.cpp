@@ -1,6 +1,8 @@
 #include "vlm_nav/obstacle_cloud_filter.hpp"
 
 #include <cmath>
+#include <cstring>
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -31,6 +33,10 @@ void require_finite(double value, const char * name)
 
 void validate_filter_parameters(const FilterParameters & parameters)
 {
+  require_finite(parameters.intensity_threshold, "intensity_threshold");
+  if (parameters.intensity_threshold < 0.0 || parameters.intensity_threshold > 255.0) {
+    throw std::invalid_argument("intensity_threshold must be within [0, 255]");
+  }
   require_finite(parameters.min_height, "min_height");
   require_finite(parameters.max_height, "max_height");
   require_finite(parameters.self_crop_min_x, "self_crop_min_x");
@@ -99,6 +105,35 @@ sensor_msgs::msg::PointCloud2 filter_base_link_cloud(
 
   sensor_msgs::msg::PointCloud2 output;
   pcl_conversions::fromPCL(voxel_output, output);
+  if (parameters.intensity_filter_enabled) {
+    const auto field = std::find_if(output.fields.begin(), output.fields.end(),
+      [](const auto & f) {return f.name == "intensity";});
+    if (field == output.fields.end() ||
+      field->datatype != sensor_msgs::msg::PointField::FLOAT32 || field->count != 1 ||
+      field->offset + sizeof(float) > output.point_step || output.is_bigendian)
+    {
+      throw std::invalid_argument("intensity filter requires little-endian FLOAT32 intensity");
+    }
+    // Apply after voxel averaging; copy complete records to preserve every other field.
+    std::size_t kept = 0;
+    for (std::size_t i = 0; i < statistics.after_voxel; ++i) {
+      const auto offset = i * output.point_step;
+      float intensity;
+      std::memcpy(&intensity, output.data.data() + offset + field->offset, sizeof(float));
+      if (!std::isfinite(intensity)) {
+        throw std::invalid_argument("non-finite voxel intensity; refusing filtered output");
+      }
+      if (intensity <= parameters.intensity_threshold) {continue;}
+      std::memmove(output.data.data() + kept * output.point_step,
+        output.data.data() + offset, output.point_step);
+      ++kept;
+    }
+    output.width = kept;
+    output.height = 1;
+    output.row_step = output.width * output.point_step;
+    output.data.resize(output.row_step);
+    statistics.output_points = kept;
+  }
   output.header = cloud.header;
   return output;
 }

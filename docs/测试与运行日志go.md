@@ -121,3 +121,36 @@ fail 因为go在初始位置就能看到目标，但采用的是一开始先旋�
 
 第三次测试成功
 
+# 10.11
+
+现在进行根据 ~/Notes/协同VLM启动指引.md 的要求进行测试，
+
+**第一次测试**现象是Go在第一个点处旋转，来到第二个候选点旋转后，触发[ros2run]: Process exited with failure 1
+
+查看result, 为"RuntimeError"，
+
+```txt
+reason	"execution path missing or receive timeout"
+```
+
+测试证据见~/unitree_ros2/VLM_Nav/build/go2-field/explore.AbAJmG5C
+
+怀疑是站的离桌子又太近了
+
+**第二次测试**可以明显观察到Go在两个点分别旋转观察，最终正常退出：
+
+<table>
+    <tr>
+    <td	width="50%">
+    	<img src= "fig/Reachable.png" alt="reachable">   <br>
+        Rviz观察到目标后正常退出
+    </td>
+    <td width="50%">
+    	<img src="../build/go2-field/explore.20261011_163317/vlm/f9ff68a665a643c39ae9fdaaf751f9e1_view_02/result.png"   alt="vlm_data"><br>
+		实际观察证据
+    </td>
+    </tr>
+</table>
+`go2_view_01`、`go2_view_02`的人工选定探索点经过初步验证，接下来将使用语义图来指示探索点: 在两个table的附近手动选点，分别表示VLM选此table时相当于要走到哪个位置去探索。
+
+**第三次测试**告诉VLM“灭火器在table2附近”，让它返回table2附近的停靠点作为探索点，顺利地看到灭火器并靠近。结束时距灭火器1.13m, 直接借鉴VLM_Nav的停靠距离判定，修改了代码但是未测试。整个探索-接近-停车的过程目测没有问题，后续可以增加临时途径点来执行更复杂的任务，比如“从纸箱拿一瓶水给老板”，那么就需要导航到“纸箱”和“老板”两个地方。

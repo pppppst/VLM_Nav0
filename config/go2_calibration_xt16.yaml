@@ -38,10 +38,12 @@ base_lidar_extrinsic:
   rpy: [0.0, 0.0, 1.570796]
 
 camera_extrinsic:
-  calibrated: false
-  source: TBD / requires measurement
+  calibrated: true
+  source: >-
+    用户确认沿用上一版 Go2 相机外参。
+    Adopted from go2_calibration.yaml; no new field calibration or projection acceptance.
   direction: parent frame to child frame
   parent_frame: base_link
   child_frame: camera_link
-  xyz: TBD / requires measurement
-  rpy: TBD / requires measurement
+  xyz: [0.32715, -0.00003, 0.04297]
+  rpy: [0.0, 0.0, 0.0]

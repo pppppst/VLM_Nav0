@@ -50,6 +50,13 @@ public:
     parameters_.self_crop_min_z = declare_parameter<double>("self_crop_min_z", 0.05);
     parameters_.self_crop_max_z = declare_parameter<double>("self_crop_max_z", 1.50);
     parameters_.voxel_leaf_size = declare_parameter<double>("voxel_leaf_size", 0.05);
+    rcl_interfaces::msg::ParameterDescriptor intensity_descriptor;
+    intensity_descriptor.read_only = true;
+    intensity_descriptor.description = "Experimental post-voxel filter; restart to switch A/B";
+    parameters_.intensity_filter_enabled = declare_parameter<bool>(
+      "intensity_filter_enabled", false, intensity_descriptor);
+    parameters_.intensity_threshold = declare_parameter<double>(
+      "intensity_threshold", 3.0, intensity_descriptor);
     validate_configuration();
 
     publisher_ = create_publisher<Cloud>(output_topic_, rclcpp::SensorDataQoS());
@@ -166,6 +173,9 @@ private:
     status.add("after_self_crop", snapshot.points.after_self_crop);
     status.add("after_voxel", snapshot.points.after_voxel);
     status.add("output_points", snapshot.points.output_points);
+    status.add("intensity_filter_enabled", parameters_.intensity_filter_enabled);
+    status.add("intensity_threshold", parameters_.intensity_threshold);
+    status.add("intensity_removed", snapshot.points.after_voxel - snapshot.points.output_points);
     status.add("processing_latency_ms", snapshot.processing_latency_ms);
     status.add("last_success_age_s", last_success_age);
   }

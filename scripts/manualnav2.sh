@@ -342,6 +342,11 @@ wait_for_preflight_inputs() {
 
 unset PYTHONHOME PYTHONPATH
 source "${script_dir}/common.sh"
+camera_tf_binary="$(ros2 pkg prefix vlm_nav)/lib/vlm_nav/go2_camera_tf"
+if [[ ! -x "${camera_tf_binary}" ]]; then
+  echo "ERROR: Go2 camera TF owner missing from active overlay; include the updated root overlay in VLM_NAV_EXTRA_SETUP_FILES." >&2
+  exit 1
+fi
 source "${script_dir}/go2_network_env.sh"
 export PYTHONPATH="${project_dir}:${PYTHONPATH:-}"
 install_share="$(timeout 5 ros2 pkg prefix --share vlm_nav)"
@@ -389,6 +394,7 @@ start_child nav2 ros2 launch vlm_nav go2_system.launch.py \
   sensor_preflight_report:=/tmp/go2_costmap_preflight.json \
   target_stage:=nav2 bridge_dry_run:=false start_bridge:=false \
   localization_mode:="${localization_mode}" map:="${map_path}" \
+  calibration_file:="${project_dir}/config/go2_calibration_xt16.yaml" \
   amcl_scan_topic:="${amcl_scan_topic}"
 nav2_index=$((${#children[@]} - 1))
 if [[ "${localization_mode}" == amcl ]]; then
@@ -435,12 +441,9 @@ if [[ "${vlm_mode}" == true ]]; then
     echo "ERROR: VLM_TARGET_DESCRIPTION is required in VLM mode." >&2
     exit 1
   fi
-  start_child camera_tf ros2 run tf2_ros static_transform_publisher \
-    --x 0.32715 --y -0.00003 --z 0.04297 \
-    --roll 0 --pitch 0 --yaw 0 \
-    --frame-id base_link --child-frame-id camera_link
   start_child vlm ros2 launch vlm_nav go2_vlm.launch.py \
     enabled:=false target_description:="${target_description}" \
+    calibration_file:="${project_dir}/config/go2_calibration_xt16.yaml" \
     localization_mode:="${localization_mode}"
   vlm_index=$((${#children[@]} - 1))
   wait_for_value /vlm_nav/input_ready True

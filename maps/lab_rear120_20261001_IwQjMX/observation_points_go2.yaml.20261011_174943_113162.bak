@@ -1,0 +1,27 @@
+# 家具绑定等待用户确认；原实验两点坐标保留，禁止猜测绑定后启用。
+schema_version: 1
+robot_id: go2
+frame_id: map
+map_id: lab_rear120_20261001_IwQjMX
+map_version: sha256:c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02
+semantic_yaml: semantic_map.yaml
+annotated_image: annotated_map.png
+semantic_yaml_sha256: fa6a556100e1dc979687dd5ecb9d6386de832015d3f329cedd7dc3ea676eec48
+annotated_image_sha256: 1268af908167b45559f6ce241228edf227ed9ee9652e69b71bdbc1f76553e8c6
+viewpoints:
+- viewpoint_id: go2_view_01
+  furniture_id: null
+  enabled: false
+  pose:
+    x: -0.37453392148017883
+    y: 1.9982248544692993
+    yaw: 1.911663117782095
+  side: null
+- viewpoint_id: go2_view_02
+  furniture_id: null
+  enabled: false
+  pose:
+    x: 0.9363348484039307
+    y: 2.5810399055480957
+    yaw: 0.22931137952344943
+  side: null

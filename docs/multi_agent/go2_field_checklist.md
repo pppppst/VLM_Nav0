@@ -1,5 +1,12 @@
 # Go2 现场接入准备与单机 adapter 验收
 
+2026-10-09本轮单机完整实验以[runbook首节](go2_runbook.md#go2-独立人工点连续探索)
+及[最新交接](session_handoff.md#22-单机实验取消计划年龄门槛独立5秒接收监护2026-10-09)
+为准：执行路径为`/received_global_plan`，删除计划年龄限制，独立接收超时5.0秒。
+`path_source_verified=false`仍如实保留，但不阻塞本轮单机实验；完整协同门槛保留。
+下文缺项表及验收命令是上一阶段记录，旧path_max_age和offline退出码不再适用于
+本轮单机入口，不要求按本页逐项真机测试或先搭完整Domain31。
+
 后续基于2575a54的动态覆盖修复、用户指定Go2地图身份和RViz采点方法见
 [dynamic_costmap_stage.md](dynamic_costmap_stage.md)。本页保留上一阶段记录；新的
 独立配置已修复动态层覆盖，旧默认AMCL配置仍保持原样，真机动态层尚未验收。

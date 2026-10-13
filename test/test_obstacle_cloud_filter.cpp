@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -91,4 +92,68 @@ TEST(ObstacleCloudFilter, PreservesHeaderFieldsAndStageCounts)
     has_intensity = has_intensity || field.name == "intensity";
   }
   EXPECT_TRUE(has_intensity);
+}
+
+TEST(ObstacleCloudFilter, IntensityThresholdIsInclusiveAndAfterVoxelAveraging)
+{
+  auto parameters = vlm_nav::FilterParameters{};
+  parameters.intensity_filter_enabled = true;
+  parameters.intensity_threshold = 30.5;
+  vlm_nav::FilterStatistics statistics;
+  const auto output = vlm_nav::filter_base_link_cloud(make_cloud(), parameters, statistics);
+  EXPECT_EQ(statistics.after_voxel, 2u);
+  EXPECT_EQ(statistics.output_points, 1u);
+  sensor_msgs::PointCloud2ConstIterator<float> intensity(output, "intensity");
+  EXPECT_FLOAT_EQ(*intensity, 40.0F);
+  EXPECT_EQ(output.header.stamp.nanosec, 42u);
+  EXPECT_EQ(output.data.size(), output.row_step);
+  // Filtering before the voxel would retain the 31 point; after averaging removes 30.5.
+  parameters.intensity_filter_enabled = false;
+  const auto baseline = vlm_nav::filter_base_link_cloud(make_cloud(), parameters, statistics);
+  EXPECT_EQ(baseline.width, 2u);
+}
+
+TEST(ObstacleCloudFilter, ZeroThresholdAndAllRemoved)
+{
+  auto cloud = make_cloud();
+  sensor_msgs::PointCloud2Iterator<float> intensity(cloud, "intensity");
+  for (; intensity != intensity.end(); ++intensity) {*intensity = 0;}
+  auto parameters = vlm_nav::FilterParameters{};
+  parameters.intensity_filter_enabled = true;
+  parameters.intensity_threshold = 0;
+  vlm_nav::FilterStatistics statistics;
+  const auto output = vlm_nav::filter_base_link_cloud(cloud, parameters, statistics);
+  EXPECT_EQ(output.width, 0u);
+  EXPECT_TRUE(output.data.empty());
+  EXPECT_EQ(statistics.output_points, 0u);
+}
+
+TEST(ObstacleCloudFilter, InvalidIntensityConfigurationRejected)
+{
+  auto parameters = vlm_nav::FilterParameters{};
+  parameters.intensity_threshold = -1;
+  EXPECT_THROW(vlm_nav::validate_filter_parameters(parameters), std::invalid_argument);
+  parameters.intensity_threshold = 256;
+  EXPECT_THROW(vlm_nav::validate_filter_parameters(parameters), std::invalid_argument);
+  parameters.intensity_threshold = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(vlm_nav::validate_filter_parameters(parameters), std::invalid_argument);
+  parameters.intensity_threshold = 3;
+  parameters.intensity_filter_enabled = true;
+  auto cloud = make_cloud();
+  cloud.fields.back().name = "not_intensity";
+  vlm_nav::FilterStatistics statistics;
+  EXPECT_THROW(vlm_nav::filter_base_link_cloud(cloud, parameters, statistics), std::invalid_argument);
+}
+
+TEST(ObstacleCloudFilter, RejectsNonFiniteIntensityInsteadOfPublishingFreeSpace)
+{
+  auto cloud = make_cloud();
+  sensor_msgs::PointCloud2Iterator<float> intensity(cloud, "intensity");
+  for (; intensity != intensity.end(); ++intensity) {
+    *intensity = std::numeric_limits<float>::quiet_NaN();
+  }
+  auto parameters = vlm_nav::FilterParameters{};
+  parameters.intensity_filter_enabled = true;
+  vlm_nav::FilterStatistics statistics;
+  EXPECT_THROW(vlm_nav::filter_base_link_cloud(cloud, parameters, statistics), std::invalid_argument);
 }

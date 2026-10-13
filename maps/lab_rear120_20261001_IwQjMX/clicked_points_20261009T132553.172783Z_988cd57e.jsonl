@@ -1,0 +1,2 @@
+{"session": "20261009T132553.172783Z_988cd57e", "index": 1, "stamp": {"sec": 1791552367, "nanosec": 291659105}, "frame_id": "map", "point": {"x": 0.7539222836494446, "y": 0.9419001936912537, "z": 0.002471923828125}, "valid": true, "invalid_reasons": []}
+{"session": "20261009T132553.172783Z_988cd57e", "index": 2, "stamp": {"sec": 1791552370, "nanosec": 731275402}, "frame_id": "map", "point": {"x": 1.7573996782302856, "y": 1.1992052793502808, "z": 0.002471923828125}, "valid": true, "invalid_reasons": []}

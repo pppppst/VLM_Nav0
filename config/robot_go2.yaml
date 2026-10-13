@@ -17,6 +17,9 @@ obstacle_cloud_filter:
     self_crop_min_z: -0.40
     self_crop_max_z: 0.20
     voxel_leaf_size: 0.05
+    # Current Go2 single-robot field profile; threshold applies after voxel averaging.
+    intensity_filter_enabled: true
+    intensity_threshold: 3.0
     diagnostic_updater.period: 1.0
 
 vlm_nav:
@@ -49,7 +52,7 @@ vlm_nav:
     stop_cmd_topic: /cmd_vel_bridge
     arrival_odom_topic: /odometry
     require_camera_calibration: true
-    camera_extrinsic_calibrated: false
+    camera_extrinsic_calibrated: true
     require_external_safety_gates: true
     nav_ready_topic: /vlm_nav/nav_ready
     control_armed_topic: /vlm_nav/control_armed

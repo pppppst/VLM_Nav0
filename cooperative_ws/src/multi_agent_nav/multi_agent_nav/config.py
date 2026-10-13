@@ -29,8 +29,8 @@ def valid_numbers(value, length):
 
 def region_errors(regions):
     errors=[]
-    if not isinstance(regions,dict) or 'basket' not in regions:
-        errors.append('basket resource polygon missing')
+    if not isinstance(regions,dict):
+        return ['resource polygons must be an explicit mapping']
     for name,entry in (regions.items() if isinstance(regions,dict) else []):
         polygon=entry.get('polygon') if isinstance(entry,dict) else None
         if not isinstance(polygon,list) or len(polygon)<3 or not all(valid_numbers(p,2) for p in polygon):
@@ -74,7 +74,8 @@ def go2_local_gates(config, motion=False, vision=False, check_map_files=True):
             errors.append('Go2 finite footprint missing')
         for field,default in (('stationary_linear_speed',.02),('stationary_angular_speed',.02),
             ('stationary_duration',.5),('odom_max_age',.5),('pose_max_age',1.),
-            ('costmap_max_age',1.),('path_max_age',1.),('path_start_timeout',1.),('cancel_timeout',5.)):
+            ('costmap_max_age',1.),('goal_costmap_max_age',1.),
+            ('path_receive_timeout',5.),('path_start_timeout',1.),('cancel_timeout',5.)):
             value=go2.get(field,default)
             if not isinstance(value,(int,float)) or isinstance(value,bool) or not math.isfinite(value) or value<=0:
                 errors.append(f'Go2 positive finite {field} required')
@@ -88,6 +89,8 @@ def go2_local_gates(config, motion=False, vision=False, check_map_files=True):
 def live_gates(config,local_robot='go2'):
     errors = go2_local_gates(config,motion=True,vision=True,check_map_files=local_robot=='go2')
     alignment, scene = config['alignment'], config['scene']
+    if not isinstance(scene.get('resources'),dict) or 'basket' not in scene['resources']:
+        errors.append('basket resource polygon missing')
     if alignment.get('validated') is not True or not alignment.get('report'):
         errors.append('validated alignment report missing')
     else:

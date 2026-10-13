@@ -151,7 +151,7 @@ def test_go2_fastlio_contract_has_single_plan_a_tf_owner_and_base_cloud():
     assert params["mapping"]["extrinsic_R"] == "TBD / requires measurement"
 
 
-def test_go2_robot_profile_uses_registered_base_cloud_and_blocks_uncalibrated_vlm():
+def test_go2_robot_profile_uses_registered_base_cloud_and_requires_adopted_camera_calibration():
     config = load_yaml("config/robot_go2.yaml")
     obstacle = config["obstacle_cloud_filter"]["ros__parameters"]
     vlm = config["vlm_nav"]["ros__parameters"]
@@ -172,7 +172,7 @@ def test_go2_robot_profile_uses_registered_base_cloud_and_blocks_uncalibrated_vl
     assert vlm["depth_camera_info_topic"] == "/camera/camera/depth/camera_info"
     assert vlm["raw_depth_mode"] is True
     assert vlm["require_camera_calibration"] is True
-    assert vlm["camera_extrinsic_calibrated"] is False
+    assert vlm["camera_extrinsic_calibrated"] is True
     assert vlm["stop_cmd_topic"] == "/cmd_vel_bridge"
     assert vlm["arrival_odom_topic"] == "/odometry"
     assert vlm["vlm_image_record_path"] == "~/unitree_ros2/log/VLM_feedback"

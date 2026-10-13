@@ -41,6 +41,7 @@ from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
+from .arrival import target_distance, stop_radius, arrival_decision
 from .geometry import (
     depth_at_pixel_with_reason,
     grid_to_world,
@@ -2831,17 +2832,11 @@ class VLMNavigator(Node):
             self.prepare_frontier_cycle(pose, use_scan_context=False)
 
     def target_reference_distance(self, pose):
-        if self.target_reference_position is None or pose is None:
-            return math.inf
-        return math.hypot(
-            float(pose[0]) - float(self.target_reference_position[0]),
-            float(pose[1]) - float(self.target_reference_position[1]),
-        )
+        return target_distance(pose, self.target_reference_position)
 
     def approach_stop_radius(self):
-        if int(getattr(self, "arrival_retry_count", 0)) > 0:
-            return float(self.p.target_success_radius)
-        return float(self.p.approach_cancel_radius)
+        return stop_radius(float(self.p.target_success_radius), float(self.p.approach_cancel_radius),
+                           int(getattr(self, "arrival_retry_count", 0)))
 
     def reset_approach_stop(self, reset_retry=False):
         self.arrival_stop_started = 0.0
@@ -2930,10 +2925,12 @@ class VLMNavigator(Node):
             pose = self.robot_pose() if pose is None else pose
             distance = self.target_reference_distance(pose)
             self.easy_target_distance = distance
-            if distance <= float(self.p.target_success_radius):
+            decision = arrival_decision(distance, float(self.p.target_success_radius),
+                                        self.arrival_retry_count, int(self.p.arrival_retry_limit))
+            if decision == 'SUCCESS':
                 self.finish_approach_success()
                 return
-            if self.arrival_retry_count < int(self.p.arrival_retry_limit):
+            if decision == 'RETRY':
                 self.arrival_retry_count += 1
                 self.get_logger().warn(
                     "Approach action stopped outside distance contract; "

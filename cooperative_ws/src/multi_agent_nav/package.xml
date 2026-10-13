@@ -8,11 +8,15 @@
   <exec_depend>rclpy</exec_depend><exec_depend>nav2_msgs</exec_depend><exec_depend>nav_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <depend>nav2_costmap_2d</depend><depend>rclcpp</depend>
+  <depend>class_loader</depend>
   <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>geometry_msgs</exec_depend><exec_depend>std_msgs</exec_depend><exec_depend>std_srvs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>tf2_ros</exec_depend><exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend><exec_depend>python3-numpy</exec_depend><exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
   <test_depend>ament_cmake_pytest</test_depend><test_depend>python3-pytest</test_depend>
   <test_depend>domain_bridge</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

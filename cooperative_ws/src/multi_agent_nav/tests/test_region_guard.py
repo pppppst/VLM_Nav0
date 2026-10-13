@@ -20,3 +20,13 @@ def test_unavailable_geometry_path_or_margin_stops():
     assert RegionGuard({'door':{'polygon':REGION}}, .3).check(h.pose, FOOT, [], {}, h).action=='STOP'
     h.path_valid=True
     assert RegionGuard({'door':{'polygon':REGION}}, None).check(h.pose, FOOT, [h.pose], {}, h).action=='STOP'
+
+def test_empty_resources_still_require_valid_localization_path_and_stop_margin():
+    from dataclasses import replace
+    h=Health(Pose2D(),True,True,True,footprint=FOOT,path_valid=True)
+    guard=RegionGuard({},.3)
+    assert guard.check(h.pose,FOOT,[h.pose],{},h).action=='ALLOW'
+    for health,path,footprint in ((replace(h,localization_valid=False),[h.pose],FOOT),
+        (replace(h,path_valid=False),[h.pose],FOOT),(h,[],FOOT),(h,[h.pose],[])):
+        assert guard.check(health.pose,footprint,path,{},health).action=='STOP'
+    assert RegionGuard({},None).check(h.pose,FOOT,[h.pose],{},h).action=='STOP'

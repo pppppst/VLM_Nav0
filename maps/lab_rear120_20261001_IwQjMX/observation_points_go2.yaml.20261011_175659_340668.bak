@@ -1,0 +1,64 @@
+# 新点按用户约定绑定；保留点击朝向，待 RViz 核对及现场验证，暂不启用。
+schema_version: 1
+robot_id: go2
+frame_id: map
+map_id: lab_rear120_20261001_IwQjMX
+map_version: sha256:c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02
+semantic_yaml: semantic_map.yaml
+annotated_image: annotated_map.png
+semantic_yaml_sha256: fa6a556100e1dc979687dd5ecb9d6386de832015d3f329cedd7dc3ea676eec48
+annotated_image_sha256: 1268af908167b45559f6ce241228edf227ed9ee9652e69b71bdbc1f76553e8c6
+viewpoints:
+- viewpoint_id: table_01_view_01
+  furniture_id: table_01
+  enabled: false
+  pose:
+    x: 1.1407206058502197
+    y: 1.5659018754959106
+    yaw: 0.1139940814558879
+  side: null
+  point_record:
+    file: clicked_points_20261011T094800.286779Z_d37f638f.jsonl
+    sha256: eb2f6e0c7eecddc49a39faa890d673dc590c13ce3ed6d1191ccb912ef912f51b
+    session: 20261011T094800.286779Z_d37f638f
+    point_indices:
+    - 1
+    - 2
+    method: parking_center_then_heading
+  validation_status: pending_rviz_and_field_validation
+- viewpoint_id: table_02_view_01
+  furniture_id: table_02
+  enabled: false
+  pose:
+    x: -0.4178990423679352
+    y: 1.4312951564788818
+    yaw: 2.10969554928474
+  side: null
+  point_record:
+    file: clicked_points_20261011T094800.286779Z_d37f638f.jsonl
+    sha256: eb2f6e0c7eecddc49a39faa890d673dc590c13ce3ed6d1191ccb912ef912f51b
+    session: 20261011T094800.286779Z_d37f638f
+    point_indices:
+    - 3
+    - 4
+    method: parking_center_then_heading
+  validation_status: pending_rviz_and_field_validation
+archived_viewpoints:
+- viewpoint_id: go2_view_01
+  furniture_id: null
+  enabled: false
+  pose:
+    x: -0.37453392148017883
+    y: 1.9982248544692993
+    yaw: 1.911663117782095
+  side: null
+  archive_reason: 用户在 RViz 确认不适合绑定当前家具；保留原实验点，不用于本轮语义观察。
+- viewpoint_id: go2_view_02
+  furniture_id: null
+  enabled: false
+  pose:
+    x: 0.9363348484039307
+    y: 2.5810399055480957
+    yaw: 0.22931137952344943
+  side: null
+  archive_reason: 用户在 RViz 确认不适合绑定当前家具；保留原实验点，不用于本轮语义观察。

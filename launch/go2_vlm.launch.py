@@ -17,6 +17,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from vlm_nav.go2_preflight import require_calibrated
+from vlm_nav.go2_camera_tf import camera_tf_action
 
 
 def _build(context):
@@ -25,6 +26,7 @@ def _build(context):
     with open(calibration_path, encoding="utf-8") as stream:
         calibration = yaml.safe_load(stream)
     require_calibrated("camera_extrinsic", calibration["camera_extrinsic"])
+    camera_tf = camera_tf_action(calibration_path)
 
     waiter = Node(
         package="vlm_nav",
@@ -79,6 +81,13 @@ def _build(context):
         return [navigator]
 
     return [
+        RegisterEventHandler(OnProcessExit(
+            target_action=camera_tf,
+            on_exit=lambda event, _context: [EmitEvent(event=Shutdown(
+                reason="Go2 camera TF ownership failed"
+            ))] if event.returncode != 0 else [],
+        )),
+        camera_tf,
         RegisterEventHandler(
             OnProcessExit(target_action=waiter, on_exit=on_waiter_exit)
         ),
@@ -95,7 +104,7 @@ def generate_launch_description():
             DeclareLaunchArgument("localization_mode", default_value="slam"),
             DeclareLaunchArgument(
                 "calibration_file",
-                default_value=os.path.join(share, "config", "go2_calibration.yaml"),
+                default_value=os.path.join(share, "config", "go2_calibration_xt16.yaml"),
             ),
             OpaqueFunction(function=_build),
         ]

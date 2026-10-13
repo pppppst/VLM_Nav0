@@ -28,6 +28,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from vlm_nav.go2_preflight import require_calibrated, validate_formal_preflight_report
+from vlm_nav.go2_camera_tf import camera_tf_action
 
 
 STAGES = ("fastlio", "obstacle", "scan", "slam", "nav2")
@@ -215,7 +216,11 @@ def _build(context):
     camera = calibration["camera_extrinsic"]
     if camera.get("calibrated") is True:
         require_calibrated("camera_extrinsic", camera)
-        static_nodes.append(_static_transform("go2_base_to_camera", camera))
+        camera_tf = camera_tf_action(calibration_path)
+        static_nodes.extend([
+            _advance_after(camera_tf, [], "camera TF ownership"),
+            camera_tf,
+        ])
 
     bridge = Node(
         package="vlm_nav",
@@ -261,7 +266,12 @@ def _build(context):
         executable="obstacle_cloud_filter",
         name="obstacle_cloud_filter",
         output="screen",
-        parameters=[os.path.join(share, "config", "robot_go2.yaml")],
+        parameters=[os.path.join(share, "config", "robot_go2.yaml"), {
+            "intensity_filter_enabled": LaunchConfiguration(
+                "intensity_filter_enabled").perform(context).lower() == "true",
+            "intensity_threshold": float(LaunchConfiguration(
+                "intensity_threshold").perform(context)),
+        }],
     )
     obstacle_waiter = _waiter(
         "wait_go2_obstacle_cloud",
@@ -354,6 +364,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("sensor_preflight_max_age_s", default_value="600.0"),
             DeclareLaunchArgument("target_stage", default_value="fastlio"),
+            DeclareLaunchArgument("intensity_filter_enabled", default_value="true", choices=["true", "false"]),
+            DeclareLaunchArgument("intensity_threshold", default_value="3.0"),
             DeclareLaunchArgument("localization_mode", default_value="slam"),
             DeclareLaunchArgument("map", default_value=""),
             DeclareLaunchArgument("amcl_scan_topic", default_value="/scan_amcl"),

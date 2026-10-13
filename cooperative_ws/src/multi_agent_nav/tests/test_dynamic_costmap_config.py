@@ -1,6 +1,7 @@
-"""Effective Nav2 parameters, not isolated YAML plugin declarations. No ROS init."""
+"""Effective Nav2 parameters and Domain31 synthetic costmaps; no hardware."""
 from pathlib import Path
 import importlib.util
+import pytest
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchContext
@@ -70,7 +71,8 @@ def test_static_collection_dry_run_contains_only_read_commands():
     assert 'param dump /amcl' in result.stdout and 'bag record' in result.stdout
     assert 'send_goal' not in result.stdout and 'topic pub' not in result.stdout and '--allow-motion' not in result.stdout
 
-def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path,monkeypatch):
+@pytest.mark.parametrize('orderly_shutdown',[False,True],ids=['sigint','lifecycle_shutdown'])
+def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path,monkeypatch,orderly_shutdown):
     """Real Nav2, isolated Domain31; never field verification or a fake task peer."""
     import os,signal,subprocess,time
     import rclpy
@@ -84,6 +86,8 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
     from sensor_msgs_py import point_cloud2
     from std_msgs.msg import Header
     from rcl_interfaces.srv import GetParameters
+    from lifecycle_msgs.srv import GetState
+    from nav2_msgs.srv import ManageLifecycleNodes
     from ament_index_python.packages import get_package_prefix
     for k,v in {'ROS_DOMAIN_ID':'31','ROS_LOCALHOST_ONLY':'1',
         'RMW_IMPLEMENTATION':'rmw_fastrtps_cpp','ROS_LOG_DIR':str(tmp_path)}.items():monkeypatch.setenv(k,v)
@@ -94,7 +98,7 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
     native=Path(get_package_prefix('multi_agent_nav'))/'lib/multi_agent_nav/multi_agent_costmap_acceptance'
     manager=Path(get_package_prefix('nav2_lifecycle_manager'))/'lib/nav2_lifecycle_manager/lifecycle_manager'
     prefix='/go2_costmap_acceptance';names=[prefix+'/'+n+'/'+n for n in ('local_costmap','global_costmap')]
-    processes=[];logs=[];latest={}
+    processes=[];logs=[];latest={};forced=[]
     rclpy.init(args=[]);probe=Node('synthetic_costmap_probe')
     durable=QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL)
     maps=probe.create_publisher(OccupancyGrid,'/map',durable)
@@ -146,13 +150,26 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
         for short in ('local_costmap','global_costmap'):
             publishers=probe.get_publisher_names_and_types_by_node(short,prefix+'/'+short)
             assert not any('cmd_vel' in topic or '/_action/' in topic for topic,_ in publishers)
+        if orderly_shutdown:
+            client=probe.create_client(ManageLifecycleNodes,prefix+'/lifecycle_manager_costmaps/manage_nodes')
+            assert client.wait_for_service(timeout_sec=2)
+            future=client.call_async(ManageLifecycleNodes.Request(command=ManageLifecycleNodes.Request.SHUTDOWN))
+            assert spin_until(future.done,3.,10) and future.result().success
+            for name in names:
+                client=probe.create_client(GetState,name+'/get_state')
+                assert client.wait_for_service(timeout_sec=2)
+                future=client.call_async(GetState.Request())
+                assert spin_until(future.done,3.,3)
+                assert future.result().current_state.id==4  # FINALIZED, not just manager success.
         print('Domain31 synthetic native costmaps: plugins/full payload/marking/clearing/no-motion publishers PASS')
     finally:
         for p in processes:
             if p.poll() is None:p.send_signal(signal.SIGINT)
         for p in processes:
             try:p.wait(timeout=5)
-            except subprocess.TimeoutExpired:p.kill();p.wait()
+            except subprocess.TimeoutExpired:forced.append(p.pid);p.kill();p.wait()
         for log in logs:log.close()
         for p in tmp_path.glob('native_*.log'):print(p.name+': '+p.read_text()[-2000:])
         probe.destroy_node();rclpy.shutdown()
+    assert not forced, f'Forced shutdown: {forced}'
+    assert [p.returncode for p in processes]==[0,0], 'Costmap host/manager must both exit normally'

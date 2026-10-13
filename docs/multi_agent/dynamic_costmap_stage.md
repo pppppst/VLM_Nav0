@@ -1,5 +1,29 @@
 # Go2 动态 costmap 与静止现场采集（基准 2575a54）
 
+```
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/setup.bash
+
+export GO2_COOP_OUTPUT="$PWD/build/go2-coop"
+source "$GO2_COOP_OUTPUT/install/setup.bash"
+
+export GO2_NET_IFACE=enp4s0
+source scripts/go2_network_env.sh || exit 1
+
+export GO2_FIELD_CONFIG="$PWD/build/go2-field/config-costmap-acceptance"
+export GO2_EVIDENCE_ROOT="$PWD/build/go2-field/evidence"
+export ROS_LOG_DIR="$GO2_EVIDENCE_ROOT/ros"
+mkdir -p "$ROS_LOG_DIR"
+
+ros2 pkg prefix vlm_nav
+ros2 pkg prefix multi_agent_nav
+```
+
+
+
 本轮已修复**显式选择的协同配置**的最终覆盖；没有改变旧 AMCL 默认栈。
 原生 Nav2 动态层已在 Domain31/localhost 合成输入下验证，不能当作真机场景通过。
 实际现场采集被 enp4s0 的 NO-CARRIER/无 Go2 子网地址阻止；未初始化 Domain0
@@ -273,3 +297,143 @@ Ranger对齐、桥接、互为障碍和任务顺序验收继续保留原门槛�
 所有自动ROS验证只在localhost Domain31；真机场景测量、动态层marking/clearing、
 当前map_server路径/内容核对、执行路径关联与物理停止验收均未完成，不能据上述
 合成测试填现场通过标记。
+
+
+## 2026-10-08：完整点云诊断订阅护栏
+
+正式保存的诊断入口为 `scripts/run_ab.py`；`build/go2-field/evidence` 下的旧
+`run_ab.py` 保留为历史运行代码，不再作为启动入口。两路完整点云订阅默认关闭；
+仅显式提供 `--full-cloud-monitoring` 时开启。默认仍接收 `/odometry`、`/lowstate`，
+沿用 0.5 m 相邻观测跳变、1.0 m 静止位移以及非有限位姿的提前停止逻辑。
+这是诊断监护，不代替需要新鲜 formal PASS 的正式安全监督，也不打开 SYSTEM_READY。
+
+本机已验证该完整点云监测会明显扰动发布与定位：2026-10-08 站立 A 组包含
+监测时，10.93秒内 rcl_publish 中位/最大为257.67/288.52 ms，最大相邻观测位姿
+变化0.590 m；唯一一次移除监测的60秒静止复测中，中位/最大为0.892/1.186 ms，
+最大相邻观测变化0.0121 m，转换器周期诊断跨度拒绝为0，未见No Effective Points。
+这是该节点参与问题的现场证据；内部DDS等待原因及完整定位恢复仍未确定。
+证据位于 `build/go2-field/evidence/fastlio-retest.1_h_1z2p/subscriber-triage.20sk5e31/verified-result.json`。
+逐点分析优先使用离线 bag；实时 `raw_count=0` 不能当作零异常，关闭监测时报告
+原始/转换点云直接统计为 `null / NOT_MEASURED`，保留原转换器周期诊断。
+
+无硬件检查：
+
+```bash
+source build/go2-field/evidence/fastlio-retest.1_h_1z2p/session.env
+/usr/bin/python3 scripts/run_ab.py --help
+/usr/bin/python3 scripts/run_ab.py --self-check
+/usr/bin/python3 test/check_go2_diagnostic_monitor.py
+```
+
+`run_ab.py` 仍是录包开关A/B工具，B组会录包，**本轮无录包完整链路检查不运行它**。
+另行明确授权A/B时须提供现有session、reference和新的output目录：
+
+```bash
+/usr/bin/python3 scripts/run_ab.py \
+  --session-dir "$RUN_DIR" \
+  --reference-dir "$RUN_DIR/recording-ab.9ws2548r" \
+  --output-dir "$RUN_DIR/new-diagnostic-ab"
+# 不加 --full-cloud-monitoring；只有明确需要且接受扰动时才显式添加。
+```
+
+静止完整链路检查复用Go2机载D435（见 `docs/VLM_Nav初步启动指引.md`），
+不在控制电脑执行 `01_camera.sh`。保持640×480×15、sync=true、alignment=false；
+不启动RGB/depth探针、完整点云诊断订阅、rosbag、运动任务或bridge。
+定位保持既有 `/scan` 输入及AMCL参数，活动地图使用已指定lab.yaml；
+动态层使用独立 `go2_costmap_acceptance.launch.py`。用原障碍过滤器 `/diagnostics`
+检查非空输出和新鲜度，用costmap实际格变化确认标记/清除；参数true只证明配置。
+真实初始位姿由操作者通过RViz指定，障碍放入和移除需要实际现场操作；缺少任何
+一项只记“未验证”，正常时也仅记本次静止检查通过，不更新协同live验收标记。
+
+
+本次静止完整链路实际尝试（2026-10-08 11:41:59，唯一一次）：复用已运行D435，
+启动原LiDAR/IMU/LIO、障碍过滤、`/scan`、AMCL/map_server及独立costmap，
+没有录包或完整点云监测。临时诊断记录器把 `DiagnosticStatus.level` 的ROS byte
+（Python `bytes`）直接传给JSON，在初始化阶段报TypeError并立即停止本次本机节点。
+采到odometry为0条，未完成真实初始位姿、障碍输入有效性及marking/clearing检查，
+**本次未验证，不记静止通过**。costmap子进程的exit-6发生于SIGINT之后、仍等待
+首个odom TF的activation阶段，尚不能认定独立的pre-stop costmap故障。
+记录器byte→整数候选修正仅作离线检查，已保存原执行代码，未再次启动硬件窗口。
+相机为操作者已有进程，未停止。原参数/高度/QoS/定位及首点代码均未修改。
+证据：`build/go2-field/evidence/fastlio-retest.1_h_1z2p/static-chain.q6b7dbk3/static-result.json`。
+
+### 操作者授权修正后重启的记录
+
+随后按“修正代码错误，进行启动”的明确指令执行一次修正后的150秒窗口。
+诊断记录回调将ROS byte转成整数，实际回调的0—3级消息离线检查通过；
+默认监测订阅构造检查及入口self-check通过，未重跑全量测试。
+原失败尝试的代码与日志保持原样，新执行代码及证据在
+`build/go2-field/evidence/fastlio-retest.1_h_1z2p/static-chain-fixed.0id75ch3/`。
+
+操作者设置的真实初始位姿已由AMCL接收，两个独立costmap均达到active，
+空场快照保存为`baseline/local.json`和`baseline/global.json`。
+150秒包含启动及人工设置，窗口到期后RViz与本次启动的本机节点停止；
+未执行障碍放入/移除，marking和clearing仍为NOT_VERIFIED，未自动追加实验。
+已有Go2机载相机未停止，没有录包、完整点云监测、bridge或运动目标。
+
+本轮收到1489条odom；在odom坐标系按连续收到的xyz计算，最大单步0.0485m，
+最大累计变化0.3521m，z范围0.3421m。这不是外部真值测量；未触发0.5m/1m
+诊断停止门槛不能证明站立定位无漂移，因此完整静止检查不记通过。
+障碍过滤有效诊断148次，频率中位约10Hz，输出2749—3441点，新鲜度最大0.098s。
+驱动1496次rcl_publish中位0.902ms、最大1.954ms；转换器最后5秒周期诊断
+跨度拒绝0（只代表已覆盖时段，完整点云直接统计未测）。
+
+退出阶段发现独立问题：costmap子进程16882在SIGINT后的清理/析构中exit -11；
+launch父进程返回0不能当作所有子进程正常退出。原因尚未确定，未猜测性修补。
+本轮拥有的进程均已不存在；参数、原定位二进制和首点源码摘要前后相同。
+详见新目录`static-result.json`、`manifest.json`及`runtime/costmaps.log`。
+场景坐标、现场验收标记及完整协同live门槛保持待填/关闭。
+
+### 操作者要求重新实验：三阶段快照已完成，清除未通过
+
+按“我要求重新进行实验”的新授权执行一轮，最长300秒，实际182.39秒后主动停止。
+操作者依次确认真实初始位姿、放入障碍、移除并恢复背景；三阶段local/global
+快照均已保存。没有追加轮次、录包、完整点云监测、bridge或运动目标。
+证据目录：`build/go2-field/evidence/fastlio-retest.1_h_1z2p/static-chain-repeat.skw8amvz/`。
+
+运行时参数已保存为`runtime-local-costmap.yaml`和`runtime-global-costmap.yaml`：
+local为static/voxel/inflation，global为static/obstacle/inflation；动态源均为
+`/vlm_nav/obstacle_cloud`，marking/clearing=true，原高度筛选和定位参数未修改。
+这是本轮有效配置证据，不等于物理标记/清除通过。
+
+三阶段同侧frame、尺寸、分辨率与origin均相同，可以逐格比较。致命格数量：
+local 1619→1754→1808，global 3575→3633→3668。
+从原值0—252变成254的新增格local38、global26；移除快照中降回253以下的分别
+为0/38和1/26。全图格变化不能全部归因于实物，未独立测量障碍ROI；
+**本轮没有证明清除成功，完整静止检查不记通过**。
+
+1814条odom在odom坐标系按xyz统计：从首个观测最大累计变化0.3413m，主要为
+启动阶段z变化；空场基线之后最大累计变化0.0218m、最大相邻变化0.00814m。
+不以这些观测宣布完整定位恢复。障碍输出约10Hz、2692—3542点；
+rcl_publish中位0.896ms、最大2.088ms；最后周期诊断跨度拒绝0，未覆盖末尾不足5秒。
+
+停止时先调用本轮costmap生命周期SHUTDOWN（command=4，success=true），
+再结束本轮节点，Go2已有相机未停止。costmap/生命周期子进程在最终SIGINT时
+均exit-2，本轮未出现exit-11，仍不把父进程0当作子进程完全正常退出。
+未确定退出问题根因，未修补真机程序；本轮PID已全部退出，参数及未打补丁的
+定位程序/源码摘要前后相同。详见`static-result.json`及三阶段快照。
+
+#### 清除结论的更正：加入操作者已有目视证据
+
+操作者随后明确确认：在RViz移动实物时“原位置消失，新位置出现”。
+这支持所观察costmap存在标记和清除响应；尚未指明看到的是local还是global，
+因此不将这项观察推定为两层各自的定量验收。
+此前把全图统计直接表述为“清除未通过”结论过强，应读作“快照未完成定量验收”，
+不能据此判断清除功能故障。没有绑定障碍ROI，local新增38格分布在8个四连通区域，
+global新增26格分布在16个区域；这些格不能全部归属于操作者移动的同一个实物。
+0/38、1/26不是该实物区域的清除率，整体致命格数增加也不否定某处已成功清除。
+
+保留原始快照和`static-result.json`，新增`clearing-review.json`记录更正和目视证据。
+当前状态为“已有现场目视标记/清除证据，障碍ROI定量验收尚未完成”；
+尚无已证实的清除故障根因，不据假设修改高度、射线范围、定位或QoS参数。
+本次复核仅使用已有记录，未重启实验，完整协同live仍关闭。
+
+#### 操作者补充：启动期间由趴姿变为站姿
+
+操作者随后说明：“在rviz出现后，我让go2从趴着变成了站立”。
+因此该轮启动区间包含真实姿态转换，不能把从首个odom累计约0.3413m的变化
+直接解释为静止定位漂移。此前关于启动阶段漂移的判断据此撤回，原观测数据不变。
+没有姿态转换起止时刻或外部真值，不按假定站立高度扣除位移，也不据此宣布
+启动估计准确。空场基线后2.18cm累计变化与8.14mm最大单步仍为原始观测统计；
+姿态转换是否在基线前全部结束尚未独立记录。详见该轮`posture-clarification.json`。
+不追加实验，不改变参数或验收标记，完整协同live仍关闭。

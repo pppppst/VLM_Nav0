@@ -19,6 +19,8 @@ struct FilterParameters
   double self_crop_min_z{0.05};
   double self_crop_max_z{1.50};
   double voxel_leaf_size{0.05};
+  bool intensity_filter_enabled{false};
+  double intensity_threshold{3.0};
 };
 
 struct FilterStatistics
