@@ -1502,3 +1502,92 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /home/isee-pst/venv/co-nav-real/bin/python -m p
 ```
 
 预期3项通过；总209项相关检查，不是全量基线。失败停止推进，先处理报告。
+
+## 2026-10-13：健康分项与ABC返回协议修复
+
+最新安装输出为 `build/go2-health-abc-20261013`，覆盖两个受影响包；`CoVLM_env.bash`
+已最后加载此输出。上述display输出保留为历史记录，当前不要在新环境后source旧输出。
+ABC提示统一要求A/B/C各含status+grounding，保留严格解析；不补用旧非法返回。
+失败时 `events.jsonl` 的 `HEALTH_FAILED.failed_gates` 和 `health_details` 保存实际失效项。
+不调整传感器、定位、Nav2或任何安全时限；不改协同协议。
+
+### 构建和离线回归
+
+构建终端（Bash），仓库目录，自动退出，不启动现场输入：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-generated-candidates-20261013/install/local_setup.bash"
+export GO2_HEALTH_OUTPUT="$PWD/build/go2-health-abc-20261013"
+colcon --log-base "$GO2_HEALTH_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_HEALTH_OUTPUT/build" --install-base "$GO2_HEALTH_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+预期退出0、两个包完成；消息包复用go2-coop安装。构建失败先处理，不覆盖旧验证输出。
+仅构建成功后，同终端加载本次安装，在/tmp测试实际安装代码，自动退出：
+
+```bash
+export REPO="$PWD"
+source "$GO2_HEALTH_OUTPUT/install/local_setup.bash"
+export ROS_DOMAIN_ID=31 ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+unset CYCLONEDDS_URI
+export ROS_LOG_DIR="$GO2_HEALTH_OUTPUT/ros-logs" PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+cd /tmp
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_generated_candidates.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_semantic_search.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_exploration.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_field_preparation.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_adapter.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_executing_path.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_scan_evidence.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_exploration_display_records.py" \
+  "$REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_health_diagnostics.py" \
+  -q --tb=short --junitxml="$GO2_HEALTH_OUTPUT/related.xml"
+```
+
+预期225项通过；成功后，同终端回仓库验证客户端及入口环境，自动退出：
+
+```bash
+cd "$REPO"
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest \
+  test/test_vlm_client.py test/test_covlm_env.py -q --tb=short \
+  --junitxml="$GO2_HEALTH_OUTPUT/client-environment.xml"
+```
+
+预期35项通过；合计260项，新增诊断/入口19项、既有相关241项，没有重跑无关全量基线。
+单目标提示的6组历史字节比对另已通过；真实模型是否遵循新ABC格式仍待现场验证。
+
+### 重启后先只读检查
+
+终端4，Bash；前置：本地指引的相机/底层/定位/Nav2保持运行、实测初始位姿已设置。
+本轮检查时用户已停止这些输入，退出1不能诊断20:12的瞬时失效。先按原指引恢复输入；
+本节命令不启动底层、不ARM、不发运动、不请求API，结束自动退出：
+
+```bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/CoVLM_env.bash
+ros2 pkg prefix multi_agent_nav
+```
+
+预期 `$REPO/build/go2-health-abc-20261013/install/multi_agent_nav`；不匹配先处理环境。
+确认安装来源后执行一次：
+
+```bash
+ros2 run multi_agent_nav multi_agent_go2_check --action inspect --require-ready \
+  --config-dir "$GO2_EXPLORE_CONFIG" --strategy generated_candidates_vlm --timeout 10
+```
+
+必须退出0且 `active_map_matches`、`health.localization_valid`、`health.stopped`、
+`costmap_valid`、`rgbd_ready`、`health_window.non_motion_inputs_stable` 均true，再继续原ARM步骤。
+稳定摘要要求定位/局部costmap/RGB-D/深度单位/odom首次全部就绪后观察至少2秒且无失效，
+记录采样数/时长。ARM、Nav2服务等仍在完整诊断中，摘要不认证运动就绪。
+DISARMED时 `control_armed_gate` / `health.nav_ready` 为false可以预期；不要为只读检查ARM。
+输入不稳定或退出1则停止推进，依据 `health_window.transitions` / `health_details` 排障。
+后续探索失败取 `HEALTH_FAILED.failed_gates`，不因通用退出1盲目重跑。

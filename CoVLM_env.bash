@@ -8,7 +8,7 @@ fi
 _covlm_load_environment() {
   export REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   export GO2_COOP_OUTPUT="$REPO/build/go2-coop"
-  export GO2_EXPLORE_OUTPUT="$REPO/build/go2-exploration-display-20261013"
+  export GO2_EXPLORE_OUTPUT="$REPO/build/go2-health-abc-20261013"
   export GO2_GENERATED_OUTPUT="$REPO/build/go2-generated-candidates-20261013"
   export GO2_CAMERA_OUTPUT="$REPO/build/go2-camera-tf"
   export GO2_FILTER_OUTPUT="$REPO/build/go2-intensity-default-20261012"

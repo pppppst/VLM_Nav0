@@ -223,7 +223,46 @@ def run_ros(config,args,events=None):
         deadline=time.monotonic()+args.timeout
         # Initial data collection is passive, even for an explicit future motion action.
         until=min(deadline,time.monotonic()+(args.timeout if args.action=='inspect' else 2.))
-        while time.monotonic()<until:spin()
+        began=time.monotonic();next_sample=began;last_checks=None
+        input_checks=('localization_valid','local_costmap','rgbd_ready','depth_units_verified','odom_fresh')
+        window=dict(samples=0,first_input_ready_elapsed_s=None,post_input_ready_samples=0,
+            post_input_ready_observed_s=0.,minimum_observation_s=2.,
+            failure_counts={},post_input_ready_failure_counts={},transitions=[])
+        while time.monotonic()<until:
+            spin()
+            now=time.monotonic()
+            if args.action!='inspect' or now<next_sample:continue
+            next_sample=now+.1
+            sample=adapter.get_health();details=getattr(adapter,'last_health_details',{})
+            current_owners=other_owners(node)
+            checks=dict(details.get('checks',{}),localization_valid=sample.localization_valid,
+                nav_ready=sample.nav_ready,stopped=sample.stopped,motion_terminal=sample.motion_terminal,
+                local_costmap=adapter.costmap_transform() is not None,
+                rgbd_ready=node.vlm_input_ready(now),depth_units_verified=node.depth_units_verified,
+                odom_fresh=details.get('odom_age_s',float('inf'))<=details.get('odom_max_age_s',0.),
+                no_other_goal_owner=not current_owners)
+            failed=[k for k,v in checks.items() if not v]
+            window['samples']+=1
+            if window['first_input_ready_elapsed_s'] is None and all(checks[k] for k in input_checks):
+                window['first_input_ready_elapsed_s']=now-began
+            if window['first_input_ready_elapsed_s'] is not None:
+                window['post_input_ready_samples']+=1
+                window['post_input_ready_observed_s']=now-began-window['first_input_ready_elapsed_s']
+            for key in failed:
+                window['failure_counts'][key]=window['failure_counts'].get(key,0)+1
+                if window['first_input_ready_elapsed_s'] is not None and key in input_checks:
+                    counts=window['post_input_ready_failure_counts'];counts[key]=counts.get(key,0)+1
+            if checks!=last_checks:
+                window['transitions'].append(dict(elapsed_s=now-began,failed_gates=failed,
+                    health_details=details,other_goal_owners=current_owners))
+                window['transitions']=window['transitions'][-50:]
+                last_checks=checks
+        if args.action=='inspect':
+            window['non_motion_inputs_stable']=(window['first_input_ready_elapsed_s'] is not None
+                and window['post_input_ready_samples']>1
+                and window['post_input_ready_observed_s']>=window['minimum_observation_s']
+                and not window['post_input_ready_failure_counts'])
+            report['health_window']=window
         if motion and not node.vlm_input_ready(time.monotonic()):
             record({'state':'WAITING_INPUTS','reason':'waiting for RGB-D synchronization and image-time TF','motion_sent':False})
             # A new TF buffer may need longer than the initial two-second collection.
@@ -235,7 +274,7 @@ def run_ros(config,args,events=None):
         configured=config['robot_go2'].get('map_path')
         map_matches=bool(actual_path and configured and actual_path==str(Path(configured).expanduser().resolve()))
         health=adapter.get_health()
-        report.update(health=asdict(health),active_map_yaml=actual_path,active_map_matches=map_matches,
+        report.update(health=asdict(health),health_details=getattr(adapter,'last_health_details',{}),active_map_yaml=actual_path,active_map_matches=map_matches,
             costmap_valid=adapter.costmap_transform() is not None,
             costmap_frame=adapter.costmap.header.frame_id if adapter.costmap else None,
             costmap_shape=[adapter.costmap.metadata.size_x,adapter.costmap.metadata.size_y] if adapter.costmap else None,

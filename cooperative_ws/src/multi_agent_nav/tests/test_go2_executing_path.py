@@ -24,7 +24,9 @@ def navigation(monkeypatch):
     a.config = dict(path_receive_timeout=5., path_source_verified=False, footprint=[[0., 0.]],
                    odom_max_age=.5, stationary_duration=.5)
     a.node = S(get_clock=lambda: S(now=lambda: S(nanoseconds=round(now[0]*1e9))),
-               navigator=S(send_goal_async=send),
+               navigator=S(send_goal_async=send,server_is_ready=lambda:False),
+               path_planner=S(server_is_ready=lambda:False),spinner=S(server_is_ready=lambda:False),
+               external_gate_receipts={},p=S(external_gate_timeout=2.),
                make_pose_stamped=lambda x, y, yaw: PoseStamped(),
                tf_buffer=S(lookup_transform=lambda *args: S(
                    header=S(stamp=S(sec=10, nanosec=0)),

@@ -1563,3 +1563,101 @@ Python AST、Bash语法、YAML/文档链接及限定diff检查通过。
 执行；前一轮显式最后source旧generated协同安装不再适用，会覆盖本轮新模块。
 待现场验证：真实相机SSH启动（须先确认不重复）、RViz RGB持续刷新、真实新策略发布、每次
 模型上传/返回与实际显示的对应关系；打开RViz本身不会生成点、调用模型或运动。
+
+
+### 2026-10-13 本地启动指引同步（仅文档）
+
+按用户要求更新 `/home/isee-pst/Notes/协同VLM启动指引.md`，依据当前CoVLM环境、相机SSH脚本、
+Go2底层launch、Sport服务、generated_candidates_vlm及10次记录入口。原344行精简为217行，
+按A相机、1底层、2RViz、3速度接口、4检查/探索列出依赖顺序、作用、输入、预期结果及保持运行要求。
+移除旧安装路径/旧显示/固定点默认探索与接近语义矛盾，保留冷启动/复用分支、实测初始位姿、
+FAULT→reset→DISARMED→ARMED分支及实际停稳后DISARM。
+原文备份 `build/tmp/start-guide-20261013/original.md`；用户指定Notes文件已写入并与草稿核对一致。
+18个Bash块语法、引用文件/本地链接、空白检查通过。没有构建或重跑测试，没有执行SSH、ROS启动、
+预检、API、ARM/reset/运动/录包；此文档更新不产生现场授权或新的实机验收结论。
+
+
+### 2026-10-13 20:12 终端4退出1：只读证据核对
+
+用户要求检查当前实验失败原因。当前分支go2-cooperative-task-layer、HEAD已为
+bdbb64c004b46c8de163710688834ecd4cbb4f0d（用户已提交前序实现），本轮保留交接未提交修改。
+最新experiment.20261013_201239.45cd3ae3：20:12:44.990377 CANDIDATE_REQUEST，约8.923ms后
+CANDIDATE_SELECTION_FAILED，20:12:45.000399 STOPPING，result为
+motion owner/localization/Nav2/costmap health lost。motion_sent=false，没有发送导航/旋转，
+stop_confirmed=null不认证其他控制器；不是最新实验碰撞或目标接近失败。
+
+同决策24f182475871431d8f48816b8139cbd3的selection metadata已保存正常API返回、
+validation_success=true、合法P2（本轮映射table_01/edge_4），worker耗时约4.217s。
+响应晚于任务因健康门槛取消，未应用、未触发运动。result中vlm_evidence_pending=true是退出时
+快照，现在response/metadata已写完，不把该字段当永久API卡住。最初相机TF警告请求比当时
+buffer首样本早约19.8ms，随后启动门槛/RGBD/map/costmap已通过，不据此认定上传失败。
+
+失败分支把owners、nav_ready、localization_valid和局部costmap/TF归为同一错误；nav_ready
+又包含外部ARM/NAV门槛/新鲜度、action服务、视觉/深度单位和局部costmap。
+现有日志未保存失败时各分项，result.health等为启动快照，不能用其中true断言失败时也正常。
+具体失效条件仍待验证，不能直接归因AMCL/costmap/API或猜测性调宽时限/碰撞阈值。
+源码与当前go2-exploration-display安装的go2_check/go2_exploration/adapters/go2逐字节相同。
+
+另核对此前experiment.20261013_200426.8b85dea8：两个观察点8次相机ABC请求均api_returned=true，
+但validation_success=false/error_type=ValueError，程序消费者为ERROR/API_ERROR，观察失败，
+最后第三次选点同样健康门槛取消且停止确认true。保存的8个响应均为A/B/C直接grounding字段，
+parser要求每目标status+grounding，离线重放全部invalid target structure；只加诊断包装后
+严格grounding验证8/8通过，其中table_01/edge_1 view0返回A可见，其余A未检出。
+诊断包装不修改/应用历史响应、不补投影或运动，不把原API_ERROR改写为有效观察。
+实际请求提示同时要求status/grounding并嵌入3份单目标JSON指令，提示冲突为需修正事项；
+它与最新实验选点阶段健康门槛失效是两个独立问题。
+
+只读报告：build/go2-field/evidence/exploration-failure-audit.20261013_201239/report.json。
+本轮仅读文件和离线校验，不修改产品代码/参数，不重启、ROS实时订阅、SSH、API、ARM或运动。
+下一步应细分失败瞬间的健康分项证据，并统一ABC响应提示与解析协议，再按授权验证；
+不凭通用退出1或健康总错误直接重跑/改底层。
+
+### 2026-10-13 健康分项与ABC协议修复、一次只读检查
+
+用户“继续”授权落实上述离线修复/相关构建和一次有时限只读inspect，不授权新运动实验。
+分支/HEAD仍为go2-cooperative-task-layer/bdbb64c004b46c8de163710688834ecd4cbb4f0d，保留已有交接修改。
+ABC请求统一为A/B/C各含status+grounding，并复用现有客户端schema及worker；单目标提示词
+对6组目标/坐标模式与HEAD字节一致。旧扁平响应仍被拒绝，不回填历史观察、不放宽像素验证。
+健康检查保存外部门槛/TTL、三个action服务、定位TF年龄、RGB-D、深度单位、局部costmap
+接收/头时间/TF失效原因；探索失败事件HEALTH_FAILED记录实际失败瞬间的分项和owner。
+运动门槛、超时、Nav2/定位/传感器参数未改。inspect复用已有临时observer，无新增常驻订阅。
+输入稳定摘要仅含定位、局部costmap、RGB-D、深度单位、odom新鲜度，要求就绪后观察至少2秒
+且多于1个样本、无后续输入失效；ARM/服务等仍在完整分项中，摘要不认证运动就绪。
+
+隔离输出build/go2-health-abc-20261013/{build,install,log}两包vlm_nav/multi_agent_nav构建成功。
+同安装/tmp相关协同225项、根客户端/环境35项，共260通过；其中新增诊断/入口回归19项，
+既有相关241项。本轮改进环境断言，核对两个Python模块来自新安装。XML在新输出
+related.xml/client-environment.xml；源码相关174项通过不叠加计数。只读审查两项诊断缺陷
+（ARM误计、odom遗漏/晚就绪误报稳定）先复现失败，再修复回归，复核无阻断问题。
+CoVLM_env最后加载新输出，保持原source入口；已有节点未切换。完整构建及检查命令见runbook。
+
+一次Domain0/enp4s0只读inspect，timeout=10，79个样本，全窗口未收到map/定位TF/costmap/
+RGB-D/odom，三个action服务不可见；退出1、motion_sent=false、non_motion_inputs_stable=false。
+node list也为空。用户随后明确底层和相机“已停止，稍后按指引重启”，解释本次输入缺失；
+不能将该结果当20:12瞬时失效的根因，历史分项缺失仍不可追溯。证据目录
+build/go2-field/evidence/health-abc-readonly-20261013/：nodes.txt、inspect.json、exit-code.txt、
+summary.json；inspect.json末尾含ros2run退出文本，纯JSON摘要为summary.json。
+没有API、SSH、ARM/reset、运动、录包或参数调整。未执行真实API新格式/重启后的健康检查，
+没有自动提交。下一步用户按本地指引重启原输入、只读检查通过后再按原ARM/探索流程；
+再失效时取HEALTH_FAILED.failed_gates，而非猜测性改底层阈值。
+本地Notes启动指引已同步新安装路径/稳定检查判据；runbook新增本轮完整构建/相关测试命令。
+新runbook小节5个Bash块、Notes18个块、CoVLM语法、4个受改模块源码/安装字节一致性、
+AST与git diff --check均通过。Notes与仓库内暂存稿health-abc.md核对一致。
+
+### 2026-10-13 20:55 新实验启动即退出：已定位RGB-D同步门槛
+
+用户询问为何刚开始又失败。本轮仅读新日志/代码、离线计算，不启动ROS/API/运动、不改参数。
+最新experiment.20261013_205504.8f852ffd中20:55:09.201595 CANDIDATE_REQUEST，8.989ms后
+HEALTH_FAILED，failed_gates=[rgbd_ready,nav_ready]；motion_sent=false。失败瞬间分项明确：
+rgbd_sync_healthy=false，其余ARM/NAV/TTL、三个action服务、定位、局部costmap、深度单位均true，
+owners=[]；RGB-D帧年龄81.9ms、相机TF81.3ms、位姿139ms、odom67ms，均新鲜。
+这是运行期间同步健康判据失效，不是此前底层停止的无输入检查，也不是API选点格式失败。
+selection在3.627s后返回合法P1，validation_success=true，但任务已取消，未触发运动。
+程序按每个RGB/深度消息回调重算独立30帧窗口的一对一配对率（slop=.05、min samples=10、
+min rate=.9），并在任何一次输入false时立即结束探索。离线人工时间戳例可复现：
+27/30=true→单RGB回调26/30=false→深度回调27/30=true，说明窗口/到达顺序可能瞬时翻转；
+人工例不是实测根因。当前日志未保存真实matched/total/rate或两流时间戳窗口，不能确定
+本次具体是丢帧/延迟/窗口边界；不要猜测性改相机/Nav2参数或直接忽略同步失效。
+证据：build/go2-field/evidence/exploration-failure-audit.20261013_205504/report.json。
+下一步可在既有observer诊断中保存完整sync状态/窗口时间边界，再区分持续异常与回调瞬态；
+后续修复应保持运动前安全门槛，不重放本次迟到结果。原始实验资料保持不变。

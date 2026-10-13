@@ -96,8 +96,16 @@ def explore(adapter, spin, config, frame, deadline, target, record, owners,
         health = adapter.get_health()
         if clock() >= deadline:
             raise ExplorationStopped('exploration deadline reached')
-        if owners() or not health.nav_ready or not health.localization_valid or adapter.costmap_transform() is None:
-            raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost')
+        other=owners();local_costmap_ok=adapter.costmap_transform() is not None
+        if other or not health.nav_ready or not health.localization_valid or not local_costmap_ok:
+            details=getattr(adapter,'last_health_details',{})
+            failed=[key for key,value in details.get('checks',{}).items() if not value]
+            for key,ok in (('other_goal_owner',not other),('nav_ready',health.nav_ready),
+                           ('localization_valid',health.localization_valid),('local_costmap',local_costmap_ok)):
+                if not ok and key not in failed:failed.append(key)
+            emit('HEALTH_FAILED',failed_gates=failed,health=asdict(health),health_details=details,
+                 costmap_checks=getattr(adapter,'last_costmap_checks',{}),other_goal_owners=other)
+            raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost: '+', '.join(failed))
         if navigating:
             acquired = acquired or bool(health.path_valid and health.path)
             waiting = not acquired and health.stopped and clock()-began < config['robot_go2'].get('path_start_timeout', 1.)

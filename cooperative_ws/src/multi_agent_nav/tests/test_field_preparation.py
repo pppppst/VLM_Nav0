@@ -290,7 +290,9 @@ def test_full_gates_only_read_the_current_pcs_map_files():
     assert not any('go2: readable' in e for e in ranger_errors)
 
 @pytest.mark.parametrize('action,owners,terminal,change,expected',[
-    ('inspect',[],True,'',0),('navigate',[],True,'',0),
+    ('inspect',[],True,'',0),('inspect',[],True,'rgbd_blink',0),
+    ('inspect',[],True,'rgbd_late',0),('inspect',[],True,'arm_stale',0),
+    ('inspect',[],True,'odom_stale',0),('navigate',[],True,'',0),
     ('navigate',['multi_agent_coordinator'],True,'',1),('navigate',['multi_agent_task_agent'],True,'',1),
     ('navigate',[],False,'',1),('navigate',[],True,'permit',1),
     ('navigate',[],True,'moving',1),('navigate',[],True,'terminal',1),
@@ -330,6 +332,8 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     c['scene']['resources']={'basket':{'polygon':[[100,100],[102,100],[102,102],[100,102]]}}
     f=Future();f.set_result(S(values=[S(string_value=str(path))]))
     def rgbd_ready(t):
+        if change=='rgbd_blink':return not (5.<=t<5.5)
+        if change=='rgbd_late':return t>=11.5
         if change=='rgbd_warmup':return t>=5.
         if change=='rgbd_deadline':return t>=12.
         return change!='rgbd_unavailable'
@@ -347,6 +351,9 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
             if change=='path_finished' and not self.active:self.path=[]
         def get_health(self):
             h=replace(super().get_health(),motion_terminal=terminal)
+            self.last_health_details=dict(checks=dict(depth_units_verified=True,
+                control_armed_gate=change!='arm_stale',external_gates_fresh=change!='arm_stale'),
+                odom_age_s=10. if change=='odom_stale' else .05,odom_max_age_s=.5)
             h.nav_ready=h.nav_ready and node.vlm_input_ready(now[0])
             if self.planned and change=='permit':h.nav_ready=False
             if self.planned and change=='moving':h.stopped=False
@@ -394,7 +401,14 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         with pytest.raises(check.StopUnconfirmed):check.run_ros(c,args)
     else:assert check.run_ros(c,args,events)==expected
     report=json.loads(capsys.readouterr().out)
-    if action=='inspect':assert report['costmap_probe']['footprint_free'] is True
+    if action=='inspect':
+        assert report['costmap_probe']['footprint_free'] is True
+        assert report['health_window']['samples']>10
+        assert report['health_window']['non_motion_inputs_stable']==(change not in ('rgbd_blink','rgbd_late','odom_stale'))
+        if change=='rgbd_blink':assert report['health_window']['post_input_ready_failure_counts']['rgbd_ready']>0
+        if change=='rgbd_late':assert report['health_window']['post_input_ready_observed_s']<2.
+        if change=='arm_stale':assert report['health_window']['failure_counts']['external_gates_fresh']>0
+        if change=='odom_stale':assert report['health_window']['failure_counts']['odom_fresh']>0
     assert report['live_gates']  # Ranger/alignment remain incomplete, even for a local unit goal.
     if change=='evidence_error':
         assert report['evidence_write_failed'] and report['stop_confirmed']
