@@ -135,7 +135,7 @@ def test_selection_write_failure_prevents_upload_and_preserves_existing_file(mon
     assert client.selection_evidence_write_failed and (tmp_path/'request.json').read_text()=='preserve me'
 
 
-def test_rviz_has_generated_topics_and_best_effort_raw_rgb():
+def test_rviz_has_generated_topics_and_reuses_camera_preview():
     import yaml
     root=Path(__file__).resolve().parents[4]
     config=yaml.safe_load((root/'config/go2_exploration.rviz').read_text())
@@ -144,7 +144,7 @@ def test_rviz_has_generated_topics_and_best_effort_raw_rgb():
     assert '/vlm_nav/go2_exploration/current_point' not in topics
     assert {'/vlm_nav/go2_exploration/generated_candidates','/vlm_nav/go2_exploration/selected_candidate'}<=topics
     image=next(d for d in displays if d['Class']=='rviz_default_plugins/Image')
-    assert image['Topic']['Value']=='/camera/camera/color/image_raw'
+    assert image['Topic']['Value']=='/vlm_nav/camera_preview'
     assert image['Topic']['Reliability Policy']=='Best Effort' and image['Transport Hint']=='raw'
 
 

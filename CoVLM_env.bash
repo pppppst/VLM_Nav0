@@ -8,8 +8,10 @@ fi
 _covlm_load_environment() {
   export REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   export GO2_COOP_OUTPUT="$REPO/build/go2-coop"
-  export GO2_EXPLORE_OUTPUT="$REPO/build/go2-health-abc-20261013"
+  export GO2_EXPLORE_OUTPUT="$REPO/build/go2-approach-coverage-20261018"
   export GO2_GENERATED_OUTPUT="$REPO/build/go2-generated-candidates-20261013"
+  export GO2_RGBD_OUTPUT="$REPO/build/go2-rgbd-pair-health-20261013"
+  export GO2_BRIDGE_OUTPUT="$REPO/build/go2-manual-takeover-20261015"
   export GO2_CAMERA_OUTPUT="$REPO/build/go2-camera-tf"
   export GO2_FILTER_OUTPUT="$REPO/build/go2-intensity-default-20261012"
   export GO2_EXPLORE_CONFIG="$REPO/cooperative_ws/src/multi_agent_nav/config"
@@ -23,6 +25,8 @@ _covlm_load_environment() {
     "$GO2_FILTER_OUTPUT/install/local_setup.bash"
     "$GO2_GENERATED_OUTPUT/install/local_setup.bash"
     "$GO2_EXPLORE_OUTPUT/install/local_setup.bash"
+    "$GO2_RGBD_OUTPUT/install/local_setup.bash"
+    "$GO2_BRIDGE_OUTPUT/install/local_setup.bash"
     "$REPO/scripts/go2_network_env.sh"
   )
   for setup in "${setups[@]}"; do
@@ -36,7 +40,7 @@ _covlm_load_environment() {
   for setup in "${setups[@]}"; do
     source "$setup" || return 1
   done
-  export VLM_NAV_EXTRA_SETUP_FILES="$GO2_CAMERA_OUTPUT/install/local_setup.bash:$GO2_FILTER_OUTPUT/install/local_setup.bash:$GO2_GENERATED_OUTPUT/install/local_setup.bash:$GO2_EXPLORE_OUTPUT/install/local_setup.bash"
+  export VLM_NAV_EXTRA_SETUP_FILES="$GO2_CAMERA_OUTPUT/install/local_setup.bash:$GO2_FILTER_OUTPUT/install/local_setup.bash:$GO2_GENERATED_OUTPUT/install/local_setup.bash:$GO2_EXPLORE_OUTPUT/install/local_setup.bash:$GO2_RGBD_OUTPUT/install/local_setup.bash:$GO2_BRIDGE_OUTPUT/install/local_setup.bash"
   export ROS_LOG_DIR="$GO2_EXPLORE_OUTPUT/ros-logs"
   mkdir -p "$ROS_LOG_DIR" || return 1
   cd "$REPO" || return 1

@@ -5,8 +5,8 @@ simulation: false
 report: null
 robots:
   go2:
-    local_map_id: lab_rear120_20261001_IwQjMX
-    map_version: sha256:c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02
+    local_map_id: lab_rescan_20261018_155656_0pa6gm
+    map_version: sha256:6ae95d62d745c3bfb6eaf1e247cac27b32542251cbd1a4ccbc55f5d1febdd279
     transform:
     - 0.0
     - 0.0

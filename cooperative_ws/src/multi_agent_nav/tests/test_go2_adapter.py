@@ -97,3 +97,30 @@ def test_delayed_odometry_cannot_confirm_physical_stop():
     message=SimpleNamespace(header=SimpleNamespace(stamp=SimpleNamespace(sec=1,nanosec=0)),twist=SimpleNamespace(twist=v))
     adapter.on_odometry(message)
     assert adapter.stationary_since is None and adapter.odom_at==0
+
+@pytest.mark.parametrize('failure', ['timeout', 'unsettled', 'none'])
+def test_cooperative_native_send_rechecks_after_motion_preparation(failure):
+    from concurrent.futures import Future
+    from dataclasses import replace
+    from multi_agent_nav.adapters.fake import FakeAdapter
+    from multi_agent_nav.runner import AgentRunner
+    from test_agent import machine, command
+    agent, adapter, now, sent = machine(), FakeAdapter('go2'), [0.], []
+    agent.tick(0., adapter.get_health())
+    runner = AgentRunner(agent, adapter, {}, lambda observation: None, clock=lambda: now[0])
+    assert agent.accept(command('WAIT'), 0.).accepted
+    adapter.motions = {}
+    get_health = adapter.get_health
+    adapter.get_health = lambda: replace(get_health(), motion_terminal=not adapter.motions)
+    def prepare(*args):
+        if failure == 'timeout':now[0] = 3.01
+        elif failure == 'unsettled':adapter.get_health = lambda: replace(get_health(), stopped=False)
+    adapter._motion_event = prepare
+    response = Future()
+    client = SimpleNamespace(send_goal_async=lambda goal: sent.append(goal) or response)
+    result = Go2Adapter._motion(adapter, client, object(), '', 'c1', 'SCAN_SPIN')
+    if failure == 'none':
+        assert result[0] in adapter.motions and len(sent) == 1
+    else:
+        assert result == (None, None) and not sent and not adapter.motions
+    assert agent.paused == (failure == 'timeout')

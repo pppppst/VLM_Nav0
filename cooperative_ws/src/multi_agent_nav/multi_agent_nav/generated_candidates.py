@@ -38,8 +38,9 @@ def circle_free(raw, x, y, radius, resolution, blocked):
 
 
 class GeneratedCandidates:
-    def __init__(self,config):
-        robot=config['robot_go2'];options=robot['generated_candidates']
+    def __init__(self,config,robot_id='go2'):
+        self.robot_id=robot_id
+        robot=config[f'robot_{robot_id}'];options=robot['generated_candidates']
         distance=options['observation_distance']
         if not valid_numbers([distance],1) or distance<=0:
             raise ValueError('positive finite observation_distance required')
@@ -47,12 +48,12 @@ class GeneratedCandidates:
         self.map_path=Path(robot['map_path']).resolve()
         self.semantic_path=Path(options['semantic_yaml']).resolve()
         info=map_file_info(self.map_path)
-        identity=config['alignment']['robots']['go2']
+        identity=config['alignment']['robots'][robot_id]
         if (info['map_digest']!=robot['map_digest'] or identity['map_version']!='sha256:'+info['map_digest']):
             raise ValueError('generated map identity mismatch')
         source=yaml.safe_load(self.map_path.read_text())
         semantic=yaml.safe_load(self.semantic_path.read_text())
-        if (not isinstance(semantic,dict) or semantic.get('schema_version')!=1 or semantic.get('source_robot')!='go2'
+        if (not isinstance(semantic,dict) or semantic.get('schema_version')!=1 or semantic.get('source_robot')!=robot_id
                 or semantic.get('frame_id')!='map' or semantic.get('units')!='meters'):
             raise ValueError('invalid semantic map frame/schema')
         for key in ('yaml_sha256','image_sha256'):
@@ -148,7 +149,8 @@ def render_selection(catalog,candidates,records,robot_pose,directory):
     blue,orange,gray=(30,100,230),(240,140,20),(125,125,125)
     rx,ry=catalog.pixel(robot_pose.x,robot_pose.y)
     if not (0<=rx<width and 0<=ry<height):raise ValueError('robot outside map image')
-    marks=[(rx,ry,'Go2',blue)]
+    robot_label='Go2' if catalog.robot_id=='go2' else 'Ranger'
+    marks=[(rx,ry,robot_label,blue)]
     marks.extend((*catalog.pixel(*p['pose'][:2]),p['display_id'],orange) for p in candidates)
     marks.extend((*catalog.pixel(*p['pose'][:2]),'observed',gray) for p in catalog.points
                  if records.get(p['id'],{}).get('status')=='observed')
@@ -194,7 +196,7 @@ def render_selection(catalog,candidates,records,robot_pose,directory):
     for sign in (-1,1):
         angle=yaw+sign*.5
         draw.line((ax,ay,ax-8*math.cos(angle),ay+8*math.sin(angle)),fill=blue,width=3)
-    for offset,label,color in ((65,'Go2: blue circle and heading',blue),(45,'P IDs: orange / selectable',orange),
+    for offset,label,color in ((65,robot_label+': blue circle and heading',blue),(45,'P IDs: orange / selectable',orange),
                                (25,'Gray: observed / cannot select',gray)):
         draw.text((10,height+footer-offset),label,fill=color,font=font)
     directory=Path(directory);directory.mkdir(parents=True,exist_ok=False)

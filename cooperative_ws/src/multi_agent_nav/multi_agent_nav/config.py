@@ -49,18 +49,20 @@ def map_file_gates(config,robot,check_files=True):
     except (OSError,KeyError,TypeError,ValueError):
         return [f'{robot}: readable map YAML/image missing']
 
-def go2_local_gates(config, motion=False, vision=False, check_map_files=True):
+def go2_local_gates(config, motion=False, vision=False, check_map_files=True, *, robot_id='go2', local_coordinates=False):
     """Independent local checks; never stand in for the cooperative live gates."""
     errors=[]
-    alignment=config['alignment'];go2=config['robot_go2']
+    alignment=config['alignment'];go2=config[f'robot_{robot_id}']
+    if not isinstance(config['scene'].get('share_c_coordinates',True),bool):
+        errors.append('share_c_coordinates must be boolean')
     if alignment.get('simulation') or config['scene'].get('simulation'):
         errors.append('synthetic configuration cannot run live')
-    if alignment.get('common_frame_id')!='lab_ref' or alignment['robots']['go2'].get('transform')!=[0.,0.,0.]:
+    if not local_coordinates and (alignment.get('common_frame_id')!='lab_ref' or alignment['robots']['go2'].get('transform')!=[0.,0.,0.]):
         errors.append('lab_ref must equal Go2 map numerically')
-    entry=alignment['robots']['go2']
+    entry=alignment['robots'][robot_id]
     if not entry.get('local_map_id') or not entry.get('map_version'):
         errors.append('go2: map identity/version missing')
-    errors+=map_file_gates(config,'go2',check_map_files)
+    errors+=map_file_gates(config,robot_id,check_map_files)
     if motion:
         errors+=region_errors(config['scene'].get('resources'))
         margin=go2.get('stop_margin')
@@ -84,9 +86,28 @@ def go2_local_gates(config, motion=False, vision=False, check_map_files=True):
             errors.append('Go2 costmap_blocked_cost must be within 1..253')
     if vision and go2.get('vision_validated') is not True:
         errors.append('Go2 vision_validated field verification required')
-    return errors
+    return errors if robot_id=='go2' else [e.replace('Go2 ','Ranger ').replace('go2:',robot_id+':') for e in errors]
 
 def live_gates(config,local_robot='go2'):
+    if config['scene'].get('share_c_coordinates',True) is False:
+        from .go2_exploration import exploration_gates
+        errors=exploration_gates(config,local_robot,cooperative=True)
+        scene=config['scene'];cfg=config[f'robot_{local_robot}']
+        if scene.get('enabled') is not True:errors.append('scene disabled: local field geometry missing')
+        regions=scene.get('resources')
+        if not isinstance(regions,dict):regions={}
+        if 'basket' not in regions:errors.append('basket resource polygon missing')
+        exits=scene.get('exit_points')
+        if not isinstance(exits,dict) or not valid_numbers(exits.get(local_robot),3):
+            errors.append(f'{local_robot}: local exit point missing/invalid')
+        for name,entry in regions.items():
+            if name!='basket':
+                transit=entry.get('transit_exits') if isinstance(entry,dict) else None
+                points=transit.get(local_robot,[]) if isinstance(transit,dict) else []
+                if not points or not all(valid_numbers(p,3) for p in points):errors.append(f'{name}: local transit exits missing/invalid')
+        for flag in ('path_source_verified','peer_obstacle_verified'):
+            if cfg.get(flag) is not True:errors.append(f'{local_robot} {flag} field verification required')
+        return errors
     errors = go2_local_gates(config,motion=True,vision=True,check_map_files=local_robot=='go2')
     alignment, scene = config['alignment'], config['scene']
     if not isinstance(scene.get('resources'),dict) or 'basket' not in scene['resources']:

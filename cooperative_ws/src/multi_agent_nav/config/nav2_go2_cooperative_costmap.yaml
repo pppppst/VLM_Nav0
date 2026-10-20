@@ -6,6 +6,8 @@ global_costmap:
       plugins: [static_layer, obstacle_layer, inflation_layer]
       always_send_full_costmap: true
       map_topic: /map
+      inflation_layer:
+        inflation_radius: 0.45
       obstacle_layer:
         enabled: true
         observation_sources: go2_cloud
@@ -18,6 +20,8 @@ local_costmap:
       plugins: [static_layer, voxel_layer, inflation_layer]
       always_send_full_costmap: true
       map_topic: /map
+      inflation_layer:
+        inflation_radius: 0.45
       voxel_layer:
         enabled: true
         observation_sources: go2_cloud

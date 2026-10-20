@@ -165,6 +165,16 @@ public:
     fault_reason_.clear();
   }
 
+  void yield_to_external_control()
+  {
+    if (state_ != BridgeState::ARMED) {
+      return;  // Manual traffic must not clear an unrelated fault.
+    }
+    state_ = BridgeState::DISARMED;
+    clear_motion_input();
+    pending_stop_edge_ = false;  // The external controller already owns the Sport stream.
+  }
+
   bool reset_fault()
   {
     if (state_ != BridgeState::FAULT) {

@@ -21,15 +21,21 @@ class LocalFixture(FakeAdapter):
     def costmap_candidate_free(self, goal,global_goal=False):
         return goal.x not in self.blocked
 
+    def approach_candidate_free(self, goal):
+        return self.costmap_candidate_free(goal,global_goal=True) and self.costmap_candidate_free(goal)
+
     def compute_path(self, goal):
         return completed(PathResult(goal.x not in self.no_path, [self.pose, goal], 'planner rejected'))
 
-    def start_scan(self, descriptions, scan_id):
+    def read_approach_parameters(self):
+        return completed(dict(xy_goal_tolerance=.25, planner_tolerance=.5))
+
+    def start_scan(self, descriptions, scan_id, *, stop_on_target=None):
         self.scans += 1
-        return super().start_scan(descriptions, scan_id)
+        return super().start_scan(descriptions, scan_id, stop_on_target=stop_on_target)
 
 
-def run_case(adapter, events, stop_ok=True, resources=None, approach=False):
+def run_case(adapter, events, stop_ok=True, resources=None, approach=False, scan_angles=None, frame=None, **execution_options):
     from multi_agent_nav.go2_exploration import explore
     now = [0.]
     def spin():
@@ -46,13 +52,13 @@ def run_case(adapter, events, stop_ok=True, resources=None, approach=False):
         {'id': 'p2', 'pose': [2., 0., 0.]},
         {'id': 'p3', 'pose': [3., 0., 0.]}]},
         'resources': {'basket': {'polygon': [[100,100],[102,100],[102,102],[100,102]]}}},
-        'robot_go2': {'stop_margin': .1, 'path_start_timeout': 1., 'scan_angles': [0.], 'approach_on_detection': approach, 'standoff_distance': .9,
+        'robot_go2': {'stop_margin': .1, 'path_start_timeout': 1., 'scan_angles': scan_angles or [0.], 'approach_on_detection': approach, 'standoff_distance': .9, 'approach_distance_margin': .03,
             'arrival_config_files': [str(Path(__file__).resolve().parents[4]/'config/robot.yaml')]}}
     if resources is not None:
         config['scene']['resources']=resources
-    frame = FrameAdapter('fixture', '1', 'lab_ref', '', [0,0,0])
+    frame = frame or FrameAdapter('fixture', '1', 'lab_ref', '', [0,0,0])
     return explore(adapter, spin, config, frame, 10., '灭火器', events.append,
-        lambda: [], stop, lambda: None, clock=lambda: now[0])
+        lambda: [], stop, lambda: None, clock=lambda: now[0], **execution_options)
 
 
 def test_explore_requires_explicit_motion_and_new_output_directory(tmp_path):
@@ -66,6 +72,7 @@ def test_config_rejection_is_recorded_without_acquiring_motion_lock(monkeypatch,
     import multi_agent_nav.go2_check as check
     from multi_agent_nav.config import load_config
     invalid=load_config();invalid['robot_go2']['stop_margin']=None
+    invalid['scene']['viewpoints']['go2']=[dict(id='fixture',pose=[1.,0.,0.])]
     monkeypatch.setattr(check,'load_config',lambda *args:invalid)
     def forbidden():
         raise AssertionError('invalid configuration must not acquire motion')
@@ -199,7 +206,7 @@ def test_global_goal_input_and_parking_are_rechecked_before_motion(fault):
 def test_detection_stops_search_even_without_projected_position():
     from multi_agent_nav.models import Observation
     adapter = LocalFixture()
-    adapter.start_scan = lambda descriptions, scan_id: completed([
+    adapter.start_scan = lambda descriptions, scan_id, **kwargs: completed([
         Observation(target_id='A',status='DETECTED',position_valid=False,view_index=0)])
     events = []
     assert run_case(adapter, events) == 'TARGET_DETECTED_UNLOCATED'
@@ -313,11 +320,13 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
     assert destroyed[0]
 
 @pytest.mark.parametrize('mode', ['success', 'unlocated', 'no_path', 'blocked', 'cancel'])
-def test_grounded_detection_approaches_only_safe_standoff(mode):
+@pytest.mark.parametrize('scan_angles', [[0.], [0., 1., 2., 3., 4., 5., 6., 7.]])
+def test_grounded_detection_approaches_only_safe_standoff(mode,scan_angles):
     from multi_agent_nav.models import Observation, ApproachResult
     from multi_agent_nav.go2_exploration import ExplorationStopped
     adapter=LocalFixture();events=[];scans=[]
-    def scan(descriptions, scan_id):
+    def scan(descriptions, scan_id, *, stop_on_target=None):
+        assert stop_on_target=='A'
         scans.append(descriptions)
         return completed([Observation(target_id='A',status='DETECTED',position_valid=mode!='unlocated',
             common_position=Pose2D(5.,2.,0.),view_index=0)])
@@ -325,14 +334,14 @@ def test_grounded_detection_approaches_only_safe_standoff(mode):
     def select(obj, excluded, **kwargs):
         assert obj.x==5. and obj.y==2.
         if mode=='cancel':adapter.selection_epoch=1
-        return completed(ApproachResult(Pose2D(4.3 if mode=='success' else 4.1,2.,0.)))
+        return completed(ApproachResult(Pose2D(4.5 if mode=='success' else 4.1,2.,0.)))
     adapter.select_approach=select
     if mode=='no_path':adapter.no_path={4.1}
     if mode=='blocked':adapter.blocked={4.1}
     if mode=='cancel':
-        with pytest.raises(ExplorationStopped):run_case(adapter,events,resources={},approach=True)
+        with pytest.raises(ExplorationStopped):run_case(adapter,events,resources={},approach=True,scan_angles=scan_angles)
     else:
-        outcome=run_case(adapter,events,resources={},approach=True)
+        outcome=run_case(adapter,events,resources={},approach=True,scan_angles=scan_angles)
         assert outcome==({'success':'TARGET_APPROACHED','unlocated':'TARGET_DETECTED_UNLOCATED'}.get(mode,'APPROACH_FAILED'))
     assert len(adapter.calls)==(2 if mode=='success' else 1)
     assert scans==[{'A':'灭火器'}]
@@ -353,19 +362,23 @@ def test_approach_requires_positive_finite_standoff(distance):
 def test_arrival_verifies_stopped_distance_and_bounds_retry(corrects):
     from multi_agent_nav.models import Observation, ApproachResult
     adapter=LocalFixture();events=[];radii=[]
-    adapter.start_scan=lambda *args:completed([Observation(target_id='A', status='DETECTED',
+    adapter.start_scan=lambda *args,**kwargs:completed([Observation(target_id='A', status='DETECTED',
         position_valid=True, common_position=Pose2D(5.,2.,0.), view_index=0)])
-    def select(obj, excluded, *, standoff_distance):
+    def select(obj, excluded, *, standoff_distance, path_accept):
         radii.append(standoff_distance)
-        # Simulate native success outside the distance contract on the first attempt.
-        x=4.25 if corrects and len(radii)==2 else 3.87
-        return completed(ApproachResult(Pose2D(x,2.,0.)))
+        return completed(ApproachResult(Pose2D(5.-standoff_distance,2.,0.)))
     adapter.select_approach=select
+    original=adapter.advance
+    def advance(now):
+        finishing=any(now>=v[0] and v[2].goal_kind=='PICKUP_NAV' for v in adapter.active.values())
+        original(now)
+        if finishing:adapter.pose=Pose2D(4.3 if corrects and len(radii)==2 else 4.1,2.)
+    adapter.advance=advance
     outcome=run_case(adapter,events,resources={},approach=True)
     assert outcome==('TARGET_APPROACHED' if corrects else 'APPROACH_DISTANCE_FAILED')
-    assert len(radii)==2 and radii[1]<radii[0]
+    assert radii==pytest.approx([.53,.44])
     verified=[e for e in events if e['state']=='ARRIVAL_VERIFIED']
-    assert verified[0]['measured_distance']==pytest.approx(1.13)
+    assert verified[0]['measured_distance']==pytest.approx(.9)
     assert verified[0]['decision']=='RETRY'
     assert verified[-1]['decision']==('SUCCESS' if corrects else 'FAILED')
 
@@ -373,9 +386,9 @@ def test_arrival_verifies_stopped_distance_and_bounds_retry(corrects):
 def test_distance_trigger_waits_for_confirmed_stop_before_success():
     from multi_agent_nav.models import Observation, ApproachResult
     adapter=LocalFixture();events=[]
-    adapter.start_scan=lambda *args:completed([Observation(target_id='A',status='DETECTED',
+    adapter.start_scan=lambda *args,**kwargs:completed([Observation(target_id='A',status='DETECTED',
         position_valid=True,common_position=Pose2D(5.,2.,0.),view_index=0)])
-    adapter.select_approach=lambda *args,**kwargs:completed(ApproachResult(Pose2D(4.3,2.,0.)))
+    adapter.select_approach=lambda *args,**kwargs:completed(ApproachResult(Pose2D(4.5,2.,0.)))
     original=adapter.advance
     def advance(now):
         if len(adapter.calls)>1 and adapter.active and all(v[2].status!='CANCELED' for v in adapter.active.values()):
@@ -386,3 +399,101 @@ def test_distance_trigger_waits_for_confirmed_stop_before_success():
     assert run_case(adapter,events,resources={},approach=True)=='TARGET_APPROACHED'
     assert any(e['state']=='APPROACH_DISTANCE_STOP' for e in events)
     assert events[-1]['stop_confirmed'] is True
+
+
+@pytest.mark.parametrize('endpoint', [4.1, float('nan')])
+def test_approach_rejects_actual_endpoint_outside_arrival_budget(endpoint):
+    from multi_agent_nav.models import Observation, ApproachResult
+    adapter=LocalFixture();events=[]
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=Pose2D(5.,2.))])
+    adapter.select_approach=lambda *a,**kw:completed(ApproachResult(Pose2D(4.5,2.)))
+    original=adapter.compute_path
+    adapter.compute_path=lambda goal:completed(PathResult(True,[adapter.pose,Pose2D(endpoint,2.)])) if goal.y==2. else original(goal)
+    assert run_case(adapter,events,resources={},approach=True)=='APPROACH_FAILED'
+    assert len(adapter.calls)==1
+    rejected=[e for e in events if e['state']=='APPROACH_CANDIDATE_CHECK']
+    assert rejected and rejected[-1]['accepted'] is False
+
+
+def test_approach_records_three_map_base_distances_and_reserves_tolerance():
+    from multi_agent_nav.models import Observation, ApproachResult
+    adapter=LocalFixture();events=[];radii=[]
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=Pose2D(5.,2.))])
+    def select(obj,excluded,**kwargs):
+        radii.append(kwargs['standoff_distance'])
+        return completed(ApproachResult(Pose2D(4.5,2.)))
+    adapter.select_approach=select
+    assert run_case(adapter,events,resources={},approach=True)=='TARGET_APPROACHED'
+    assert radii==pytest.approx([.53])
+    row=next(e for e in events if e['state']=='ARRIVAL_VERIFIED')
+    assert row['distance_frame']=='map' and row['robot_reference']=='base_link'
+    assert row['requested_distance']==pytest.approx(.5)
+    assert row['path_endpoint_distance']==pytest.approx(.5)
+    assert row['stopped_distance']==pytest.approx(.5)
+    assert row['path_endpoint_distance']+row['xy_goal_tolerance']+row['distance_margin']<=.81
+
+
+def test_missing_live_arrival_parameters_stops_before_approach_motion():
+    from multi_agent_nav.models import Observation
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    from concurrent.futures import Future
+    adapter=LocalFixture();events=[]
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=Pose2D(5.,2.))])
+    future=Future();adapter.read_approach_parameters=lambda:future
+    with pytest.raises(ExplorationStopped,match='arrival parameters'):
+        run_case(adapter,events,resources={},approach=True)
+    assert len(adapter.calls)==1 and future.cancelled()
+
+
+def test_retry_does_not_send_goal_already_inside_nav2_tolerance():
+    from multi_agent_nav.models import Observation, ApproachResult
+    adapter=LocalFixture();events=[];selected=[]
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=Pose2D(5.,2.))])
+    def select(*a,**kw):
+        selected.append(kw['standoff_distance'])
+        return completed(ApproachResult(Pose2D(4.5 if len(selected)==1 else 4.2,2.)))
+    adapter.select_approach=select
+    original=adapter.compute_path
+    adapter.compute_path=lambda goal:completed(PathResult(True,[adapter.pose,Pose2D(4.5,2.)])) if goal.y==2. else original(goal)
+    advance=adapter.advance
+    def complete(now):
+        finishing=any(now>=v[0] and v[2].goal_kind=='PICKUP_NAV' for v in adapter.active.values())
+        advance(now)
+        if finishing:adapter.pose=Pose2D(4.1,2.)
+    adapter.advance=complete
+    assert run_case(adapter,events,resources={},approach=True)=='APPROACH_FAILED'
+    assert len(selected)==2
+    assert len(adapter.calls)==2  # One observation goal and one approach; retry is rejected.
+    assert events[-1]['navigation_status']=='APPROACH_UNREACHABLE'
+
+
+@pytest.mark.parametrize('tolerance,planner',[(float('nan'),.5),(.9,.5),(.25,-.1)])
+def test_invalid_live_tolerance_never_sends_approach(tolerance,planner):
+    from multi_agent_nav.models import Observation
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    adapter=LocalFixture();events=[]
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=Pose2D(5.,2.))])
+    adapter.read_approach_parameters=lambda:completed(dict(xy_goal_tolerance=tolerance,planner_tolerance=planner))
+    with pytest.raises(ExplorationStopped,match='arrival parameters'):
+        run_case(adapter,events,resources={},approach=True)
+    assert len(adapter.calls)==1
+
+
+def test_arrival_distances_transform_common_object_to_local_map_once():
+    import math
+    from multi_agent_nav.models import Observation, ApproachResult
+    adapter=LocalFixture();events=[]
+    frame=FrameAdapter('fixture','1','lab_ref','',[10.,20.,math.pi/2])
+    adapter.start_scan=lambda *a,**kw:completed([Observation(target_id='A',status='DETECTED',
+        position_valid=True,common_position=frame.to_common(Pose2D(5.,2.)))])
+    adapter.select_approach=lambda *a,**kw:completed(ApproachResult(Pose2D(4.5,2.)))
+    assert run_case(adapter,events,resources={},approach=True,frame=frame)=='TARGET_APPROACHED'
+    row=next(e for e in events if e['state']=='ARRIVAL_VERIFIED')
+    assert row['object_pose']['x']==pytest.approx(5.) and row['object_pose']['y']==pytest.approx(2.)
+    assert row['requested_distance']==pytest.approx(.5)
+    assert row['stopped_distance']==pytest.approx(.5)

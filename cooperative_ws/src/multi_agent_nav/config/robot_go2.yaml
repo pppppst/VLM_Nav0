@@ -1,6 +1,6 @@
 robot_id: go2
-map_path: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml
-map_digest: c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02
+map_path: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml
+map_digest: 6ae95d62d745c3bfb6eaf1e247cac27b32542251cbd1a4ccbc55f5d1febdd279
 domain_id: 0
 footprint:
 - - 0.38
@@ -33,11 +33,18 @@ odom_max_age: 0.5
 odom_topic: /odometry
 cancel_timeout: 5.0
 scan_angles:
-- 0.0
-- 1.5707963267948966
-- 3.141592653589793
+- -0.7853981633974483
 - -1.5707963267948966
+- -2.356194490192345
+- -3.141592653589793
+- -3.9269908169872414
+- -4.71238898038469
+- -5.497787143782138
+- -6.283185307179586
+scan_timeout: 240.0
 standoff_distance: 0.9
+# Endpoint distance + live controller XY tolerance + this margin must fit 0.81 m.
+approach_distance_margin: 0.03
 arrival_config_files:
 - /home/isee-pst/unitree_ros2/VLM_Nav/config/robot.yaml
 - /home/isee-pst/unitree_ros2/VLM_Nav/config/robot_go2.yaml
@@ -52,11 +59,12 @@ vision_validated: false
 exploration_strategy: fixed_viewpoints
 experiment_records_root: /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-vlm-experiments
 generated_candidates:
-  semantic_yaml: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/semantic_map.yaml
+  # New-map furniture annotations must be collected before using this strategy.
+  semantic_yaml: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/semantic_map.yaml
   # Distance from each furniture edge midpoint to the robot center; not field certified.
   observation_distance: 1.0
 # Matches the existing Nav2 footprint_padding; generated scans use its full rotation disk.
 footprint_padding: 0.0
 semantic_search:
-  observation_points: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/observation_points_go2.yaml
+  observation_points: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/observation_points_go2.yaml
   current_room: null

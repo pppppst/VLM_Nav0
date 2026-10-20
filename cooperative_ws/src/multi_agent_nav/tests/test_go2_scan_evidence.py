@@ -157,10 +157,11 @@ def test_timeout_has_a_per_view_failure_event(tmp_path):
     assert event['observations'][0]['status']=='API_ERROR'
 
 
-def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images(tmp_path):
+@pytest.mark.parametrize('visible',[False,True])
+def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images(tmp_path,visible):
     import threading,time
     from multi_agent_nav.adapters.go2 import AsyncVision
-    client,calls,text=client_and_response();a,scan,events=scan_adapter(None,results={})
+    client,calls,text=client_and_response(visible=visible);a,scan,events=scan_adapter(None,results={})
     a.scan=None;a.client=client;a.scan_evidence_dir=tmp_path/'vlm';a.scan_viewpoint_id='p1'
     a.config.update(api_timeout=2.);a.vision=AsyncVision(2.)
     a.last_motion=('native-nav',dict(task='task',command='command',kind='VIEWPOINT_NAV',target=[1.,2.,.7]))
@@ -174,19 +175,26 @@ def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images
         return original(**kwargs)
     client.client.chat.completions.create=create
     try:
-        reply=a.start_scan({'A':'灭火器'},'scan')
+        reply=a.start_scan({'A':'灭火器'},'scan',stop_on_target='A' if visible else None)
+        scan=a.scan
+        if visible:a._motion=lambda *args:pytest.fail('rotated after target result')
         a.tick();a.tick()
         end=time.monotonic()+3.
-        while a.scan['phase']=='INFER' and time.monotonic()<end:a.tick();time.sleep(.001)
+        while a.scan and a.scan['phase']=='INFER' and time.monotonic()<end:a.tick();time.sleep(.001)
         result=next(r for r in events if r.get('event')=='VLM_VIEW_RESULT')
-        directory=a.scan['evidence'].directory
+        directory=scan['evidence'].directory
         meta=json.loads((directory/'metadata.json').read_text())
         assert meta['viewpoint_id']=='p1' and meta['image_stamp_ns']==3_000_000_123
         assert meta['image_sequence']==7 and meta['navigation_goal_pose']==[1.,2.,.7]
         assert result['consumer_status']=='APPLIED' and client.evidence is None
         assert len(calls)==1 and all(name.startswith('cooperative-vision') for name in thread_names)
-        a.stop_motion('fixture cleanup')
-        assert reply.cancelled() and (directory/'response.txt').read_text()==text
+        if visible:
+            assert a.scan is None and reply.result()[0].status=='DETECTED'
+            a.tick()
+        else:
+            a.stop_motion('fixture cleanup')
+            assert reply.cancelled()
+        assert (directory/'response.txt').read_text()==text
     finally:a.vision.close()
 
 
@@ -222,6 +230,74 @@ def test_timeout_does_not_start_next_spin_until_worker_finishes(tmp_path):
     a._motion=lambda *args:pytest.fail('started Spin while the old worker was running')
     a.tick();a.tick()
     assert scan['phase']=='SPIN' and not scan['reply'].done()
+
+
+@pytest.mark.parametrize('located', [True, False])
+def test_search_detection_returns_immediately_without_another_spin(tmp_path, located):
+    client,_,_=client_and_response(visible=True)
+    results=client.infer_abc(np.zeros((100,160,3),dtype=np.uint8),{'A':'灭火器'})
+    a,scan,events=scan_adapter(evidence(tmp_path),results)
+    scan['stop_on_target']='A'
+    a.node.ground_pixel_with_reason=lambda *args:((1.,2.,0.) if located else None,'ok' if located else 'no depth')
+    a._motion=lambda *args:pytest.fail('rotated after detecting the search target')
+    a.tick()
+    assert scan['reply'].done() and a.scan is None
+    observation=scan['reply'].result()[0]
+    assert observation.status=='DETECTED' and observation.position_valid==located
+    a.tick()
+    assert len([e for e in events if e.get('event')=='VLM_VIEW_RESULT'])==1
+
+
+@pytest.mark.parametrize('status', ['NOT_DETECTED', 'UNCERTAIN', 'OTHER_TARGET'])
+def test_search_waits_for_result_then_rotates_only_without_main_target(tmp_path,status):
+    client,_,_=client_and_response(visible=status=='OTHER_TARGET')
+    results=client.infer_abc(np.zeros((100,160,3),dtype=np.uint8),{'A':'灭火器'})
+    if status=='OTHER_TARGET':
+        results={'A':('NOT_DETECTED',None),'B':results['A']}
+    elif status=='UNCERTAIN':results={'A':('UNCERTAIN',None)}
+    a,scan,_=scan_adapter(evidence(tmp_path),results)
+    scan['stop_on_target']='A';scan['targets']={t:t for t in results}
+    pending=scan['pending'];scan['pending']=Future()
+    motions=[]
+    a._motion=lambda *args:(motions.append(args) or ('spin',Future()))
+    for _ in range(3):a.tick()
+    assert not motions and not scan['reply'].done()
+    scan['pending'].set_result(pending.result())
+    a.tick();a.tick()
+    assert len(motions)==1 and not scan['reply'].done()
+
+
+@pytest.mark.parametrize('error', [None, TimeoutError('timeout'), RuntimeError('invalid reply')])
+def test_search_api_failure_stops_without_rotating(tmp_path,error):
+    a,scan,events=scan_adapter(evidence(tmp_path),results={},error=error)
+    scan['stop_on_target']='A'
+    a._motion=lambda *args:pytest.fail('rotated after failed inference')
+    a.tick()
+    assert scan['reply'].done() and a.scan is None
+    assert isinstance(scan['reply'].exception(),RuntimeError)
+    a.tick()
+    assert any(e.get('event')=='STOP_COMMAND_SENT' for e in events)
+
+
+def test_canceled_search_does_not_apply_late_detection(tmp_path):
+    client,_,_=client_and_response(visible=True)
+    results=client.infer_abc(np.zeros((100,160,3),dtype=np.uint8),{'A':'灭火器'})
+    a,scan,events=scan_adapter(evidence(tmp_path),results={})
+    scan['stop_on_target']='A';scan['pending']=Future()
+    a._motion=lambda *args:pytest.fail('moved after scan cancellation')
+    a.stop_motion('health lost')
+    scan['pending'].set_result(results)
+    a.tick()
+    assert scan['reply'].cancelled() and a.scan is None
+    assert [e['consumer_status'] for e in events if e.get('event')=='VLM_VIEW_RESULT']==['CANCELED']
+
+
+def test_full_abc_scan_still_collects_remaining_views_after_detection(tmp_path):
+    client,_,_=client_and_response(visible=True)
+    results=client.infer_abc(np.zeros((100,160,3),dtype=np.uint8),{'A':'灭火器'})
+    a,scan,_=scan_adapter(evidence(tmp_path),results)
+    a.tick()
+    assert not scan['reply'].done() and scan['phase']=='SPIN'
 
 
 def test_canceled_worker_propagates_late_disk_error_without_ros_tick(tmp_path,monkeypatch):

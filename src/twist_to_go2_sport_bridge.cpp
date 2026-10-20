@@ -239,8 +239,13 @@ private:
     if (compare_result != RMW_RET_OK) {
       RCLCPP_ERROR(get_logger(), "publisher GID comparison failed; treating request as foreign");
     }
-    if (fault_on_foreign_sport_request_ && before == BridgeState::ARMED) {
-      state_machine_.force_fault("foreign Sport request observed while ARMED");
+    if (before == BridgeState::ARMED) {
+      if (fault_on_foreign_sport_request_) {
+        state_machine_.force_fault("foreign Sport request observed while ARMED");
+      } else {
+        state_machine_.yield_to_external_control();
+        RCLCPP_WARN(get_logger(), "external Sport control took over; DISARMED until explicit ARM");
+      }
       handle_transition_edges(before);
     }
   }

@@ -23,6 +23,9 @@ def test_effective_cooperative_costmaps_keep_dynamic_layers_and_other_parameters
     for name,layer in [('global_costmap','obstacle_layer'),('local_costmap','voxel_layer')]:
         assert legacy[name][name]['ros__parameters']['plugins']==['static_layer','inflation_layer']
         p=effective[name][name]['ros__parameters']
+        assert p['inflation_layer']['inflation_radius']==.45
+        assert p['inflation_layer']['cost_scaling_factor']==5.
+        assert legacy[name][name]['ros__parameters']['inflation_layer']['inflation_radius']==.55
         assert p['plugins']==['static_layer',layer,'inflation_layer']
         assert p['always_send_full_costmap'] is True
         cloud=p[layer]['go2_cloud']
@@ -46,6 +49,8 @@ def test_actual_navigation_launch_applies_optional_overlay_last(monkeypatch):
     params=yaml.safe_load(Path(str(parameter_file)).read_text())
     assert params['local_costmap']['local_costmap']['ros__parameters']['plugins']==['static_layer','voxel_layer','inflation_layer']
     assert params['global_costmap']['global_costmap']['ros__parameters']['use_sim_time'] is False
+    for name in ('local_costmap','global_costmap'):
+        assert params[name][name]['ros__parameters']['inflation_layer']['inflation_radius']==.45
 
 def test_isolated_acceptance_launch_has_only_costmaps_and_lifecycle_manager(monkeypatch):
     module=load_launch(COOP/'launch/go2_costmap_acceptance.launch.py')

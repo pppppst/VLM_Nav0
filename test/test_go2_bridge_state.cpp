@@ -175,6 +175,35 @@ TEST(Go2BridgeState, ExternalSafetyGateFaultsAndStopsOnce)
   EXPECT_FALSE(machine.consume_stop_edge());
 }
 
+TEST(Go2BridgeState, ExternalTakeoverClearsMotionWithoutStopOrAutomaticRearm)
+{
+  Go2BridgeStateMachine machine(limits());
+  valid_then_arm(machine);
+  ASSERT_TRUE(machine.handle_command(0.2, 0.0, 0.0, 1.1).accepted);
+  machine.yield_to_external_control();
+  EXPECT_EQ(machine.state(), BridgeState::DISARMED);
+  EXPECT_FALSE(machine.active_command().has_value());
+  EXPECT_FALSE(machine.consume_stop_edge());
+  EXPECT_FALSE(machine.handle_command(0.2, 0.0, 0.0, 1.2).accepted);
+  EXPECT_TRUE(machine.handle_command(0.0, 0.0, 0.0, 1.3).accepted);
+  machine.tick(10.0, false);
+  EXPECT_EQ(machine.state(), BridgeState::DISARMED);
+  EXPECT_FALSE(machine.consume_stop_edge());
+  ASSERT_TRUE(machine.arm(11.0));
+  EXPECT_FALSE(machine.active_command().has_value());
+}
+
+TEST(Go2BridgeState, ExternalTakeoverDoesNotClearFault)
+{
+  Go2BridgeStateMachine machine(limits());
+  valid_then_arm(machine);
+  machine.force_fault("SYSTEM_READY lost");
+  machine.yield_to_external_control();
+  EXPECT_EQ(machine.state(), BridgeState::FAULT);
+  EXPECT_EQ(machine.fault_reason(), "SYSTEM_READY lost");
+  EXPECT_TRUE(machine.consume_stop_edge());
+}
+
 TEST(Go2BridgeState, RejectsUnsupportedTwistAxes)
 {
   Go2BridgeStateMachine machine(limits());

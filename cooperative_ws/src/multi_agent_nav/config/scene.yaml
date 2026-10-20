@@ -1,16 +1,15 @@
 scenario_id: lab
 enabled: false
 simulation: false
+# 本轮场内只有一个 C；各机保存自己的坐标，仅上报已定位状态。
+share_c_coordinates: false
 targets:
   A: 灭火器
   B: 水杯
   C: 篮子
 viewpoints:
-  go2:
-    - id: go2_view_01
-      pose: [-0.37453392148017883, 1.9982248544692993, 1.911663117782095]
-    - id: go2_view_02
-      pose: [0.9363348484039307, 2.5810399055480957, 0.22931137952344943]
+  # Old-map poses cannot be reused without measured alignment; collect new poses.
+  go2: []
   ranger: []
 wait_points: {}
 exit_points: {}

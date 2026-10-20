@@ -32,15 +32,20 @@ class AgentNode(Node):
             self.machine=machine
         elif not gates:
             if robot!='go2':raise ValueError('Ranger live adapter must be installed on Ranger PC')
-            from .adapters.go2 import Go2Adapter,make_observer
+            from .adapters.go2 import ABCClient,Go2Adapter,make_observer
             machine,frame=make_machine(config,robot,False)
             self.observer=make_observer(config['robot_go2'])
-            self.adapter=Go2Adapter(self.observer,config['robot_go2'],frame)
+            self.adapter=Go2Adapter(self.observer,config['robot_go2'],frame,global_goal_checks=True)
+            if not machine.context.share_c_coordinates:self.adapter.client=ABCClient(config['robot_go2'])
             self.machine=machine
         else:
             self.get_logger().warning('Live adapter not activated: '+'; '.join(gates))
         if self.machine:
-            self.runner=AgentRunner(self.machine,self.adapter,config['scene']['targets'],self.publish_observation)
+            self.runner=AgentRunner(self.machine,self.adapter,config['scene']['targets'],self.publish_observation,config=config,success_radius=1.0)
+            if not self.machine.context.share_c_coordinates:
+                from .go2_check import other_owners
+                self.runner.owners=lambda:[name for name in other_owners(self.observer) if name not in
+                    ('multi_agent_coordinator','multi_agent_go2_agent','multi_agent_task_agent','multi_agent_go2_rgbd')]
         self.robot,self.config,self.simulation=robot,config,simulation
         self.get_logger().info(f'Task prefix: {prefix}; robot={robot}; simulation={simulation}')
         self.create_subscription(Command,f'{prefix}/go2/command',self.command,qos())
@@ -48,18 +53,31 @@ class AgentNode(Node):
         self.create_subscription(AgentState,f'{prefix}/{peer}/state',lambda m:self.peer(m,peer),qos())
         self.create_subscription(Observation,f'{prefix}/{peer}/observation',lambda m:self.peer_observation(m,peer),qos(True))
         self.last_observations={}
+        self.peer_map_identity=None
         self.create_timer(.05,self.tick)
         self.create_timer(1/config['scene'].get('heartbeat_hz',2.0),self.publish_state)
 
     def command(self,message):
         if not self.machine:return
+        task=self.machine.context.task_id
         reply=self.machine.accept(from_ros(message),time.monotonic())
+        if reply.accepted and self.machine.context.task_id!=task:self.peer_map_identity=None
         if message.recipient_id in (self.robot,'*') and not reply.accepted:
             self.get_logger().warning('command rejected: '+reply.reason,throttle_duration_sec=2)
         self.publish_state()
 
     def peer(self,message,source):
         if not self.machine or message.robot_id!=source or message.simulation!=self.simulation:return
+        if not self.machine.context.share_c_coordinates:
+            if message.schema_version!=1 or message.task_id!=self.machine.context.task_id:return
+            if not message.local_map_id or not message.map_version or message.common_frame_id or message.alignment_id:return
+            identity=(message.local_map_id,message.map_version)
+            if self.peer_map_identity is not None and identity!=self.peer_map_identity:
+                self.machine.stop('peer map identity changed');return
+            self.peer_map_identity=identity
+            if message.localization_valid and message.nav_ready:self.machine.peer_received=time.monotonic()
+            else:self.machine.stop('peer localization/navigation invalid')
+            return
         entry=self.config['alignment']['robots'][source]
         if message.schema_version!=1 or (message.local_map_id,message.map_version,message.common_frame_id,message.alignment_id)!=(
             entry['local_map_id'],entry['map_version'],'lab_ref',self.config['alignment']['alignment_id']):return
@@ -69,6 +87,7 @@ class AgentNode(Node):
 
     def peer_observation(self,message,source):
         if message.robot_id==source and self.machine and message.task_id==self.machine.context.task_id and message.simulation==self.simulation:
+            if message.target_id=='C' and not self.machine.context.share_c_coordinates:return
             self.last_observations[message.observation_id]=from_ros(message)
             if len(self.last_observations)>1000:self.last_observations.pop(next(iter(self.last_observations)))
 

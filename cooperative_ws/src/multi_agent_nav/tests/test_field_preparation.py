@@ -66,6 +66,8 @@ def test_independent_motion_rejects_missing_or_malformed_resources(resources):
 def test_actual_costmap_vetoes_static_free_map_and_bad_updates():
     a=adapter()
     a.on_costmap(costmap(253))
+    global_grid=costmap(253);global_grid.header.frame_id='map'
+    a.on_costmap(global_grid,global_goal=True)
     called=[]
     def path(goal):
         called.append(goal)
@@ -95,6 +97,24 @@ def test_costmap_coordinates_include_tf_and_rotated_grid_origin():
     a.node.tf_buffer.lookup_transform=lambda *args:S(transform=S(
         translation=S(x=20,y=0),rotation=S(x=0,y=0,z=0,w=1)))
     assert not a.costmap_candidate_free(Pose2D())
+
+@pytest.mark.parametrize('value',[1,128,252,253,254,255])
+def test_parking_and_approach_allow_inflation_costs_but_reject_collision_and_unknown(value):
+    a=adapter();a.on_costmap(costmap(value))
+    global_grid=costmap(value);global_grid.header.frame_id='map'
+    a.on_costmap(global_grid,global_goal=True)
+    allowed=value<253
+    assert a.costmap_candidate_free(Pose2D())==allowed
+    assert a.costmap_candidate_free(Pose2D(),global_goal=True)==allowed
+    assert a.observation_candidate_free(Pose2D())==allowed
+    planned=[]
+    def plan(goal):
+        planned.append(goal)
+        result=Future();result.set_result(S(reachable=True));return result
+    a.compute_path=plan
+    result=a.select_approach(Pose2D(),[],standoff_distance=.6).result()
+    assert (result.goal is not None)==allowed
+    assert bool(planned)==allowed
 
 def test_actual_footprint_is_not_snapped_to_grid_cell_center():
     a=adapter();m=costmap();m.data[40*80+44]=254
@@ -192,6 +212,8 @@ def test_global_goal_subscription_only_enabled_for_exploration(enabled):
 
 def test_approach_rechecks_costmap_when_planning_finishes():
     a=adapter();a.on_costmap(costmap())
+    global_grid=costmap();global_grid.header.frame_id='map'
+    a.on_costmap(global_grid,global_goal=True)
     pending=Future();a.compute_path=lambda goal:pending
     result=a.select_approach(Pose2D(),[])
     a.on_costmap(costmap(254))
@@ -478,3 +500,71 @@ def test_unconfirmed_stop_persists_motion_block(monkeypatch,tmp_path):
         with check.motion_slot():raise check.StopUnconfirmed('unit fault')
     with pytest.raises(RuntimeError):
         with check.motion_slot():pass
+
+
+def test_approach_skips_endpoint_rejected_by_arrival_policy():
+    a=adapter();a.on_costmap(costmap());planned=[]
+    global_grid=costmap();global_grid.header.frame_id='map'
+    a.on_costmap(global_grid,global_goal=True)
+    def plan(goal):
+        planned.append(goal)
+        f=Future();f.set_result(S(reachable=True,path=[goal]));return f
+    a.compute_path=plan
+    checked=[]
+    def accept(goal,result):
+        checked.append(result.path[-1])
+        return len(checked)==2
+    chosen=a.select_approach(Pose2D(),[],standoff_distance=.53,path_accept=accept).result()
+    assert len(planned)==2 and chosen.goal==planned[1] and checked==planned
+
+
+@pytest.mark.parametrize('fault',['none','frame','type','plugins','exception','cancel'])
+def test_arrival_parameter_read_waits_for_discovery_and_cleans_up(fault):
+    from rcl_interfaces.msg import ParameterValue
+    responses={
+        '/controller_server':[ParameterValue(type=9,string_array_value=['general_goal_checker']),ParameterValue(type=3,double_value=.25)],
+        '/planner_server':[ParameterValue(type=9,string_array_value=['GridBased']),ParameterValue(type=3,double_value=.5)],
+        '/local_costmap/local_costmap':[ParameterValue(type=4,string_value='base_link')],
+        '/global_costmap/global_costmap':[ParameterValue(type=4,string_value='base_link'),ParameterValue(type=4,string_value='map')],
+    }
+    if fault=='frame':responses['/local_costmap/local_costmap'][0].string_value='base_footprint'
+    if fault=='type':responses['/controller_server'][1]=ParameterValue()
+    if fault=='plugins':responses['/controller_server'][0].string_array_value=['different_checker']
+    ready=[False];timers=[];destroyed=[];requests=[]
+    def client(_,name):
+        def call(request):
+            requests.append(request.names)
+            f=Future()
+            if fault=='exception':f.set_exception(RuntimeError('server error'))
+            else:f.set_result(S(values=responses[name.removesuffix('/get_parameters')]))
+            return f
+        return S(service_is_ready=lambda:ready[0],call_async=call)
+    a=Go2Adapter.__new__(Go2Adapter)
+    a.node=S(create_client=client,destroy_client=destroyed.append,
+        create_timer=lambda dt,cb:timers.append(cb) or cb,destroy_timer=destroyed.append)
+    future=a.read_approach_parameters();timers[0]()
+    assert not future.done() and not requests
+    if fault=='cancel':future.cancel()
+    else:
+        ready[0]=True;timers[0]()
+        if fault=='none':assert future.result()==dict(xy_goal_tolerance=.25,planner_tolerance=.5)
+        else:
+            with pytest.raises((ValueError,RuntimeError)):future.result()
+    assert len(destroyed)==5
+    before=len(requests);timers[0]();assert len(requests)==before
+
+
+@pytest.mark.parametrize('frame,x,goal_frame,accepted',[('map',1.,'map',True),('odom',1.,'map',False),('map',float('nan'),'map',False),('map',1.,'odom',False)])
+def test_compute_path_requires_finite_map_coordinates(frame,x,goal_frame,accepted):
+    from geometry_msgs.msg import PoseStamped
+    a=Go2Adapter.__new__(Go2Adapter);a.plans={}
+    pose=PoseStamped();pose.header.frame_id=frame;pose.pose.position.x=x;pose.pose.orientation.w=1.
+    result=S(status=4,result=S(path=S(header=S(frame_id=frame),poses=[pose])))
+    def done(value):
+        f=Future();f.set_result(value);return f
+    handle=S(accepted=True,get_result_async=lambda:done(result))
+    goal=PoseStamped();goal.header.frame_id=goal_frame
+    a.node=S(make_pose_stamped=lambda *args:goal,
+        path_planner=S(server_is_ready=lambda:True,send_goal_async=lambda goal:done(handle)))
+    planned=a.compute_path(Pose2D()).result()
+    assert planned.reachable==accepted

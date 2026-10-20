@@ -68,6 +68,31 @@ def test_healthy_diagnostics_match_actual_ready_snapshot():
     assert a.last_health_details['local_costmap']['reason']=='ok'
 
 
+@pytest.mark.parametrize('fault',['rgbd_ready','local_costmap','localization_valid'])
+def test_scan_failure_keeps_trigger_snapshot_after_stop_even_if_health_recovers(fault):
+    from test_field_preparation import stamp
+    a=healthy_adapter();a.vision=S(poll=lambda:None)
+    a.scan={'id':'scan','phase':'INFER','index':5};events=[]
+    if fault=='rgbd_ready':a.node.rgbd_sync_status={'healthy':False,'matched':25,'total':30,'rate':25/30}
+    elif fault=='local_costmap':a.costmap.header.stamp=stamp(8.)
+    else:
+        lookup=a.node.tf_buffer.lookup_transform
+        a.node.tf_buffer.lookup_transform=lambda target,source,*args: (_ for _ in ()).throw(RuntimeError('missing pose')) if source=='base_link' else lookup(target,source,*args)
+    def stop(reason):
+        events.append({'event':'STOP','reason':reason})
+        a.scan=None
+        a.last_health_details={'checks':{'rgbd_ready':True}}
+    a.stop_motion=stop;a.record_event=events.append
+    a.tick()
+    assert events[0]['event']=='STOP'
+    event=next(e for e in events if e['event']=='SCAN_HEALTH_FAILED')
+    assert event['failed_gates']==[fault]
+    assert event['health_details']['checks'][fault] is False
+    assert event['scan_phase']=='INFER' and event['view_index']==5
+    if fault=='rgbd_ready':assert event['health_details']['rgbd_sync_status']['matched']==25
+    json.dumps(event,allow_nan=False)
+
+
 def test_rejected_costmap_update_retains_why_payload_is_missing():
     from test_field_preparation import costmap,stamp
     a=healthy_adapter();grid=costmap();grid.header.stamp=stamp(8.)

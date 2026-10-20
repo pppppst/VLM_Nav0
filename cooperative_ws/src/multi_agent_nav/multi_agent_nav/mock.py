@@ -1,7 +1,7 @@
 """Synthetic fixtures and deterministic dual-fake harness; never loads live interfaces."""
 from dataclasses import replace
 from .models import *
-from .frame_adapter import FrameAdapter
+from .frame_adapter import FrameAdapter, LocalFrame
 from .agent import AgentMachine
 from .coordinator import Coordinator
 from .region_guard import RegionGuard
@@ -23,8 +23,13 @@ def mock_config():
 
 def make_machine(config,robot,simulation):
     alignment=config['alignment'];entry=alignment['robots'][robot]
-    context=AgentContext(robot,'',entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],simulation)
-    frame=FrameAdapter(entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],entry['transform'])
+    context=AgentContext(robot,'',entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],simulation,
+        share_c_coordinates=config['scene'].get('share_c_coordinates',True))
+    if context.share_c_coordinates:
+        frame=FrameAdapter(entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],entry['transform'])
+    else:
+        context=replace(context,common_frame_id='',alignment_id='')
+        frame=LocalFrame()
     machine=AgentMachine(context,frame,config['scene'].get('lost_timeout',3.0),
         config[f'robot_{robot}'].get('path_start_timeout',1.0))
     regions={}
@@ -34,6 +39,7 @@ def make_machine(config,robot,simulation):
                                  for r,points in region.get('transit_exits',{}).items()}
         regions[key]=value
     machine.guard=RegionGuard(regions,config[f'robot_{robot}'].get('stop_margin'))
+    machine.local_exit=Pose2D(*config['scene']['exit_points'][robot]) if robot in config['scene'].get('exit_points',{}) else None
     return machine,frame
 
 def make_coordinator(config,simulation,gates=None):
@@ -44,6 +50,17 @@ def make_coordinator(config,simulation,gates=None):
 class MockMission:
     def __init__(self,config=None):
         self.config=config or mock_config()
+        if not self.config['scene'].get('share_c_coordinates',True):
+            from pathlib import Path
+            arrival=Path(__file__).resolve().parents[4]/'config/robot.yaml'
+            if not arrival.is_file():
+                from ament_index_python.packages import get_package_share_directory
+                arrival=Path(get_package_share_directory('vlm_nav'))/'config/robot.yaml'
+            for robot in ROBOTS:
+                self.config[f'robot_{robot}'].update(standoff_distance=.9,approach_distance_margin=.03,
+                    scan_angles=[0.],arrival_config_files=[str(arrival)])
+            self.config['scene']['viewpoints']={'go2':[{'id':'vg','pose':[-5,-2,0]}],
+                'ranger':[{'id':'vr','pose':[1,-2,0]}]}
         self.coordinator=make_coordinator(self.config,True)
         self.now=0.0
         self.machines={};self.frames={};self.adapters={};self.runners={}
@@ -55,12 +72,13 @@ class MockMission:
             # Ranger detects A and shares its common physical location to Go2.
             detections={'C':Pose2D(9,1)}
             if robot=='ranger':detections.update(A=Pose2D(-3,-3),B=Pose2D(3,-3))
+            if not machine.context.share_c_coordinates and robot=='go2':detections['A']=Pose2D(-3,-3)
             adapter=FakeAdapter(robot,detections)
             common_initial=Pose2D(-3,-3) if robot=='go2' else Pose2D(3,-3)
             adapter.pose=frame.to_local(common_initial)
             self.adapters[robot]=adapter
             self.runners[robot]=AgentRunner(machine,adapter,self.config['scene']['targets'],
-                lambda obs:self.coordinator.ingest_observation(obs,self.now))
+                lambda obs:self.coordinator.ingest_observation(obs,self.now),clock=lambda:self.now,config=self.config)
             machine.tick(0,adapter.get_health())
             self.coordinator.ingest_state(machine.state(),0)
 

@@ -123,7 +123,7 @@ def run_generated(config,tmp_path,mode='normal'):
             pending.work=fn;return pending
         return completed(fn())
     adapter.vision=S(submit=submit)
-    def scan(descriptions,scan_id):
+    def scan(descriptions,scan_id,*,stop_on_target=None):
         adapter.scans+=1
         return completed([Observation(target_id=t,view_index=0,
                            status='API_ERROR' if mode=='api' or mode=='partial_detection' and t!='A' else
@@ -131,7 +131,7 @@ def run_generated(config,tmp_path,mode='normal'):
                            position_valid=mode in ('found','partial_detection') and t=='A',
                            common_position=Pose2D(5.,2.)) for t in descriptions])
     adapter.start_scan=scan
-    adapter.select_approach=lambda *args,**kwargs:completed(ApproachResult(Pose2D(4.3,2.)))
+    adapter.select_approach=lambda *args,**kwargs:completed(ApproachResult(Pose2D(4.5,2.)))
     def spin():
         now[0]+=.05;adapter.advance(now[0])
         if hasattr(pending,'work') and not pending.done():
@@ -144,6 +144,7 @@ def run_generated(config,tmp_path,mode='normal'):
                         60.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0])
     except Exception:
         if mode in ('invalid','late','cancel'):assert not adapter.calls
+        if mode=='api':assert len(adapter.calls)==1 and adapter.scans==1
         raise
     return adapter,events,requests,outcome
 
@@ -179,21 +180,26 @@ def test_scan_rechecks_real_stopped_pose_before_rotating(generated_config,tmp_pa
 
 
 def test_image_api_failure_is_not_observed(generated_config,tmp_path):
-    adapter,events,requests,outcome=run_generated(generated_config,tmp_path,'api')
-    assert outcome=='WAITING_VIEWPOINTS'
-    assert all(row['status']=='observation_failed' for row in events[-1]['records'].values())
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    with pytest.raises(ExplorationStopped,match='image/API/validation error'):
+        run_generated(generated_config,tmp_path,'api')
 
 
-def test_generated_detection_uses_original_approach(generated_config,tmp_path):
-    generated_config['robot_go2'].update(approach_on_detection=True,standoff_distance=.9,
+@pytest.mark.parametrize('angles', [[0.], [0.,1.,2.,3.,4.,5.,6.,7.]])
+def test_generated_detection_uses_original_approach(generated_config,tmp_path,angles):
+    generated_config['robot_go2']['scan_angles']=angles
+    generated_config['robot_go2'].update(approach_on_detection=True,standoff_distance=.9,approach_distance_margin=.03,
         arrival_config_files=[str(Path(__file__).resolve().parents[4]/'config/robot.yaml')])
     adapter,events,requests,outcome=run_generated(generated_config,tmp_path,'found')
     assert outcome=='TARGET_APPROACHED' and len(requests)==1
     assert [e['goal_kind'] for e in events if e['state']=='NAVIGATING']==['VIEWPOINT_NAV','PICKUP_NAV']
+    if len(angles)>1:
+        assert not any(e.get('observation_status') in ('observed','observation_failed') for e in events)
+        assert next(e for e in events if e['state']=='SCAN_RESULT')['scan_complete'] is False
 
 
 def test_partial_api_error_keeps_valid_target_without_completing_observation(generated_config,tmp_path):
-    generated_config['robot_go2'].update(approach_on_detection=True,standoff_distance=.9,
+    generated_config['robot_go2'].update(approach_on_detection=True,standoff_distance=.9,approach_distance_margin=.03,
         arrival_config_files=[str(Path(__file__).resolve().parents[4]/'config/robot.yaml')])
     adapter,events,requests,outcome=run_generated(generated_config,tmp_path,'partial_detection')
     assert outcome=='TARGET_APPROACHED' and len(requests)==1

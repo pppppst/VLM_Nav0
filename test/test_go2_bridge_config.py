@@ -26,7 +26,7 @@ def test_bridge_defaults_are_dry_run_disarmed_and_conservative():
     assert params["require_system_ready"] is True
     assert params["system_ready_topic"] == "/vlm_nav/system_ready"
     assert params["foreign_sport_quiet_period_s"] == 2.0
-    assert params["fault_on_foreign_sport_request"] is True
+    assert params["fault_on_foreign_sport_request"] is False
 
 
 def test_bridge_source_contains_required_state_machine_and_unitree_api_ids():

@@ -110,6 +110,7 @@ class AgentContext:
     common_frame_id: str
     alignment_id: str
     simulation: bool
+    share_c_coordinates: bool = True
 
 @dataclass
 class CommandReply:
@@ -193,6 +194,7 @@ class Snapshot:
     now: float
     received_at: dict = field(default_factory=dict)
     rejected: set = field(default_factory=set)
+    local_c: dict = field(default_factory=dict)
 
 @dataclass
 class PlannedAction:
@@ -210,25 +212,40 @@ def validate_command(command, context):
     if command.schema_version != SCHEMA_VERSION:
         return CommandReply(False, 'schema mismatch')
     if command.recipient_id != context.robot_id and not (
-        command.recipient_id == '*' and command.action == 'SYNC'
+        command.recipient_id == '*' and command.action in ('SYNC', 'SYNC_LOCAL_C')
     ):
         return CommandReply(False, 'recipient mismatch')
     for name in ('task_id', 'common_frame_id', 'alignment_id', 'simulation'):
         if getattr(command, name) != getattr(context, name):
             return CommandReply(False, f'{name} mismatch')
-    if command.action not in ('EXECUTE', 'SYNC', 'PAUSE', 'CANCEL', 'GRANT_RESOURCE'):
+    if command.action not in ('EXECUTE', 'SYNC', 'SYNC_LOCAL_C', 'PAUSE', 'CANCEL', 'GRANT_RESOURCE'):
         return CommandReply(False, 'unknown action')
+    if command.action in ('SYNC', 'SYNC_LOCAL_C') and (
+        (command.action == 'SYNC') != context.share_c_coordinates
+    ):
+        return CommandReply(False, 'C sharing policy mismatch')
     if command.action == 'EXECUTE':
         if command.kind not in KINDS or command.phase not in PHASES:
             return CommandReply(False, 'unknown kind/phase')
-        if not command.position_valid:
-            return CommandReply(False, 'position invalid')
-        pose = command.object_position if command.kind.startswith('APPROACH') else command.common_goal
-        if not pose.valid:
-            return CommandReply(False, 'nonfinite position')
+        local_intent = not context.share_c_coordinates
+        if local_intent:
+            if command.kind not in ('APPROACH_PICKUP','SEARCH_VIEWPOINT','APPROACH_DEPOSIT','EXIT'):
+                return CommandReply(False, 'unsupported local task kind')
+            if (command.kind == 'APPROACH_DEPOSIT' and not command.observation_id) or command.position_valid or (
+                command.object_position != Pose2D() or command.common_goal != Pose2D()
+            ):
+                return CommandReply(False, 'local tasks require coordinate-free intent; C deposit requires own reference')
+        else:
+            if not command.position_valid:
+                return CommandReply(False, 'position invalid')
+            pose = command.object_position if command.kind.startswith('APPROACH') else command.common_goal
+            if not pose.valid:
+                return CommandReply(False, 'nonfinite position')
         expected = {'go2': 'A', 'ranger': 'B'}[context.robot_id]
         if command.kind == 'APPROACH_PICKUP' and command.target_id != expected:
             return CommandReply(False, 'wrong pickup target')
         if command.kind == 'APPROACH_DEPOSIT' and command.target_id != 'C':
             return CommandReply(False, 'wrong deposit target')
+        if local_intent and command.kind == 'SEARCH_VIEWPOINT' and command.target_id != 'C':
+            return CommandReply(False, 'local search requires C')
     return CommandReply(True)

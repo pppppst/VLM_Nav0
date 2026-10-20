@@ -4,6 +4,7 @@ from pathlib import Path
 import signal
 import subprocess
 import time
+import pytest
 
 from ament_index_python.packages import get_package_prefix
 from geometry_msgs.msg import Twist
@@ -21,8 +22,9 @@ def _spin_until(node, predicate, timeout):
     return predicate()
 
 
-def test_dry_run_arms_before_command_and_faults_on_foreign_sport_request(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize('fault_on_foreign', [True, False])
+def test_dry_run_foreign_sport_policy(
+    tmp_path, monkeypatch, fault_on_foreign
 ):
     executable = (
         Path(get_package_prefix("vlm_nav"))
@@ -53,7 +55,9 @@ def test_dry_run_arms_before_command_and_faults_on_foreign_sport_request(
             "-p",
             "endpoint_loss_debounce:=0.2",
             "-p",
-            "foreign_sport_quiet_period_s:=0.0",
+            "foreign_sport_quiet_period_s:=0.3",
+            "-p",
+            f"fault_on_foreign_sport_request:={str(fault_on_foreign).lower()}",
             "-p",
             f"cmd_vel_topic:={cmd_topic}",
             "-p",
@@ -106,7 +110,7 @@ def test_dry_run_arms_before_command_and_faults_on_foreign_sport_request(
             lambda: probe.count_subscribers(f"{sport_topic}/response") >= 1,
             2.0,
         )
-        time.sleep(0.1)
+        time.sleep(0.4)
         future = arm.call_async(Trigger.Request())
         assert _spin_until(probe, future.done, 2.0)
         assert future.result().success, future.result().message
@@ -127,7 +131,32 @@ def test_dry_run_arms_before_command_and_faults_on_foreign_sport_request(
         foreign = Request()
         foreign.header.identity.id = 9001
         foreign.header.identity.api_id = 1027
+        states.clear()
         foreign_sport_pub.publish(foreign)
+        if not fault_on_foreign:
+            assert _spin_until(probe, lambda: 'DISARMED' in states, 2.0)
+            assert not any(state.startswith('FAULT') for state in states)
+            future = arm.call_async(Trigger.Request())
+            assert _spin_until(probe, future.done, 0.2)
+            assert not future.result().success
+            assert 'quiet' in future.result().message
+            # Residual autonomous motion and cancellation zeros must not fight manual control.
+            cmd_pub.publish(request)
+            cmd_pub.publish(Twist())
+            _spin_until(probe, lambda: False, 0.6)
+            assert states[-1] == 'DISARMED'
+            assert not any(command['api_id'] == 1003 for command in commands)
+            count = len(commands)
+            _spin_until(probe, lambda: False, 0.2)
+            assert len(commands) == count
+            future = arm.call_async(Trigger.Request())
+            assert _spin_until(probe, future.done, 2.0)
+            assert future.result().success
+            _spin_until(probe, lambda: False, 0.6)
+            assert states[-1] == 'ARMED' and len(commands) == count
+            cmd_pub.publish(request)
+            assert _spin_until(probe, lambda: len(commands) > count, 1.0)
+            return
         assert _spin_until(probe, lambda: any(
             state.startswith("FAULT: foreign Sport request") for state in states
         ), 2.0)

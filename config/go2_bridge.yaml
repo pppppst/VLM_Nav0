@@ -5,7 +5,8 @@ twist_to_go2_sport_bridge:
     require_system_ready: true
     system_ready_timeout: 0.5
     foreign_sport_quiet_period_s: 2.0
-    fault_on_foreign_sport_request: true
+    # Yield autonomous control without StopMove; explicit ARM is required afterwards.
+    fault_on_foreign_sport_request: false
     system_ready_topic: /vlm_nav/system_ready
     control_armed_topic: /vlm_nav/control_armed
     sport_interface_ready_topic: /vlm_nav/go2_sport_interface_ready

@@ -138,15 +138,16 @@ class ABCClient(OpenAICompatibleVLMClient):
         allowed=[p['display_id'] for p in snapshot['candidates']]
         # Only this whitelist leaves the process: geometry and internal IDs stay local.
         context={k:snapshot.get(k) for k in ('task_id','decision_id','main_target','search_hint','history')}
+        robot_label='Ranger' if snapshot.get('robot_id')=='ranger' else 'Go2'
         context.update(allowed_candidate_ids=allowed,
-            legend='Blue circle/arrow: Go2. Orange P IDs: selectable. Gray: observed, cannot select.',
+            legend=f'Blue circle/arrow: {robot_label}. Orange P IDs: selectable. Gray: observed, cannot select.',
             images=['occupancy map','furniture semantic map'])
         content=[dict(type='text',text=json.dumps(context,ensure_ascii=False))]
         for path in snapshot['images']:
             data=base64.b64encode(Path(path).read_bytes()).decode('ascii')
             content.append(dict(type='image_url',image_url=dict(url='data:image/png;base64,'+data)))
         messages=[dict(role='system',content=(
-            '根据搜索目标、家具语义、蓝色Go2位置和已观察记录，选择图中下一橙色观察点。'
+            f'根据搜索目标、家具语义、蓝色{robot_label}位置和已观察记录，选择图中下一橙色观察点。'
             '仅允许本轮 allowed_candidate_ids；灰色已观察点不可选。'
             '历史P编号仅对应历史决策，不代表本轮同名点。'
             '只返回JSON，字段恰为candidate_id和reason。不要生成坐标，不判断运动安全，不宣布目标不存在。'
@@ -359,9 +360,15 @@ class Go2Adapter:
             return None
 
     def costmap_candidate_free(self,candidate,global_goal=False):
+        return self.costmap_candidate_check(candidate,global_goal)['status']=='free'
+
+    def costmap_candidate_check(self,candidate,global_goal=False):
         from vlm_nav.vlm_navigator import quaternion_yaw
+        if not candidate.valid:return dict(status='unavailable',reason='invalid candidate pose')
         transform=self.costmap_transform(global_goal=True) if global_goal else self.costmap_transform()
-        if transform is None:return False
+        if transform is None:
+            details=self.last_costmap_checks['global' if global_goal else 'local']
+            return dict(status='unavailable',reason=details['reason'])
         c,s=math.cos(transform.yaw),math.sin(transform.yaw)
         x=c*candidate.x-s*candidate.y+transform.x
         y=s*candidate.x+c*candidate.y+transform.y
@@ -376,8 +383,8 @@ class Go2Adapter:
         # Conservative centered rectangle also covers asymmetric footprints.
         length,width=2*max(abs(p[0]) for p in footprint),2*max(abs(p[1]) for p in footprint)
         c,s=math.cos(local_yaw),math.sin(local_yaw)
-        if any(not (0<=x+c*px-s*py<meta.size_x*meta.resolution and 0<=y+s*px+c*py<meta.size_y*meta.resolution)
-            for px in (-length/2,length/2) for py in (-width/2,width/2)):return False
+        covered=all(0<=x+c*px-s*py<meta.size_x*meta.resolution and 0<=y+s*px+c*py<meta.size_y*meta.resolution
+            for px in (-length/2,length/2) for py in (-width/2,width/2))
         raw=np.asarray(message.data,dtype=np.int16).reshape(meta.size_y,meta.size_x)
         # Nav2 253/254 are inscribed/lethal and 255 unknown. Unknown body cells veto too.
         # Test the actual pose, including any cell intersecting the body rectangle;
@@ -386,7 +393,22 @@ class Go2Adapter:
         dx,dy=(gx+.5)*meta.resolution-x,(gy+.5)*meta.resolution-y
         half_cell=meta.resolution*(abs(c)+abs(s))/2
         body=(np.abs(c*dx+s*dy)<=length/2+half_cell) & (np.abs(-s*dx+c*dy)<=width/2+half_cell)
-        return bool(body.any()) and not np.any(body & (raw>=self.config.get('costmap_blocked_cost',253)))
+        if np.any(body & (raw>=self.config.get('costmap_blocked_cost',253))):
+            return dict(status='collision',reason='footprint intersects blocked or unknown cells')
+        if not covered or not body.any():
+            return dict(status='out_of_bounds' if global_goal else 'coverage_insufficient',
+                reason='global footprint out of bounds' if global_goal else '局部检查覆盖不足')
+        return dict(status='free',reason='ok')
+
+    def approach_candidate_free(self,candidate):
+        global_check=self.costmap_candidate_check(candidate,global_goal=True)
+        local_check=self.costmap_candidate_check(candidate)
+        accepted=global_check['status']=='free' and local_check['status'] in ('free','coverage_insufficient')
+        self._motion_event('APPROACH_FOOTPRINT_CHECK',candidate_pose=[candidate.x,candidate.y,candidate.yaw] if candidate.valid else None,
+            global_check=global_check,local_check=local_check,accepted=accepted)
+        for name,check in (('global',global_check),('local',local_check)):
+            if check['status']=='unavailable':raise RuntimeError(f"{name} costmap unavailable: {check['reason']}")
+        return accepted
 
     def observation_candidate_free(self,candidate):
         from vlm_nav.vlm_navigator import quaternion_yaw
@@ -483,6 +505,11 @@ class Go2Adapter:
             rgbd_frame_age_s=now-snapshot.captured_monotonic if snapshot else None,
             camera_tf_age_s=now-camera_tf_at if camera_tf_at else None,
             rgbd_sync_healthy=getattr(self.node,'rgbd_sync_status',{}).get('healthy'),
+            rgbd_sync_status=dict(getattr(self.node,'rgbd_sync_status',{})),
+            rgbd_stamp_windows={k:list(v) for k,v in getattr(self.node,'rgbd_stamp_windows',{}).items()},
+            rgbd_pending_tf_frames=len(getattr(self.node,'pending_rgbd_frames',())),
+            rgbd_frame_max_age_s=getattr(self.node.p,'rgbd_wait_timeout',None),
+            camera_tf_max_age_s=getattr(self.node.p,'tf_failure_timeout',None),
             odom_age_s=now-self.odom_at,odom_max_age_s=self.config['odom_max_age'])
         path_valid=bool(self.path) and now-self.path_at<=self.config.get('path_receive_timeout',5.0)
         if self.path and not path_valid and not getattr(self,'path_timeout_logged',False):
@@ -490,6 +517,57 @@ class Go2Adapter:
             self._motion_event('PATH_RECEIVE_TIMEOUT',receive_age_s=now-self.path_at)
         return Health(pose,valid,ready,stopped,list(self.path),path_valid,self.config['footprint'],not self.motions,
                       'execution path missing or receive timeout' if not path_valid else '')
+
+    def read_approach_parameters(self):
+        """Read live arrival semantics without subscriptions or parameter writes."""
+        from rcl_interfaces.srv import GetParameters
+        output=Future(); clients=[]; pending=[]; values={}; timers=[]; sent=set()
+        specs={
+            '/controller_server': ['goal_checker_plugins', 'general_goal_checker.xy_goal_tolerance'],
+            '/planner_server': ['planner_plugins', 'GridBased.tolerance'],
+            '/local_costmap/local_costmap': ['robot_base_frame'],
+            '/global_costmap/global_costmap': ['robot_base_frame', 'global_frame'],
+        }
+        def cleanup(_):
+            for future in pending:
+                if not future.done():future.cancel()
+            for client in clients:self.node.destroy_client(client)
+            for timer in timers:self.node.destroy_timer(timer)
+        output.add_done_callback(cleanup)
+        def received(future, server):
+            if output.done():return
+            try:
+                values[server]=future.result().values
+                if len(values)!=len(specs):return
+                controller=values['/controller_server']; planner=values['/planner_server']
+                local=values['/local_costmap/local_costmap']; global_=values['/global_costmap/global_costmap']
+                if (list(controller[0].string_array_value)!=['general_goal_checker']
+                        or list(planner[0].string_array_value)!=['GridBased']
+                        or controller[1].type!=3 or planner[1].type!=3
+                        or local[0].string_value!='base_link' or global_[0].string_value!='base_link'
+                        or global_[1].string_value!='map'):
+                    raise ValueError('unexpected Nav2 goal checker, planner or map/base_link frames')
+                output.set_result(dict(xy_goal_tolerance=controller[1].double_value,
+                                       planner_tolerance=planner[1].double_value))
+            except Exception as error:output.set_exception(error)
+        def send_ready():
+            if output.done():return
+            try:
+                for (server,names),client in zip(specs.items(),clients):
+                    if output.done():return
+                    if server in sent or not client.service_is_ready():continue
+                    sent.add(server)
+                    future=client.call_async(GetParameters.Request(names=names));pending.append(future)
+                    future.add_done_callback(lambda f,server=server:received(f,server))
+            except Exception as error:
+                if not output.done():output.set_exception(error)
+        try:
+            for server in specs:
+                clients.append(self.node.create_client(GetParameters,server+'/get_parameters'))
+            timers.append(self.node.create_timer(.05,send_ready))
+        except Exception as error:
+            if not output.done():output.set_exception(error)
+        return output
 
     def compute_path(self,local_goal):
         from nav2_msgs.action import ComputePathToPose
@@ -499,6 +577,9 @@ class Go2Adapter:
             return future
         goal=ComputePathToPose.Goal()
         goal.goal=self.node.make_pose_stamped(local_goal.x,local_goal.y,local_goal.yaw)
+        if goal.goal.header.frame_id!='map':
+            future.set_result(PathResult(False,reason='goal must use map frame'))
+            return future
         request=self.node.path_planner.send_goal_async(goal)
         self.plans[id(future)] = None
         def response(done):
@@ -513,8 +594,13 @@ class Go2Adapter:
                     try:
                         value=completed.result()
                         if value.status!=4 or not value.result.path.poses:raise ValueError('no local path')
+                        message=value.result.path
+                        if message.header.frame_id!='map' or any(p.header.frame_id not in ('','map') for p in message.poses):
+                            raise ValueError('path must use map frame')
                         from vlm_nav.vlm_navigator import quaternion_yaw
                         path=[Pose2D(p.pose.position.x,p.pose.position.y,quaternion_yaw(p.pose.orientation)) for p in value.result.path.poses]
+                        if any(not all(math.isfinite(v) for v in (p.x,p.y,p.yaw)) for p in path):
+                            raise ValueError('nonfinite path')
                         future.set_result(PathResult(True,path))
                     except Exception:future.set_result(PathResult(False,reason='local path failed'))
                 handle.get_result_async().add_done_callback(result)
@@ -524,34 +610,50 @@ class Go2Adapter:
         request.add_done_callback(response)
         return future
 
-    def select_approach(self,local_object,excluded_candidates,*,standoff_distance=None):
+    def select_approach(self,local_object,excluded_candidates,*,standoff_distance=None,path_accept=None):
         output=Future()
-        if self.costmap_transform() is None:
-            output.set_result(ApproachResult(reason='local map/costmap unavailable'))
-            return output
         candidates=[]
         distance=self.config['standoff_distance'] if standoff_distance is None else standoff_distance
         if isinstance(distance,bool) or not isinstance(distance,(int,float)) or not math.isfinite(distance) or distance<=0:
             output.set_result(ApproachResult(reason='invalid standoff distance'))
             return output
-        for angle in np.linspace(-math.pi,math.pi,8,endpoint=False):
-            candidate=Pose2D(local_object.x+distance*math.cos(angle),local_object.y+distance*math.sin(angle),normalize_angle(angle+math.pi))
-            if candidate in excluded_candidates:continue
-            if self.costmap_candidate_free(candidate):candidates.append(candidate)
+        try:
+            for angle in np.linspace(-math.pi,math.pi,8,endpoint=False):
+                candidate=Pose2D(local_object.x+distance*math.cos(angle),local_object.y+distance*math.sin(angle),normalize_angle(angle+math.pi))
+                if candidate in excluded_candidates:continue
+                if self.approach_candidate_free(candidate):candidates.append(candidate)
+        except RuntimeError as error:
+            output.set_result(ApproachResult(reason=str(error)))
+            return output
         health=self.get_health()
         candidates.sort(key=lambda p:math.hypot(p.x-health.pose.x,p.y-health.pose.y))
         def attempt():
             if output.done():return
             if not candidates:
-                output.set_result(ApproachResult(reason='no locally reachable candidate'))
+                output.set_result(ApproachResult(reason='no safe reachable standoff candidate'))
                 return
             candidate=candidates.pop(0)
-            if not self.costmap_candidate_free(candidate):attempt();return
+            try:
+                if not self.approach_candidate_free(candidate):attempt();return
+            except RuntimeError as error:
+                output.set_result(ApproachResult(reason=str(error)));return
             future=self.compute_path(candidate)
             def done(f):
                 if output.done():return
-                if f.result().reachable and self.costmap_candidate_free(candidate):output.set_result(ApproachResult(candidate))
-                else:attempt()
+                try:
+                    result=f.result()
+                    footprint_free=self.approach_candidate_free(candidate)
+                    accepted=(result.reachable and footprint_free
+                              and (path_accept is None or path_accept(candidate,result)))
+                    self._motion_event('APPROACH_PATH_CHECK',candidate_pose=[candidate.x,candidate.y,candidate.yaw],
+                        reachable=result.reachable,accepted=accepted,
+                        reason=('ok' if accepted else 'approach footprint or path policy rejected') if result.reachable
+                               else result.reason or 'Nav2 planner rejected candidate')
+                    if accepted:
+                        output.set_result(ApproachResult(candidate))
+                    else:attempt()
+                except RuntimeError as error:output.set_result(ApproachResult(reason=str(error)))
+                except Exception as error:output.set_exception(error)
             future.add_done_callback(done)
         attempt()
         return output
@@ -589,6 +691,12 @@ class Go2Adapter:
             except Exception:
                 self.motion_fault=True
                 finish('ABORTED')
+        guard=getattr(self,'motion_guard',None)
+        if guard:
+            # The unsent request must not count as an active action in the stop check.
+            self.motions.pop(goal_id)
+            if not guard(task_id,command_id):return None,None
+            self.motions[goal_id]=motion
         try:client.send_goal_async(goal).add_done_callback(accepted)
         except Exception:self.motion_fault=True;finish('ABORTED')
         return goal_id,motion['reply']
@@ -636,11 +744,14 @@ class Go2Adapter:
         future=Future();future.set_result(True)
         return future
 
-    def start_scan(self,target_descriptions,scan_id):
+    def start_scan(self,target_descriptions,scan_id,*,stop_on_target=None):
         if getattr(self,'read_only',False):raise RuntimeError('read-only adapter cannot start Spin/scan')
         if self.scan or self.motions:raise RuntimeError('motion not serial')
+        if stop_on_target is not None and stop_on_target not in target_descriptions:
+            raise ValueError('scan stop target must be included in target descriptions')
         reply=Future()
         self.scan={'reply':reply,'id':scan_id,'targets':target_descriptions,'index':0,'phase':'SPIN',
+                   'stop_on_target':stop_on_target,
                    'navigation':getattr(self,'last_motion',('',{})),
                    'initial':self.get_health().pose.yaw,'pending':None,'observations':[],'after':0,'deadline':time.monotonic()+self.config.get('scan_timeout',120.0)}
         return reply
@@ -671,8 +782,14 @@ class Go2Adapter:
             self.evidence_write_failed=True;self.motion_fault=True
             self.stop_motion('VLM evidence write failed');return
         if not scan:return
-        if not self.get_health().nav_ready or not self.get_health().localization_valid:
+        health=self.get_health()
+        if not health.nav_ready or not health.localization_valid:
+            details=self.last_health_details
+            failed=[key for key,value in details['checks'].items() if not value]
             self.stop_motion('scan health lost')
+            # Preserve the triggering sample, but send stop before writing diagnostic evidence.
+            self._motion_event('SCAN_HEALTH_FAILED',health=asdict(health),health_details=details,
+                failed_gates=failed,scan_id=scan['id'],scan_phase=scan['phase'],view_index=scan['index'])
             return
         if now>scan['deadline']:
             scan['reply'].set_exception(TimeoutError('scan timeout'))
@@ -690,7 +807,9 @@ class Go2Adapter:
                 scan['phase']='FRAME';scan['after']=now
             else:
                 goal=Spin.Goal();goal.target_yaw=relative;goal.time_allowance=Duration(seconds=30.0).to_msg()
-                _,scan['pending']=self._motion(self.node.spinner,goal,'',scan['id'],'SCAN_SPIN')
+                goal_id,pending=self._motion(self.node.spinner,goal,'',scan['id'],'SCAN_SPIN')
+                if goal_id is None:return
+                scan['pending']=pending
                 scan['phase']='SPIN_WAIT'
         elif phase=='SPIN_WAIT' and scan['pending'].done() and self.get_health().stopped:
             if scan['pending'].result()!='SUCCEEDED':
@@ -746,6 +865,13 @@ class Go2Adapter:
                 self.frame,scan['id'],scan['index'],targets=scan['targets'])
             self._record_scan_view(scan,observations,'TIMEOUT' if error_type=='TimeoutError' else 'ERROR' if error_type else 'APPLIED',error_type)
             scan['observations']+=observations
+            if scan.get('stop_on_target'):
+                if any(o.target_id==scan['stop_on_target'] and o.status=='DETECTED' for o in observations):
+                    scan['reply'].set_result(scan['observations']);self.scan=None;return
+                if error_type or any(o.status=='API_ERROR' for o in observations):
+                    scan['reply'].set_exception(RuntimeError('scan inference failed'))
+                    self.scan=None
+                    self.stop_motion('scan inference failed');return
             scan['index']+=1;scan['phase']='SPIN'
 
     def close(self,stop=True):

@@ -1,6 +1,7 @@
 from concurrent.futures import Future
 from collections import deque
 import uuid
+from types import SimpleNamespace
 from ..models import *
 
 def completed(value):
@@ -22,6 +23,19 @@ class FakeAdapter:
         self.aborts = 0
         self.calls = []
         self.path = []
+        self.client=SimpleNamespace(choose_candidate=lambda snapshot:dict(candidate_id=snapshot['candidates'][0]['display_id'],reason='synthetic choice'))
+        self.vision=SimpleNamespace(submit=lambda function:completed(function()))
+
+    def costmap_transform(self,global_goal=False):return object() if self.online else None
+
+    def costmap_candidate_free(self,goal,global_goal=False):return goal.valid and not self.unreachable
+
+    def observation_candidate_free(self,goal):return self.costmap_candidate_free(goal,True)
+
+    def approach_candidate_free(self,goal):return self.costmap_candidate_free(goal,True)
+
+    def read_approach_parameters(self):
+        return completed(dict(xy_goal_tolerance=.25,planner_tolerance=.5))
 
     def get_health(self):
         return Health(self.pose, self.online, self.online, not self.active, self.path,
@@ -31,11 +45,12 @@ class FakeAdapter:
         return completed(PathResult(not self.unreachable, [self.pose, local_goal],
                                     'unreachable' if self.unreachable else ''))
 
-    def select_approach(self, local_object, excluded_candidates):
-        offset = .8 if self.robot_id == 'go2' else 1.0
+    def select_approach(self, local_object, excluded_candidates, *, standoff_distance=None, path_accept=None):
+        offset = standoff_distance if standoff_distance is not None else .8 if self.robot_id == 'go2' else 1.0
         candidates = [Pose2D(local_object.x-offset, local_object.y, 0),
                       Pose2D(local_object.x, local_object.y-offset, 1.5707963267948966)]
-        goal = next((p for p in candidates if p not in excluded_candidates), None)
+        goal = next((p for p in candidates if p not in excluded_candidates and
+            (path_accept is None or path_accept(p,self.compute_path(p).result()))), None)
         return completed(ApproachResult(goal if not self.unreachable else None, 'no approach candidate'))
 
     def start_navigation(self, local_goal, task_id, command_id, goal_kind):
@@ -57,9 +72,9 @@ class FakeAdapter:
             self.cancel_navigation(goal_id)
         return completed(True)
 
-    def start_scan(self, target_descriptions, scan_id):
+    def start_scan(self, target_descriptions, scan_id, *, stop_on_target=None):
         values = []
-        for target in TARGETS:
+        for target in target_descriptions:
             pose = self.detections.get(target)
             values.append(Observation(target_id=target, scan_id=scan_id,
                 observation_id=f'{self.robot_id}/{scan_id}/{target}',

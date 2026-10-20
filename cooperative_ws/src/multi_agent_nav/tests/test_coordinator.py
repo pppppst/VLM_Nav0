@@ -75,3 +75,43 @@ def test_restart_and_unconfigured_c_do_not_resume():
     assert c.phase=='PAUSED'
     restarted = Coordinator(scenario(), 'a', {'go2':('g','v'), 'ranger':('r','v')}, True)
     assert restarted.phase=='IDLE' and restarted.tick(0)==[]
+
+def test_new_task_waits_for_old_paused_agents_without_relaxing_health():
+    c = coord()
+    c.pause('explicit restart')
+    for robot in ROBOTS:
+        c.ingest_state(replace(c.states[robot], run_state='PAUSED'), .1)
+    assert c.start('test', .2).accepted
+    output = c.tick(.2)
+    assert c.phase == 'SEARCH_AB'
+    assert [command.action for command in output] == ['SYNC', 'SYNC']
+    c.ingest_state(replace(c.states['go2'], task_id=c.task_id, localization_valid=False), .3)
+    assert any(command.action == 'PAUSE' for command in c.tick(.3))
+    assert c.phase == 'PAUSED'
+
+def test_handshake_success_waits_for_stop_instead_of_exhausting_search():
+    c = coord()
+    for robot in ROBOTS:
+        c.ingest_state(replace(c.states[robot], stopped=False), .1)
+    assert all(command.action == 'SYNC' for command in c.tick(.1))
+    assert c.phase == 'SEARCH_AB' and not c.commands
+    for robot in ROBOTS:
+        c.ingest_state(replace(c.states[robot], stopped=True), .2)
+    assert any(command.action == 'EXECUTE' for command in c.tick(.2))
+
+def test_sync_retries_keep_task_deadline_and_block_dispatch_until_both_confirm():
+    c = coord()
+    c.states['ranger'] = replace(c.states['ranger'], task_id='')
+    task_id, started = c.task_id, c.started
+    for now in (.5, 1., 2., 3.):
+        for robot in ROBOTS:
+            c.ingest_state(replace(c.states[robot]), now)
+        output = c.tick(now)
+        assert [command.action for command in output] == ['SYNC', 'SYNC']
+        assert all(command.task_id == task_id for command in output)
+        assert c.started == started and not c.commands
+    output = c.tick(3.01)
+    assert c.phase == 'PAUSED' and any(command.action == 'PAUSE' for command in output)
+    for robot in ROBOTS:
+        c.ingest_state(replace(c.states[robot], task_id=task_id), 3.02)
+    assert not any(command.action == 'EXECUTE' for command in c.tick(3.02))

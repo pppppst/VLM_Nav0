@@ -197,7 +197,7 @@ def run_ros(config,args,events=None):
         frame=FrameAdapter(entry['local_map_id'],entry['map_version'],'lab_ref',
             config['alignment']['alignment_id'],entry['transform'])
         adapter=Go2Adapter(node,config['robot_go2'],frame,read_only=not motion,
-            global_goal_checks=args.action=='explore')
+            global_goal_checks=args.action in ('explore','approach'))
         adapter.record_event=record
         if args.action=='explore':
             adapter.scan_evidence_dir=Path(args.output_dir)/'vlm'

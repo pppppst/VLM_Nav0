@@ -9,6 +9,8 @@ class AgentMachine:
         import math
         if not math.isfinite(path_start_timeout) or path_start_timeout <= 0:
             raise ValueError('path_start_timeout must be finite and positive')
+        if not isinstance(context.share_c_coordinates, bool):
+            raise ValueError('share_c_coordinates must be boolean')
         self.context, self.frame, self.lost_timeout = context, frame, lost_timeout
         self.path_start_timeout = path_start_timeout
         self.retired_tasks = set()
@@ -22,6 +24,7 @@ class AgentMachine:
         self.effects = []
         self.goal_kind = ''
         self.sync_received = None
+        self.task_started = None
         self.phase = 'IDLE'
         self.peer_received = None
         self.last_sequence = 0
@@ -32,15 +35,37 @@ class AgentMachine:
         self.health = Health()
         self.guard = None
         self.transit_goal = None
+        self.local_c_observations = {}
+        self.local_execution_enabled = False
+        self.local_motion = None
+        self.local_target = None
+        self.local_approach_succeeded = False
+        self.success_radius = 1.0
+        self.local_exit = None
 
     def state(self):
-        return replace(self._state)
+        return replace(self._state) if self.context.share_c_coordinates else replace(
+            self._state, common_pose=Pose2D(), pose_valid=False)
 
     def take_effects(self):
         effects, self.effects = self.effects, []
         return effects
 
     def _plan(self):
+        if self.local_motion is not None:
+            self.effects.append(Effect('PLAN',self.local_motion['goal']))
+            return
+        if self.local_execution_enabled and not self.command.position_valid and self.command.kind in (
+            'APPROACH_PICKUP','SEARCH_VIEWPOINT','APPROACH_DEPOSIT'):
+            self.effects.append(Effect('LOCAL_EXECUTION'))
+            return
+        if self.local_execution_enabled and self.command.kind == 'EXIT':
+            if self.local_exit is None:
+                self.stop('local exit point missing')
+                return
+            self.selected_goal=self.local_exit
+            self.effects.append(Effect('PLAN',self.selected_goal))
+            return
         if self.command.kind.startswith('APPROACH'):
             self.effects.append(Effect('APPROACH', (self.frame.to_local(self.command.object_position), list(self.excluded))))
         else:
@@ -49,7 +74,8 @@ class AgentMachine:
 
     def accept(self, command, now):
         # SYNC alone establishes a task; EXECUTE can never silently replace it.
-        if command.action == 'SYNC' and command.task_id != self.context.task_id:
+        sync = command.action in ('SYNC', 'SYNC_LOCAL_C')
+        if sync and command.task_id != self.context.task_id:
             if command.task_id in self.retired_tasks:
                 return CommandReply(False, 'retired task')
             if self._state.token or self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
@@ -61,16 +87,29 @@ class AgentMachine:
             if self.context.task_id:
                 self.retired_tasks.add(self.context.task_id)
             self.context = candidate
-            self._state.task_id = command.task_id
-            self._state.ready = self._state.deposited = self._state.exited = False
-            self._state.reply = ''
-            self.command = None
+            self._state = AgentState(robot_id=candidate.robot_id, task_id=candidate.task_id,
+                local_map_id=candidate.local_map_id, map_version=candidate.map_version,
+                common_frame_id=candidate.common_frame_id, alignment_id=candidate.alignment_id,
+                simulation=candidate.simulation, common_pose=self._state.common_pose,
+                pose_valid=self._state.pose_valid, localization_valid=self._state.localization_valid,
+                nav_ready=self._state.nav_ready, stopped=self._state.stopped)
+            self.command = self.selected_goal = self.transit_goal = None
+            self.effects.clear()
+            self.local_c_observations.clear()
+            self.local_motion = None
+            self.local_target = None
+            self.local_approach_succeeded = False
+            self.goal_kind = ''
+            self.peer_received = None
+            self.task_started = now
             self.last_sequence = 0
             self.paused = False
         reply = validate_command(command, self.context)
         if not reply.accepted:
             return reply
-        if command.action == 'SYNC':
+        if sync:
+            if self.task_started is None:
+                self.task_started = now
             self.sync_received = now
             self.phase = command.phase
             return reply
@@ -104,6 +143,9 @@ class AgentMachine:
             return CommandReply(False, 'deposit requires READY and deposit phase')
         if self.paused or self._state.run_state == 'STOPPING':
             return CommandReply(False, 'paused: new task required')
+        if self.sync_received is None or now-self.sync_received > self.lost_timeout or (
+            self.peer_received is None or now-self.peer_received > self.lost_timeout):
+            return CommandReply(False, 'fresh SYNC/peer state required')
         if self.command and self._state.reply not in ('SUCCEEDED', 'FAILED', 'CANCELED'):
             return CommandReply(False, 'one active command')
         if not self._state.stopped or not self.health.motion_terminal:
@@ -111,7 +153,16 @@ class AgentMachine:
         if command.kind == 'EXIT' and (not self._state.deposited or command.token != self._state.token or
                 command.parent_command_id != self._state.permit_command_id or command.resource_id != self._state.resource_id):
             return CommandReply(False, 'EXIT must preserve deposit permit identity')
+        if command.kind == 'APPROACH_DEPOSIT' and not self.context.share_c_coordinates:
+            observation = self.local_c_observations.get(command.observation_id)
+            if not observation or not observation.navigable or observation.task_id != self.context.task_id:
+                return CommandReply(False, 'own C observation missing for current task')
+            if not self.local_execution_enabled:
+                command = replace(command, object_position=observation.common_position, position_valid=True)
         self.command, self.last_sequence = command, command.sequence
+        self.local_motion = None
+        self.local_target = None
+        self.local_approach_succeeded = False
         self.retry, self.excluded = 0, []
         self._state.command_id, self._state.sequence = command.command_id, command.sequence
         self._state.reply, self._state.reason = 'ACCEPTED', ''
@@ -152,6 +203,9 @@ class AgentMachine:
                 self.stop(decision.reason)
                 return
             if decision.resource_id:
+                if self.local_execution_enabled and decision.resource_id=='basket' and self.command.kind!='APPROACH_DEPOSIT':
+                    self.fail('basket is reserved for C approach/exit')
+                    return
                 self._state.requested_resource = decision.resource_id
                 self._state.requested_command_id = self.command.command_id
                 self._state.run_state = 'WAITING_RESOURCE'
@@ -162,7 +216,7 @@ class AgentMachine:
             self._state.run_state = 'WAITING_RESOURCE'
             return
         nav_goal = self.transit_goal or goal
-        kind = 'DOOR_TRANSIT' if self.transit_goal else NAV_KIND[self.command.kind]
+        kind = 'DOOR_TRANSIT' if self.transit_goal else self.local_motion['kind'] if self.local_motion else NAV_KIND[self.command.kind]
         self.effects.append(Effect('NAVIGATE', (nav_goal, kind)))
 
     def navigation_started(self, goal_id, goal_kind, now=0.0):
@@ -176,6 +230,15 @@ class AgentMachine:
             self.context.task_id, self.command.command_id, self._state.goal_id, self.goal_kind):
             return []
         self._state.goal_id = ''
+        local = self.local_motion
+        if local is not None and result.goal_kind != 'DOOR_TRANSIT' and (
+            result.status == 'SUCCEEDED' or result.status != 'ABORTED' or self.retry >= 1
+        ):
+            if result.status == 'SUCCEEDED' and result.goal_kind in ('PICKUP_NAV','DEPOSIT_NAV'):
+                self.local_approach_succeeded = True
+            if not local['reply'].done():local['reply'].set_result(result.status)
+            self._state.run_state='LOCAL_EXECUTION'
+            return []
         # Terminal is not physical stop; tick/adapter must confirm it before replacement.
         if result.status != 'SUCCEEDED':
             if self.retry < 1 and result.status == 'ABORTED':
@@ -202,12 +265,47 @@ class AgentMachine:
 
     def on_observation(self, observation, now):
         if not self.paused and self.command and observation.scan_id == self.command.command_id:
-            self.effects.append(Effect('OBSERVATION', replace(observation,
+            observation = replace(observation,
                 task_id=self.context.task_id, robot_id=self.context.robot_id,
                 local_map_id=self.context.local_map_id, map_version=self.context.map_version,
                 common_frame_id=self.context.common_frame_id, alignment_id=self.context.alignment_id,
-                viewpoint_id=self.command.viewpoint_id, simulation=self.context.simulation)))
+                viewpoint_id=self.command.viewpoint_id, simulation=self.context.simulation)
+            if not self.context.share_c_coordinates:
+                cached = observation.target_id == 'C' and observation.navigable and bool(observation.observation_id)
+                if cached:
+                    self.local_c_observations.setdefault(observation.observation_id, observation)
+                observation = replace(observation, common_position=Pose2D(), position_valid=False,
+                    status='CACHED' if cached else observation.status, reason='')
+            self.effects.append(Effect('OBSERVATION', observation))
         return []
+
+    def begin_local_navigation(self,goal,kind):
+        from concurrent.futures import Future
+        reply=Future()
+        self.local_motion=dict(goal=goal,kind=kind,reply=reply)
+        self._state.run_state='PLANNING'
+        self._plan()
+        return reply
+
+    def complete_local_execution(self,identity,outcome):
+        from vlm_nav.arrival import target_distance
+        if self.paused or not self.command or identity!=(self.command.task_id,self.command.command_id):return
+        state=self._state
+        if self.command.kind=='SEARCH_VIEWPOINT':
+            success=outcome=='TARGET_FOUND' and bool(self.local_c_observations)
+        else:
+            distance=target_distance((self.health.pose.x,self.health.pose.y),
+                (self.local_target.x,self.local_target.y) if self.local_target else None)
+            success=(outcome=='TARGET_APPROACHED' and self.local_approach_succeeded
+                and self.health.localization_valid and self.health.stopped and self.health.motion_terminal
+                and distance<=self.success_radius)
+        self.local_motion=None
+        if not success:
+            self.fail(outcome or 'local target acceptance failed')
+            return
+        if self.command.kind=='APPROACH_PICKUP':state.ready=True
+        elif self.command.kind=='APPROACH_DEPOSIT':state.deposited=True
+        state.reply,state.run_state='SUCCEEDED','IDLE'
 
     def scan_completed(self, observations, now):
         if self.paused or not self.command:
@@ -234,17 +332,22 @@ class AgentMachine:
         self._state.goal_id = ''
         self._state.run_state, self._state.reply, self._state.reason = 'STOPPING', 'CANCELED', reason
 
-    def tick(self, now, health):
+    def check_health(self, now, health):
         self.health = health
         self._state.pose_valid = self._state.localization_valid = health.localization_valid and health.pose.valid
         self._state.nav_ready, self._state.stopped = health.nav_ready, health.stopped
         if self._state.pose_valid:
             self._state.common_pose = self.frame.to_common(health.pose)
+        # The first peer state gets one fixed handshake window; later loss gets no new grace.
+        peer_since = self.peer_received if self.peer_received is not None else self.task_started
         if self.context.task_id and not self.paused and (
             self.sync_received is None or now-self.sync_received > self.lost_timeout or
-            self.peer_received is None or now-self.peer_received > self.lost_timeout or
-            not health.localization_valid or not health.nav_ready):
+            peer_since is None or now-peer_since > self.lost_timeout or
+            not self._state.localization_valid or not health.nav_ready):
             self.stop('SYNC/peer/localization/navigation health lost')
+
+    def tick(self, now, health):
+        self.check_health(now, health)
         if self._state.run_state == 'STOPPING':
             if health.stopped and health.motion_terminal:
                 self._state.run_state = 'PAUSED'

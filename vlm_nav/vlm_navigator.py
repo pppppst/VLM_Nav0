@@ -1382,13 +1382,6 @@ class VLMNavigator(Node):
         if windows is None:
             return
         windows[stream].append(self.stamp_ns(message) * 1e-9)
-        self.rgbd_sync_status = rgbd_sync_health(
-            windows["rgb"],
-            windows["depth"],
-            slop_s=float(self.p.rgbd_sync_slop),
-            minimum_samples=int(self.p.rgbd_sync_minimum_samples),
-            minimum_rate=float(self.p.rgbd_sync_minimum_rate),
-        )
 
     def publish_camera_preview(self, message, now=None):
         rate = float(self.p.camera_preview_rate)
@@ -1505,6 +1498,15 @@ class VLMNavigator(Node):
     def on_rgbd(self, rgb_message, depth_message):
         now = time.monotonic()
         self.last_rgbd_pair_received = now
+        # Commit health at the existing matcher's pair boundary, not between two arrivals.
+        windows = getattr(self, "rgbd_stamp_windows", None)
+        if windows is not None:
+            self.rgbd_sync_status = rgbd_sync_health(
+                windows["rgb"], windows["depth"],
+                slop_s=float(self.p.rgbd_sync_slop),
+                minimum_samples=int(self.p.rgbd_sync_minimum_samples),
+                minimum_rate=float(self.p.rgbd_sync_minimum_rate),
+            )
         infos = getattr(self, "camera_infos", {})
         if not getattr(self.p, "raw_depth_mode", False):
             if (

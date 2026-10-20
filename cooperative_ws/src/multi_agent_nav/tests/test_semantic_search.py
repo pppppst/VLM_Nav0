@@ -124,7 +124,7 @@ def run_semantic(config, mode='normal'):
     if mode == 'unreachable':adapter.no_path = {1.,2.}
     if mode == 'api':adapter.api_error = True
     if mode == 'scan_exception':
-        def failed_scan(*args):
+        def failed_scan(*args,**kwargs):
             adapter.scans += 1
             future=Future();future.set_exception(RuntimeError('fixture scan error'));return future
         adapter.start_scan = failed_scan
@@ -152,7 +152,9 @@ def run_semantic(config, mode='normal'):
                           lambda: [], stop, lambda: None, clock=lambda:now[0])
         return adapter, events, requests, outcome
     except Exception:
-        assert not adapter.calls
+        if mode in ('api', 'scan_exception'):
+            assert len(adapter.calls)==1 and adapter.scans==1
+        else:assert not adapter.calls
         raise
 
 
@@ -181,9 +183,9 @@ def test_no_path_skips_model_and_waits(catalog_config):
 
 @pytest.mark.parametrize('mode', ['api', 'scan_exception'])
 def test_api_failure_is_not_a_negative_observation(catalog_config, mode):
-    adapter, events, requests, outcome = run_semantic(catalog_config, mode)
-    assert outcome == 'WAITING_VIEWPOINTS' and adapter.scans == 2
-    assert all(row['status']=='observation_failed' for row in events[-1]['records'].values())
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    with pytest.raises(ExplorationStopped,match='scan'):
+        run_semantic(catalog_config, mode)
 
 
 def test_furniture_api_uses_semantic_image_and_separate_request(monkeypatch, tmp_path):

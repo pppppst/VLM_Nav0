@@ -4,6 +4,19 @@ from .models import Pose2D
 def wrap(yaw):
     return math.atan2(math.sin(yaw), math.cos(yaw))
 
+
+class LocalFrame:
+    """Keep adapter positions in this robot's map; no common-map transform exists."""
+    def to_local(self, pose):
+        if not pose.valid:
+            raise ValueError('nonfinite local pose')
+        return pose
+
+    to_common = to_local
+
+    def polygon_to_local(self, vertices):
+        return [(p.x, p.y) for p in (self.to_local(Pose2D(*v)) for v in vertices)]
+
 class FrameAdapter:
     def __init__(self, local_map_id, map_version, common_frame_id, alignment_id, transform):
         if transform is None or len(transform) != 3 or not all(math.isfinite(v) for v in transform):

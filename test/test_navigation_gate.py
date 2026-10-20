@@ -253,6 +253,100 @@ def test_input_and_autonomy_readiness_are_separate_fail_closed_gates():
     assert node.vlm_autonomy_ready(now) is False
 
 
+@pytest.fixture
+def paired_rgbd_runtime(monkeypatch):
+    """Replay image arrival callbacks through the existing matcher, without ROS init."""
+    from message_filters import ApproximateTimeSynchronizer, SimpleFilter
+    import vlm_nav.vlm_navigator as navigator
+    now = [1000.0]
+    monkeypatch.setattr(navigator, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    node = VLMNavigator.__new__(VLMNavigator)
+    node.state = DISARMED
+    node.p = SimpleNamespace(raw_depth_mode=True, camera_preview_rate=0.,
+        rgbd_sync_slop=.05, rgbd_sync_minimum_samples=10, rgbd_sync_minimum_rate=.9,
+        rgbd_wait_timeout=2., tf_failure_timeout=3., global_frame="map",
+        vlm_sample_rate=5., image_tf_queue_size=4, image_tf_wait_timeout=5.)
+    node.rgbd_stamp_windows = {s: deque(maxlen=30) for s in ("rgb", "depth")}
+    node.rgbd_sync_status = dict(healthy=False, matched=0, total=0, rate=0.)
+    node.camera_infos = {s: SimpleNamespace(width=2, height=2,
+        k=[100., 0., 1., 0., 100., 1., 0., 0., 1.], d=[0.] * 5,
+        header=SimpleNamespace(frame_id=s)) for s in ("color", "depth")}
+    node.pending_rgbd_frames = deque()
+    node.last_rgbd_queued = node.last_camera_tf_success = 0.
+    node.sequence = node.task_epoch = node.image_tf_queue_drops = 0
+    node.latest_snapshot = None
+    node.camera_extrinsic_matrix = None
+    node.depth_scale = .001
+    node.get_parameter = lambda name: SimpleNamespace(value="灭火器")
+    node.tf_buffer = SimpleNamespace(lookup_transform=lambda *a, **kw: SimpleNamespace(
+        transform=SimpleNamespace(translation=SimpleNamespace(x=0., y=0., z=0.),
+            rotation=SimpleNamespace(x=0., y=0., z=0., w=1.))))
+    filters = {s: SimpleFilter() for s in ("rgb", "depth")}
+    for stream, source in filters.items():
+        source.registerCallback(lambda msg, s=stream: node.record_rgbd_stamp(s, msg))
+    sync = ApproximateTimeSynchronizer(list(filters.values()), queue_size=30, slop=.05)
+    sync.registerCallback(node.on_rgbd)
+    def arrive(stream, index):
+        ns = 100_000_000_000 + round(index * 1e9 / 15)
+        rgb = stream == "rgb"
+        filters[stream].signalMessage(SimpleNamespace(width=2, height=2,
+            header=SimpleNamespace(frame_id="color" if rgb else "depth",
+                stamp=Time(sec=ns // 10**9, nanosec=ns % 10**9)),
+            encoding="rgb8" if rgb else "16UC1", step=6 if rgb else 4,
+            is_bigendian=0, data=bytes(12) if rgb else np.full((2, 2), 1000, np.uint16).tobytes()))
+    return node, arrive, now
+
+
+@pytest.mark.parametrize("leading", ["rgb", "depth"])
+def test_rgbd_health_does_not_cancel_between_arrivals_at_window_boundary(paired_rgbd_runtime, leading):
+    node, arrive, now = paired_rgbd_runtime
+    following = "depth" if leading == "rgb" else "rgb"
+    # Existing offline arrival example: 27/30 pairs, then a one-sided arrival, then its pair.
+    for i in range(3, 33): arrive(leading, i)
+    for i in range(30): arrive(following, i)
+    assert node.rgbd_sync_status["matched"] == 27
+    assert node.vlm_input_ready(now[0])
+    previous = node.latest_snapshot
+    arrive(leading, 33)
+    assert node.latest_snapshot is previous
+    assert node.vlm_input_ready(now[0])  # Single-stream arrival must not invalidate the complete pair.
+    arrive(following, 30)
+    assert node.latest_snapshot is not previous
+    assert node.rgbd_sync_status["matched"] == 27
+    assert node.vlm_input_ready(now[0])
+
+
+def test_rgbd_health_requires_full_warmup_and_rejects_sustained_pair_loss(paired_rgbd_runtime):
+    node, arrive, now = paired_rgbd_runtime
+    for i in range(9):
+        arrive("rgb", i); arrive("depth", i)
+    assert not node.vlm_input_ready(now[0])
+    arrive("rgb", 9); arrive("depth", 9)
+    assert node.vlm_input_ready(now[0])
+    for i in range(10, 40): arrive("rgb", i)
+    arrive("depth", 39)  # A fresh complete pair does not excuse a low window match rate.
+    assert node.latest_snapshot.captured_monotonic == now[0]
+    assert not node.vlm_input_ready(now[0])
+    for i in range(40, 70):
+        arrive("rgb", i); arrive("depth", i)
+    assert node.vlm_input_ready(now[0])
+
+
+@pytest.mark.parametrize("fault", ["rgb_only", "depth_only", "no_messages", "tf_expired"])
+def test_rgbd_pair_cache_never_extends_frame_or_tf_deadlines(paired_rgbd_runtime, fault):
+    node, arrive, now = paired_rgbd_runtime
+    for i in range(30):
+        arrive("rgb", i); arrive("depth", i)
+    assert node.vlm_input_ready(now[0])
+    if fault == "tf_expired":
+        node.last_camera_tf_success = now[0] - 3.01
+    else:
+        now[0] += 2.01
+        if fault != "no_messages":
+            for i in range(30, 60): arrive("rgb" if fault == "rgb_only" else "depth", i)
+    assert not node.vlm_input_ready(now[0])
+
+
 def test_real_vlm_results_own_api_ready_state():
     node = VLMNavigator.__new__(VLMNavigator)
     node.p = SimpleNamespace(require_external_safety_gates=False)

@@ -1,5 +1,7 @@
 # Go2 控制电脑会话交接（2026-10-08）
 
+最新实施范围见本文末尾 **2026-10-20 公共本地执行核心**；本轮私有C要求覆盖前文共享位置/共同C/跨地图对齐的任务要求，历史证据不改写。
+
 ## 0. 来源、工作区及阅读顺序
 
 当前电脑为 Go2 控制电脑；仓库 `/home/isee-pst/unitree_ros2/VLM_Nav`。
@@ -106,7 +108,7 @@ FAST-LIO实际`lidar_type=2, scan_line=16, timestamp_unit=0, extrinsic_est_en=fa
 实际运行参数另存`$S/runtime-{local,global}-costmap.yaml`，local=static/voxel/inflation，global=static/obstacle/inflation。
 动态源都是`/vlm_nav/obstacle_cloud`，`marking/clearing=true`；参数true不等于效果已定量验收。
 
-Go2活动地图：`/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml`，引用`lab.pgm`。
+当时Go2活动地图（2026-10-18已切换源码默认，见末节）：`/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rear120_20261001_IwQjMX/lab.yaml`，引用`lab.pgm`。
 身份`lab_rear120_20261001_IwQjMX`；map_digest=`c9f354a26471032e7ff10b5898db627b65fce7526c28124891833b6a3a164c02`，版本为`sha256:`加该值。
 本次只读重算一致；摘要规则为SHA256(YAML摘要字符串+图像摘要字符串)，见`multi_agent_nav/config.py`。
 
@@ -1661,3 +1663,955 @@ min rate=.9），并在任何一次输入false时立即结束探索。离线人�
 证据：build/go2-field/evidence/exploration-failure-audit.20261013_205504/report.json。
 下一步可在既有observer诊断中保存完整sync状态/窗口时间边界，再区分持续异常与回调瞬态；
 后续修复应保持运动前安全门槛，不重放本次迟到结果。原始实验资料保持不变。
+
+### 2026-10-13 RGB-D成功/失败版本对比与配对边界修复
+
+用户要求仅对比配对、取消、初始化及执行方式，并复用旧流程离线修复，禁止新真机实验。
+对比最近完整成功18:37 fixed_viewpoints/TARGET_APPROACHED与20:55 generated失败；
+详情见[rgbd_pair_health_20261013.md](rgbd_pair_health_20261013.md)。历史启动指引指向旧
+goal-costmap协同安装，成功实验无逐进程模块路径清单，不能补造确定加载来源；但四份根包
+安装的配对/缓存/TF等待/就绪函数AST一致，相关配置一致，旧两个协同安装也都持续检查
+输入健康并在false时取消。选点未清缓存，API原本异步，单线程主循环可在两路回调之间读健康。
+
+本轮仅将统计更新从单路record_rgbd_stamp移入既有on_rgbd完整配对回调。复用旧matcher、
+统计函数、缓存及期限；不改取消条件、不放宽阈值、不新增同步模块或订阅、不改底层参数。
+原离线人工27/30→26/30→27/30序列用真实matcher重放，RGB/深度各先到时旧实现2例失败，
+修复后7个新增回归全通过；持续低匹配率、启动不足样本、停流/单流和图像/TF超时仍拒绝。
+没有原始现场到达序列，人工回放证明该机制缺陷，不证明20:55的具体丢帧/延迟来源。
+
+仅vlm_nav构建build/go2-rgbd-pair-health-20261013/{build,install,log}成功。
+相关安装检查36项通过（新增7、既有29）：rgbd-runtime.xml 13、health-cancel.xml 19、
+environment.xml 3、image-tf.xml 1；均为离线，不初始化ROS、不连接设备/API。
+根包新模块与源码字节一致，协同仍来自health-abc；CoVLM_env最后加载GO2_RGBD_OUTPUT，
+VLM_NAV_EXTRA_SETUP_FILES同步更新，旧安装和既有运行进程保持原样。只读复核无阻断问题。
+对比摘要/函数摘录在build/go2-field/evidence/rgbd-pair-comparison-20261013/。
+工作期间用户HEAD更新为eb32b45（go侧），已保留该提交；本轮未自动提交或现场复验。
+
+### 2026-10-15 10:35 无探索点与Image-time TF past警告：只读核对
+
+最新experiment.20261015_103513.01dceb07仅WAITING_INPUTS→STOPPING/operator interrupt，
+等待75.245秒后人为中断，motion_sent=false；无CANDIDATE_GEOMETRY/REQUEST/SELECTED、
+无selection/vlm请求资料。因此RViz候选/选择项尚无生成数据，并非已证明显示配置故障。
+本地配置两显示项均启用；运行阶段必须先通过RGB-D/图像TF输入门槛才进入候选生成。
+
+python_13826_1792031713829.log仅两条图像TF警告：图像时刻14.064613/14.198987，
+TF缓存最早15.053060（共同秒前缀17920317），图像早0.988447/0.854073秒。
+这是新observer本地缓存缺少对应历史变换的已确认事实；不能用最新TF替代该图像时刻。
+原队列会先等待旧帧，直到收到时长超过5s后丢弃，past类型当前不会立即丢弃，因此启动可能
+多等几秒。正常持续新帧/TF到来应能恢复；两条启动警告不足以解释整段75秒未就绪。
+本次中断发生在启动收集后、最终health快照之前，结果缺少持续等待时的sync计数/帧龄/TF龄；
+不能断言相机断流、同步差或TF持续故障，也不能将本次当20:55健康取消同一根因。
+离线报告：build/go2-field/evidence/exploration-startup-audit.20261015_103513/report.json。
+下一步需在原输入保持运行时做有时限只读inspect并核对健康分项，不直接重跑探索。
+本轮仅日志/源码/配置检查和文档更新，无ROS/API/SSH/运动、构建或测试。
+另按既有comparison.json实值纠正前轮对比文档队列容量笔误：实际16，测试fixture的4非部署值；
+未修改产品配置。保留当前所有未提交修改，git diff --check通过。
+
+### 2026-10-15 10:40 用户inspect与相机UVC watchdog证据
+
+用户提供10秒inspect：93次采样RGBD全部false，定位约1s恢复、局部costmap约1.2s恢复；
+最终地图匹配/定位/静止/costmap有效，但完整帧年龄7.016s、相机TF最后成功年龄3.750s、
+sync_healthy=false。sync在早期一度true，不能解读为始终无配对；camera_tf_age是最后成功
+查询年龄，不是TF发布本身年龄。local_observation_ready仅旧定位/停车/costmap门槛，true
+不代表相机就绪，仍须检查rgbd_ready和non_motion_inputs_stable。三候选是离线几何结果，
+inspect不会发布探索marker，也不代表全局规划与旋转筛选通过。
+
+相应本地python_14398_1792032028969.log仅两条startup TF警告。用户随后提供相机上位机
+10:40:33 uvc-streamer.cpp:106 watchdog triggered endpoint130，与本次inspect同一时段。
+官方librealsense src/uvc/uvc-streamer.cpp：有效传输回调kick watchdog，超时报告并reset端点，
+表明相机UVC/USB采集链路出现数据停顿；不能仅凭端点号确定RGB/深度或断言USB线/供电故障。
+来源 https://github.com/realsenseai/librealsense/blob/master/src/uvc/uvc-streamer.cpp 。
+该证据与完整图像不刷新一致，应先检查相机主机USB/驱动输入，不能通过放宽健康期限解决。
+
+另核对运动许可：twist_to_go2_sport_bridge_13595_1792031663109.log在10:37:12.937
+记录foreign Sport request observed while ARMED并进入FAULT，随后SYSTEM_READY=false，
+NAV supervisor明确failed=['system_ready_value']。因此inspect的NAV_READY=false不是
+相机门槛派生，也不是单纯未ARM；外部请求来源仅有GID，不能断言来自遥控器或某进程。
+故障发生在10:35实验被人工中断之后，不能倒推为该次WAITING_INPUTS的原因。后续运动前
+需先排除外部控制源，再按原reset/DISARMED/ARM流程，禁止自动重置或反复ARM。
+本轮只读现有日志/代码及官方源码，没有新增订阅、连接SSH、重启相机、改参数、ARM或运动。
+
+### 2026-10-15 用户补充USB拓扑与内核日志
+
+Go2上位机lsusb -t显示D435所在Bus02/Port2/Dev2各Video接口为5000M、Driver=usbfs，
+说明检查时协商USB3，不能据此证明持续传输稳定或将usbfs本身判为驱动错误。
+用户dmesg末100行在10:35:17、10:40:32记录PID3270 realsense2_came对usb 2-2
+端点0x82调用USBDEVFS_CLEAR_HALT；0x82等于watchdog端点130，后一条与10:40:33
+watchdog同一时段，符合端点恢复行为，但不是触发停流原因的证据。官方streamer源码
+start/stop也调用reset_endpoint，不能把每条CLEAR_HALT都认定为一次watchdog故障。
+所给片段未见异常时段USB disconnect/重新枚举；10:26:19–20大量xudc usbphy报错
+属于更早记录，xUDC为设备角色控制器、相机路径为xHCI，现有证据不足以关联本次停流。
+EXT4错误统计也不能直接归因为相机故障，应保留为独立存储问题，不在线执行fsck。
+下一步先在相机主机只读核对/dev/bus/usb/002/002的占用者和相机进程，排除重复采集。
+若只有原驱动，再由用户停止并按原参数重启相机、观察并复查RGBD输入；尚未执行这些步骤。
+未改运行代码、参数或健康门槛，未SSH、重启驱动或启动运动；仅补充交接并检查文档差异。
+
+### 2026-10-15 10:55 实验在第二观察点退出：扫描健康取消，分项未保存
+
+experiment.20261015_105514.c907f4e6已完成P3/table_02/edge_4导航与四视角ABC观察，
+10:56:14记录observed/NOT_DETECTED，随后选择P2/table_01/edge_4，10:56:29到达。
+第二点view0、view1正常返回；view2前旋转在10:56:58.190记录SUCCEEDED，
+10:57:00.391 STOP_COMMAND_SENT reason='scan health lost'，该视角推理被取消，
+最终observation cancelled、stop_confirmed=true。两段导航与五次Spin均SUCCEEDED。
+view2 API取消后约5.276秒返回合法A=DETECTED（仅模型识别，非确认目标位姿/接近成功），
+未被应用；不存在由此启动接近的证据。本次不是API超时记录或Nav2动作失败记录。
+
+实际触发分支为adapters/go2.py tick内nav_ready/localization_valid检查，取消前未保存
+last_health_details。外层go2_exploration因scan future已cancelled直接退出，未产生
+HEALTH_FAILED分项快照。result.json中的health/health_details在开始探索前填入，
+不是退出时快照，不能据其rgbd_ready=true排除运行期间相机/同步瞬态。
+本次控制桥仅启动DISARMED及ARM accepted，未见此前foreign Sport/FAULT；相关
+SYSTEM_READY/NAV_READY日志未见失败时段下降，仍不足以排除本进程接收TTL超时。
+现有证据可确定扫描健康保护取消，无法确定具体为RGBD、TF/定位、costmap、外部门槛
+接收时效或action服务。相机无终端报错也不等于这些消费端门槛持续有效。
+下一步最小改动应在既有扫描取消分支保存触发检查同一次健康快照及scan phase/index，
+不要先改同步模块、放宽门槛或启动新真机实验。本轮仅读日志/代码并补充离线审计和交接，
+未实现上述日志改动。证据build/go2-field/evidence/exploration-stop-audit.20261015_105514/report.json。
+
+### 2026-10-15 按用户要求改为45度旋转8次
+
+仅修改源config/robot_go2.yaml的scan_angles为π/4至2π共8项，每次相对上一方向约+45°，
+第一帧在首次45°旋转并停稳后获取，第八次回到初始朝向；不是0°起拍再旋转7次。
+沿用现有角度归一化、Spin/停稳/新帧/ABC异步识别及取消逻辑，单点scan_timeout显式240s
+以容纳8次识别；不改API/健康/底层参数。整轮命令timeout300仍可能先于多点扫描预算到期。
+CoVLM_env的GO2_EXPLORE_CONFIG直接指向源配置，下次原入口启动生效，无需重建或覆盖旧安装。
+离线验证：现有test_go2_scan_evidence.py 15项通过；调用当前安装adapter的start_scan/tick，
+stub运动输出，在初始yaw=0、3.1、-3.1三种情况下均发出8个π/4 Spin目标、总计2π并正常结束。
+该检查隔离图像/API阶段，验证角度配置与跨±π执行语义，不替代实际8视角现场验收。
+未启动ROS节点、API或真机运动，未提交代码；扫描健康分项日志缺口仍未修复。
+
+### 2026-10-15 11:07 启动即拒绝：外部Sport请求使桥接进入FAULT
+
+最新experiment.20261015_110726.44013148于11:07:31.288 REJECTED，motion_sent=false。
+启动快照RGBD/sync、图像TF、定位、local costmap及三个action服务均通过；只有
+nav_ready_gate/control_armed_gate=false，且两门槛接收新鲜。尚未进入候选或45度扫描。
+此前11:07:10.840桥接PID16384在ARMED时收到非自身Sport请求，api_id1008，
+GID eb:2c:43:73:10:0a:7e:ec开头，立即StopMove并记录
+bridge entered FAULT: foreign Sport request observed while ARMED；随后SYSTEM_READY下降，
+11:07:11.229 NAV_READY下降，nav supervisor failed=['system_ready_value']。
+外部请求持续到11:07:21.721；截至本次启动无新的reset/ARM记录。故此次启动失败已明确
+是运动许可链关闭，不是相机或45度配置错误，且不同于10:57扫描健康分项未知的退出。
+具体外部发布者尚未映射到进程/设备，不能直接归因遥控器。下一步先核对该时段其他
+控制操作及/api/sport/request发布者，排除后按原指引reset→DISARMED→ARM，不自动操作。
+本轮只读日志/源码并更新交接，无ROS/SSH/重启/运动及代码修改。
+
+### 2026-10-15 外部Sport手动接管桥接实现（未现场启用）
+
+用户明确要求两次实验间可用遥控调整位置，外部请求优先。源go2_bridge.yaml将既有
+fault_on_foreign_sport_request设false；该分支由原来的忽略冲突改为yield_to_external_control：
+ARMED→DISARMED，清空缓存速度和停止边沿，不发Move/StopMove覆盖手动控制；
+CONTROL_ARMED=false使活动任务按原健康检查取消，不自动续跑/重放。外部请求自身已到Sport
+话题，无需再次转发。自身GID过滤保持；其他FAULT不因外部请求被清除。true仍保留原FAULT策略。
+外部流量静默至少2秒、系统门槛有效后才能显式ARM；正常手动接管不需reset_fault。
+
+改动限状态机、桥接、Go2配置、相关测试、公共环境及文档。先运行新增dry-run接管用例，
+旧二进制在期望DISARMED处失败；修改后原生19项、Python8项均通过（新增3，既有24）。
+Python包括Domain31/localhost/FastDDS隔离dry-run新旧策略各1、配置3、环境3；覆盖不发停止
+干扰手动、残余自动指令不输出、静默期拒绝ARM、重新ARM不重放及原故障策略。未发真实Sport。
+构建仅根包vlm_nav，输出build/go2-manual-takeover-20261015/{build,install,log}，完成；
+仅有既有PCL/CMake与overlay提示。测试XML为bridge-state.xml、bridge-runtime.xml。
+安装的vlm_navigator.py及go2_bridge.yaml与源码一致，保留此前RGB-D修复。
+CoVLM_env最后source GO2_BRIDGE_OUTPUT，EXTRA_SETUP同步；协同仍health-abc。
+原安装保留、运行中的旧进程未重启。完整命令在runbook末尾“手动接管桥接”。
+本地Notes/协同VLM启动指引.md已更新：首次须停稳后结束旧桥接再重开唯一实例；修正协同包
+prefix为实际health-abc，正常遥控后按DISARMED直接ARM。无SSH、ARM、真机运动或提交。
+既有10:57扫描健康分项日志缺口仍未修复，本改动不宣称解决该问题。
+
+### 2026-10-15 重复实验灰圈：用户重启对照、恢复后基线及启动接入遗漏
+
+用户反馈只重开RViz灰圈仍在、重启底层后消失。11:16截图不含原始格/TF数据；不能用
+重启后状态补造当时现场。经Domain0本机只读发现后，复用旧capture脚本短时采集3秒30帧
+过滤障碍点云，30帧均获取严格点云时刻map TF，并保存map/global/local/odom/footprint。
+订阅已退出；参数服务只读查询global/local和filter。证据
+build/go2-field/evidence/ghost-obstacle.20261015_112232/含CDR、XYZ、TF、参数、分析脚本/图。
+恢复后global lethal3449格，其中静态free上467格；234格距静态障碍>10cm，均有当前
+点云并集10cm内支持。这是恢复后基线，不证明截图灰圈的具体点来源，也不证明实物身份。
+实际inflation_radius两侧均0.55m，marking/clearing同用过滤云、observation_persistence=0；
+后者不等于格自动TTL。Nav2 obstacle layer依赖raytrace清除，未经过清除射线的历史格可保留。
+
+代码确认：原单机VLMNavigator enabled启动调用require_initial_costmap_clear，其navigation_tick
+调用ensure_initial_costmap_clear_done等待服务完成及新costmap；协同make_observer启用
+observation_only跳过该timer，当前go2_check/adapter未调用这段流程；Sport ARM也无清图。
+所以当前协同多轮实验沿用底层costmap状态；该遗漏同时存在于协同固定点和生成点入口，
+不能描述为仅本轮45度或桥接改动引入。它解释旧格跨实验保留的机制，不能单独证明初始
+标记由噪点还是定位投影产生。旧实验包原始格/点云/TF记录缺失是本次无法回溯的实际限制。
+本轮未改运行代码、Nav2/定位/传感器参数，未清图、ARM、运动或录长期bag。
+后续应复用原任务边界清理/刷新流程（停稳且运动所有权成立后），并先保留清理前格与失败
+健康快照；不能直接反复清图掩盖输入误点或定位问题。尚未实现/现场验证该接入修复。
+
+### 2026-10-15 顺时针扫描、RGB双订阅复现与预览规避
+
+用户要求45°×8改顺时针，排查勾选RViz RGB后的失败，并确认现场终端保持运行。
+当前分支go2-cooperative-task-layer、HEAD eb32b45；保留此前未提交修改，未提交代码。
+最新experiment.20261015_112422.0a4e4b4e导航及6次Spin成功，11:25:36.066679
+scan health lost取消；历史具体分项缺失。现已修复取消分支漏记：一次get_health快照，
+先停再写SCAN_HEALTH_FAILED及RGB-D窗口/匹配率/帧年龄/待TF数、其他健康门槛、phase/index。
+不放宽门槛、不修改同步器、不新增常驻诊断订阅。
+
+本机Domain0无运动对照复现：原观察器单独健康；临时第二原始RGB订阅加入后配对22/30，
+继而帧龄2.101s，深度时间戳断档10.152s；移除后恢复。同期定位/costmap正常。
+改订阅已有1 Hz camera_preview，同样38s对照就绪后313样本/33.642s无输入健康失败，
+预览12秒收到12帧；相机原始RGB仅观察器1个订阅。支持额外原始RGB订阅触发异常，
+但未采远端负载，不能细分驱动/DDS/主机瓶颈，也不能补造历史退出瞬间的分项。
+完整证据、局限及文件索引见[专项记录](rviz_rgb_scan_audit_20261015.md)。
+
+源Go2 scan_angles改为-π/4至-2π；RViz Go2 live RGB (1 Hz preview)改用
+/vlm_nav/camera_preview。此话题已有，不加新节点；仅inspect/探索进程运行期间刷新。
+预览停更可能保留旧帧。现有RViz需重开读取配置；相机/终端1无需因本改动重启。
+仅构建multi_agent_nav到build/go2-scan-health-20261015/{build,install,log}，成功；
+CoVLM_env GO2_EXPLORE_OUTPUT及ROS_LOG_DIR改为该输出，根包仍manual-takeover。
+相关84测试通过（新增3，既有81）；实际安装adapter与源码一致，离线3种初始朝向
+各验证8次-π/4；offline配置通过。Notes启动指引与runbook同步，无真机运动/API/SSH。
+未执行真实顺时针运动或RViz GUI重开验收，灰圈任务边界清理仍为前述未完成项。
+
+
+### 2026-10-15 检出即结束扫描：源码及独立安装完成，默认入口未切换
+
+用户要求Go2等待当前模型回复后才进行下一动作，未检出继续旋转、检出则停止扫描并接近。
+本轮改动限本地探索执行链：start_scan增加可选stop_on_target，explore指定主目标A；
+INFER逐帧串行，A=DETECTED立即返回已完成视角（无有效位置也停止，交给上层报告）；
+有有效位置并启用原--approach-target时复用停稳/健康/规划/到达检查。超时或错误停止本轮，
+不再继续旋转或切换点位；取消后迟到结果不会启用导航。提前返回允许不完整方向集合，
+SCAN_RESULT保存scan_complete，不把未扫方向/整点记为observed。双机及独立scan入口
+默认stop_on_target=None，完整ABC扫描不变。Fake同步接口、只返回请求的目标。
+未改扫描角度、Nav2、传感器、健康阈值或此前健康失败日志/RViz预览等用户修改。
+
+测试先行：新测试对旧代码观察到15个失败（提前检出不返回、错误后未终止、探索未传目标、
+正常提前完成误标观察失败），再实现。最终新增17项，覆盖等待/未检出/其他目标、首帧
+检出/无深度、超时/非法回复/缺失结果、取消后迟到检出、完整ABC、1/8方向接近及安全拒绝。
+源码相关143通过（新增17、既有126）；独立安装全套297项，296通过、1既有断言失败
+（新增17全通过；既有280项279通过）。失败名称
+`test_no_verification_flags_are_set_by_static_costmap_profile`，原因是旧测试仍断言
+costmap_source_verified=false，而当前配置为true；本轮没有修改该标志/测试。
+首次扩大测试仅source旧go2-coop时还遇到2个ROS日志目录只读和2个旧costmap二进制退出-11，
+改用当前CoVLM完整环境、可写ROS_LOG_DIR后复核这4项通过；不将测试环境失败称为本功能回归。
+
+仅multi_agent_nav构建到build/go2-stop-on-target-20261015/{build,install,log}，成功；
+根包/消息复用既有安装，两处源码基路径均传给colcon。实际安装adapter及exploration与
+源码逐字节一致；在/tmp测试安装代码，Domain31/localhost/FastDDS隔离，没有现场输入。
+证据scan-source.xml、installed-suite.xml、costmap-baseline.xml在该输出根目录。
+只读代码审查未发现阻断项。没有API、SSH、真实运动、默认环境切换或自动提交。
+CoVLM_env仍指向go2-scan-health-20261015，现场进程未更新；独立构建不等于默认入口已生效。
+完整构建/检查及终端4手动加载顺序见[runbook新增小节](go2_runbook.md#2026-10-15等待识别结果检出主目标即结束扫描)。
+待验证：实际真机首帧检出后停止继续旋转并接近；健康丢失仍应立即取消，不被等待模型覆盖。
+
+### 2026-10-15 11:53检出后仍旋转：默认入口遗漏，已统一安装
+
+用户反馈另会话完成提前停止扫描后仍出现检出0.95、observation_failed和继续旋转，要求
+对比原成功接近链并修复；明确要求原地更新Notes/协同VLM启动指引.md。
+当前分支/HEAD不变，保留另会话源码、测试、独立构建及所有旧实验资料。
+
+最新experiment.20261015_115348.99b2a74c：事件106在11:54:12.730277接受A=DETECTED、
+confidence=.95、position_valid=true、reason=ok，位置(0.852678,2.888399)。事件107约10.7ms后
+再次SCAN_SPIN；事件109 ABORTED。Nav2 behavior_server_29747_1792036287901.log在
+11:54:14.142明确Collision Ahead - Exiting Spin。事件112把P3记observation_failed，
+随后选择/导航P2继续扫描，最后operator interrupt停止，无PICKUP_NAV。
+此次有效检出和定位已完成，后续多余旋转失败使旧扫描future异常，旧上层catch后continue
+丢弃该次已识别目标并切点。未采当时原始障碍格，不能判断碰撞检测对应实障碍还是残留格。
+
+核对默认CoVLM_env仍加载go2-scan-health，源/独立go2-stop-on-target已有正确提前返回和
+失败终止分支但未接入默认source。现场事件与旧分支一致；旧记录无逐进程模块路径清单。
+10/13 18:37成功fixed_viewpoints实验完成四方向后走TARGET_FOUND→APPROACH_SELECTED→
+PICKUP_NAV→TARGET_APPROACHED；本次旧流程在扫描返回前被Spin失败打断。
+原单机handle_worker_result接受有效定位后也立即进入confirm_target、离开扫描等待。
+当前新源码将上述检出提前终止语义接入本地探索，接近函数无需回退或重写。
+AST核对新旧approach_target/approach_attempt/select_approach完全相同；四个运行模块
+（go2/base/fake/exploration）源码与stop-on-target安装逐字节一致。
+
+本轮仅修改默认环境、环境回归断言、runbook及原地Notes指引，统一GO2_EXPLORE_OUTPUT为
+build/go2-stop-on-target-20261015，EXTRA_SETUP/ROS_LOG_DIR随变量一致；vlm_nav仍manual-takeover。
+复用已有构建，未修改运行模块或重建。测试118项通过（原有相关115+更新环境断言3），
+环境断言先复现旧入口失败；在/tmp验证实际安装的检出立即返回/无位置/超时/取消/原接近流程。
+offline配置通过。XML default-entry.xml/default-entry-scan.xml及审计default-entry-audit/
+在stop-on-target输出内。未重跑全量297项、启动ROS订阅、API、SSH、ARM或真机运动，未提交。
+Notes第6步要求旧实验退出停稳后重新source并核对新prefix；第9步明确最多8方向、等待
+当前回复、检出即接近、异常停止不换点。相机及终端1/2/3可保持运行；真实新入口接近待现场验收。
+
+### 2026-10-15 12:05实验：提前检出接近已执行，末端距离未达标且补偿无候选
+
+用户实验experiment.20261015_120530.7bc81355：两次SCAN_SPIN均成功、两个视角API均有效返回
+并APPLIED。view0于12:06:10.775为NOT_DETECTED；view1于12:06:21.720检出A=.95、
+position_valid=true，目标地图位置(0.859705,2.906451)。随后立即结束扫描，进入TARGET_FOUND
+及原PICKUP_NAV；没有第三次扫描请求。本次现场证实提前结束扫描及接近衔接已生效，
+但不是完整TARGET_APPROACHED验收通过。
+
+初次接近点距目标0.81m，goal=(0.286948,2.333694)，12:06:25.463 Nav2返回SUCCEEDED，
+controller日志也报告Reached the goal。停稳base=(0.081323,2.234871)，距导航goal约0.22814m，
+距语义目标1.028055m，大于target_success_radius=.81；任务层因此RETRY。原补偿将下一次
+standoff降至.591945m，12:06:25.470返回no safe standoff candidate，APPROACH_UNREACHABLE→
+APPROACH_FAILED。没有发出第二次PICKUP_NAV。final stop_confirmed=true，证据无写入失败/待返回。
+--approach-target只将TARGET_APPROACHED作为退出0，故本次返回1。无HEALTH_FAILED或扫描健康
+失败事件；这是导航goal成功与任务目标距离验收的差异，不是本轮识别/扫描衔接失败。
+当时原始costmap及每个补偿候选拒绝理由未保存；仅凭通用结果不能区分格占用/未知/越界、
+costmap/TF瞬态或路径不可达，不能断言真实障碍或灰圈。未因此放宽成功半径或安全检查。
+
+vlm/恰好2个目录，各含input.jpg/request.json/response.txt/result.png/metadata.json，
+api_returned及validation_success均true，耗时约7.706/7.244s。第一次停稳识别未检出才发
+第二次旋转；第二次检出后不再扫描。导航过程中的转向不逐方向发识别请求；另外1次双图选点
+请求在selection/。只读离线核对事件数、结果顺序及文件完整性通过，证据保存于
+build/go2-field/evidence/approach-audit.20261015_120530/report.json。
+本轮只查日志/代码并更新交接，无运行代码/参数修改、ROS/API/SSH/真机运动或全量测试。
+
+### 2026-10-15 用户授权减小协同膨胀：配置0.45米，未热改运行节点
+
+此前实际参数只读查询确认全局/局部radius=.55、scaling=5.0。用户随后明确要求减小
+膨胀并允许灰色区停靠/接近，本次授权覆盖之前“不改Nav2参数”中的这一限定范围。
+仅最终协同nav2_go2_cooperative_costmap.yaml两侧增加inflation_radius=.45；衰减仍5.0，
+footprint/253阻挡阈值、到达0.81m验收及其他profile不变。0.45为初始小幅调整，非现场验证值。
+
+核对当前adapter已允许原始代价值1～252用于局部/全局停车、旋转空间及接近候选规划；
+253/254/255、未知/越界/失效输入仍拒绝，不能将RViz灰色一概放行。本次无需修改检查代码。
+减小外层膨胀可降低外围路径代价，但不能自动消除上次导航停远的0.228m偏差，也未证明
+上次.592m补偿候选全部被拒绝是膨胀半径造成。
+
+相关16项通过（新增6个灰区/危险值边界用例，既有10项配置加载及footprint/costmap用例）。
+两配置加载断言先在旧值.55上失败，再修改配置通过；验证实际launch最终overlay优先级，
+legacy仍.55、其他非costmap配置不变。新增测试在现有安装adapter验证1/128/252允许、
+253/254/255拒绝；测试夹具曾误用不存在的on_global_costmap，改回既有on_costmap(...,
+global_goal=True)后验证通过，无运行代码变更。XML inflation-config-and-parking.xml及
+inflation-launch.xml在go2-stop-on-target输出。配置由启动指引显式源路径读取，无需重建。
+Notes第3步及runbook已更新停止/DISARM、终端1按原预检重启及两侧0.45参数核对步骤。
+本轮未热改节点、启动ROS诊断订阅、SSH、重启底层、ARM或运动；现有进程不会自动加载该配置。
+
+### 2026-10-15 12:17最新失败：首次Spin碰撞中止，运行膨胀仍0.55
+
+最新experiment.20261015_121734.e9d511ce：P3导航12:17:48.178 SUCCEEDED，停稳后首次
+顺时针-0.79rad Spin于12:17:48.190开始，12:17:52.193 ABORTED（native_status=6）。
+behavior_server_32429_1792037069821.log在12:17:52.191明确
+Collision Ahead - Exiting Spin，随后spin failed/Aborting handle。探索因此observation_failed→
+STOPPING scan failed→STOPPED，stop_confirmed=true，没有继续换点；符合新错误停止语义。
+仅1次SCAN_SPIN、0次VLM_VIEW_RESULT，扫描未完成停稳抓帧前就中止，无识别API漏发或超时证据。
+两次停稳快照净顺时针约40.0°，地图位移约0.072m；不能由此判断实际碰撞格来源。
+
+本轮实时只读参数查询：/global_costmap/global_costmap及/local_costmap/local_costmap的
+inflation_layer.inflation_radius仍均.55。源最终overlay为.45；新参数没有加载到当前底层，
+本次不是.45的现场验证。终端1/behavior_server日志仍为原12:04进程。不得仅凭改文件称已生效。
+旋转前检查用全局costmap，Nav2 Spin运行中检查局部预测碰撞；当时原始局部格未保存，
+无法确定实障碍/残留格/输入投影的具体贡献，不直接归因.55或减小半径就能通过。
+
+前一次experiment.20261015_121710.9c955c21为启动拒绝：仅CONTROL_ARMED=false，
+其余启动checks=true、motion_sent=false；12:17:30.752 bridge ARM accepted后才开始最新实验。
+这与最新旋转碰撞失败不同。审计保存build/go2-field/evidence/scan-collision-audit.20261015_121734/report.json。
+本轮只读日志/参数并离线核对次数/终态、更新交接；无代码/参数修改、运动或重启。
+下一步按Notes第3步在结束实验、停稳、DISARM后重启加载新配置，查询两侧.45后再继续原检查。
+
+### 2026-10-15 12:23实验：Nav2两次成功后，任务距离验收失败
+
+用户要求区分终端4提前报错还是Nav2到点后目标距离不达标。最新
+experiment.20261015_122308.bc281a2b为APPROACH_DISTANCE_FAILED、stop_confirmed=true。
+12:23:36.300首个PICKUP_NAV SUCCEEDED，随后STOP/停稳，12:23:36.302测目标距离
+.926834m>.81m并RETRY；补偿standoff=.693166m，12:23:36.318发第二次PICKUP_NAV，
+12:23:36.381已SUCCEEDED，之后STOP/停稳，12:23:36.384测距.896642m>.81m，
+1次重试用尽而FAILED，12:23:36.388结束。无HEALTH_FAILED或APPROACH_DISTANCE_STOP事件。
+对应controller/bt日志两次Reached the goal/Goal succeeded，第二次controller接目标约0.75ms
+即Reached the goal。实时只读查询general_goal_checker.xy_goal_tolerance=.25m；两次停稳
+位置距各自导航goal约.153362m/.220622m，均在该容差内，但距识别目标仍超任务成功半径。
+因此是Nav2按导航goal容差结束后任务距离失败，不是终端4在Nav2结束前抢先报错；
+“Nav2成功”不表示精确抵达停靠点坐标。此轮不是上轮无安全补偿候选，两次接近都实际提交。
+事件顺序离线核对通过，审计build/go2-field/evidence/arrival-order-audit.20261015_122308/report.json。
+本轮只读日志/单项参数、更新交接，无代码/参数修改、运动或重启。
+
+### 2026-10-15 接近任务到达预算对齐（离线完成，未启动真机）
+
+用户要求核对旧成功/当前到达参数、按实际路径终点+控制容差+余量≤0.81m筛选、
+统一map/base_link平面距离记录、拒绝无改善重试。保留扫描、碰撞检查、停稳与最终距离验收。
+
+证据：旧 `explore-approach.20261013_183747`请求/执行终点距物体0.90m，
+旧goal-costmap安装在Nav2 SUCCEEDED时直接记TARGET_APPROACHED，没有ARRIVAL_VERIFIED；
+这不能证明0.81m已满足。旧配置xy=.25、Navfn继承上游tolerance=.50，但旧运行参数快照缺失。
+12:23实际生成的 `/tmp/vlm_nav2_go2_ml91o9xu.yaml`已复制到
+`build/go2-arrival-budget-20261015/evidence/nav2-launch-122204.yaml`，同样为.25/.50。
+上轮实时读到xy=.25；本轮enp4s0无192.168.123.x地址，未得到新在线参数。
+12:23两次PATH_RECEIVED实际终点距物体.81/.6931655543；加.25+.03分别1.09/.9731655543，
+均不能保证最终.81。对比与计算存 `build/go2-arrival-budget-20261015/evidence/comparison.json`。
+
+保留Nav2 xy=.25、planner=.50及请求停靠上限.90，Go2配置新增approach_distance_margin=.03。
+接近前使用短期参数客户端/定时器等待发现、异步读取实际容差和map/base_link，最多5s；
+完成/失败/取消销毁客户端和定时器，不新增图像订阅，不写参数。
+当前候选生成半径最多.81-.25-.03=.53，选择器用原8方向，检查实际返回路径终点；
+预算超标/落入当前Nav2容差/无保证改善的点不发送，继续筛其余候选。
+请求点与终点均保留全局/局部footprint和路径guard；发送前再次规划并复核。
+请求/返回路径必须map且坐标有限；定位仍用map→base_link。
+接近距离停止界限取min(原stop_radius,.81)，避免原.89提前取消；保留原取消/停稳与.81最终验收。
+原1次重试上限保留，重试仍须通过上述改善条件。
+日志新增具体拒绝原因及请求点/规划终点/停稳点三组位姿、物体平面距离；
+规划终点来源ComputePathToPose，实际执行/重规划终点继续由PATH_RECEIVED记录。
+不将预规划预算等同最终成功；后续重规划及定位/目标测距误差仍可能失败。
+
+仅构建multi_agent_nav到 `build/go2-arrival-budget-20261015/{build,install,log}`，成功。
+根包复用go2-manual-takeover、消息包复用go2-coop；未重建外部overlay。
+实际安装相关165项+环境3项通过（新增20、既有148）；XML在该输出目录。
+覆盖预算越界/非有限路径、正确三距离、参考系转换、真实停稳偏差后重试/最终失败、
+落入已有Nav2容差的无效重试拒绝、参数发现/错误/取消清理、路径frame拒绝及既有碰撞条件。
+源码首轮新回归确认旧实现失败后修复。未重跑无关全量基线。
+AST对比前一个stop-on-target安装：adapter仅read_approach_parameters/compute_path/select_approach变化，
+扫描及其他运动方法一致。`git diff --check`通过；Notes指引21个bash块语法通过。
+
+CoVLM_env默认指向新安装，环境回归验证真实导入路径；原地更新
+`/home/isee-pst/Notes/协同VLM启动指引.md`第6节与runbook末节，完整构建只在runbook。
+用户下次：结束旧终端4并停稳后重新source→核对新包→只读查询.25/.50→按原指引继续。
+本次无需重启相机/终端1/2/3；不代表获得新实验授权。未提交、未运行现场运动。
+待现场：0.03m余量和.53m候选的实际可达性未验证；若原碰撞检查拒绝全部候选则停止，
+不能为了距离条件放行障碍或把任务距离验收改成Nav2成功。
+
+### 2026-10-17 协同握手等待与第二轮任务序号修复（源码及纯逻辑验证）
+
+用户明确要求修复这两项；本轮不启ROS、bridge、SSH/Ranger或真机动作，不提交、不部署。
+核对分支 `go2-cooperative-task-layer`、HEAD `eb32b4527c37cd0b278c1790f7c0bdde7bf5ad75`；
+保留已有全部未提交修改。本轮实现改公共状态机
+[agent.py](../../cooperative_ws/src/multi_agent_nav/multi_agent_nav/agent.py) 和
+[coordinator.py](../../cooperative_ws/src/multi_agent_nav/multi_agent_nav/coordinator.py)，
+回归补入 `tests/test_agent.py`、`tests/test_coordinator.py` 和 `tests/test_mission_mock.py`。
+
+- 原因一：接纳首次SYNC后，`peer_received=None` 在下个tick立即触发停止。
+  现使用现有 `lost_timeout`（默认3秒）作为首次对端状态的固定等待窗口；重复SYNC不延长窗口。
+  等待期间拒绝EXECUTE，且要求本机停稳、动作终止、定位/Nav2有效；超时仍STOPPING→确认停止→PAUSED。
+  当前任务首次对端状态到达后恢复原接收时间失联监护，不为后续断流追加等待窗口。
+- 原因二：新任务只清内部last_sequence，外发sequence/command_id及PAUSED运行状态仍残留。
+  现重建任务状态，保留地图/标定身份与本机位姿、健康和停车字段，清理旧命令、序号、资源请求及动作上下文。
+  新任务另清对端心跳，必须重新收到当前任务状态才接受执行；上一轮序号不再导致新回执被coordinator拒收。
+  复核另确认暂停后重开时，coordinator在新任务握手前误把上轮PAUSED当本轮故障。
+  现仅对当前task_id的STOPPING/PAUSED触发该故障判断，其他健康/新鲜度检查与握手超时保留。
+  未改消息接口、桥接路由、调度频率和单机入口；持有token时禁止换任务、停止确认、旧任务和迟到结果隔离保留。
+
+验证使用源码路径和 `/usr/bin/python3`，设置 `PYTHONDONTWRITEBYTECODE=1`、
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`、源码及tests的PYTHONPATH，pytest禁用cacheprovider；不初始化ROS。
+首批新增10项中5项修前失败，分别复现首次误停、重复SYNC下误停、新任务残留（正常/暂停后）及第二轮任务失败；
+另5项安全边界检查原已通过。复核后再补2项暂停重开回归，均先确认失败再修复。
+最终同一组既有28项+新增12项共40项通过，覆盖protocol、agent、coordinator、resources、
+safety_regressions、mission_mock；正常两轮双fake均DONE且各自从序号1执行，暂停后的新一轮也DONE。
+未重跑无关单机全量基线；未构建或更新安装overlay。当前默认单机环境仍引用
+`build/go2-arrival-budget-20261015/install` 的multi_agent_nav，不将源码测试当安装或现场验收。
+本轮未修复观察消息晚于扫描完成状态时可能提前判定搜索耗尽的问题；新路由部署、Ranger适配及跨机验收仍待完成。
+
+### 2026-10-17 协同发令前重检与运行失联保护（独立构建完成）
+
+用户要求握手后重新确认真实停稳及现有运动预检，未停稳等待、定位/许可故障暂停，
+并阻止取消/失联后的晚到导航与VLM结果推进。保留前节修复及其他用户未提交修改；未提交。
+协同入口仍为go2_cooperative.launch.py → agent_node/coordinator_node，动作链为
+AgentMachine → AgentRunner → Go2Adapter；单机explore不接入coordinator。
+
+- agent.py提取原健康/通信监护为check_health，供周期tick与发令复用；未停稳只等待，不误当定位故障。
+  定位（含非有限pose）或nav_ready失败仍停车暂停，真正发令前必须重新读取现有Health。
+- coordinator.py保留双方当前task_id屏障；无人可发令但有人未停稳时等待，不误报搜索耗尽。
+- runner.py先监督/STOP，再adapter.tick及结果消费；发令前读新健康样本后取当前单调时间，
+  复用定位、Nav2/许可/costmap和真实停止判据，重查command身份和paused；停稳后重做路径检查。
+  取消清理等待动作及pending future，发送返回时不把STOPPING/CANCELED覆写为NAVIGATING/EXECUTING。
+- adapters/go2.py仅在协同runner注入motion_guard时，于实际send_goal_async前执行同一闸门，
+  覆盖扫描内部Spin准备或日志耗时跨过失联期限的边界；未发送请求不计为active motion。
+  拒发返回None，导航等待重新规划，扫描保持原阶段；未注入guard的单机行为不变，未改扫描角度或策略。
+  adapters/base.py同步返回约定；mock.py注入模拟时钟，无新增配置参数。
+
+只构建multi_agent_nav到 `build/go2-task-control-20261017/{build,install,log}`，成功；
+消息依赖复用build/go2-coop/install/multi_agent_task_msgs，根包复用build/go2-manual-takeover-20261015/install/vlm_nav。
+未覆盖旧overlay，未切换CoVLM_env默认单机环境。完整构建只维护在[runbook末节](go2_runbook.md#2026-10-17-协同任务发令闸门握手及失联取消验证)。
+从/tmp核对新安装prefix和实际agent/coordinator入口解释器及import；agent、coordinator、runner、mock、
+adapters.go2、agent_node、coordinator_node七份实际安装模块均在新输出，且与源码SHA256一致。
+
+回归先确认原实现失败再修复；实际安装78项通过（既有相关63、新增15），
+XML为 `build/go2-task-control-20261017/installed-task-control.xml`，不重复计算源码测试。
+覆盖握手成功但未停稳、规划后定位/许可变化、检查期间取消/超时、重复SYNC不延期、
+运行失联后旧成功/迟到VLM/恢复通信、实际_motion发送边界和资源token保留；无ROS初始化。
+独立复核重现2.99s预检→3.01s实际Spin先发再停；修后同一重现只有STOP、无Spin或残留motion。
+
+仍用原握手/失联3秒及整任务600秒；搜索计时起点、扫描、到达距离、Nav2参数、传感器链路未改。
+stop_confirmed未因握手或Nav2成功置真；停车仍需实际Health.stopped与motion_terminal确认。
+未启动ROS、bridge、SSH/Ranger、录包或真机动作，不改现场验收标记。
+观察消息晚于扫描终态的已知问题、新路由部署、Ranger适配和跨机验收仍未完成。
+
+### 2026-10-18 候选标注缺失与Go2不动：RGB输入未到达观察器
+
+用户要求分析当前启动实验后RViz无候选标注且Go2不动；本轮不修改运行代码、配置或安装，
+不启动/重启驱动、不SSH、不调用API、不ARM、不发运动。核对分支及HEAD仍为
+`go2-cooperative-task-layer` / `eb32b4527c37cd0b278c1790f7c0bdde7bf5ad75`，保留已有全部改动。
+
+最新 `build/go2-vlm-experiments/experiment.20261018_143937.17e26c31` 于14:39:39记录
+WAITING_INPUTS，14:44:37按原300秒时限REJECTED，原因startup input wait timed out，
+motion_sent=false；没有CANDIDATE_GEOMETRY、VLM选点或导航事件。
+最终result.json健康快照：RGB时间戳窗口为空、depth窗口30帧，RGB-D matched=0/total=0、
+rgbd_ready=false，无有效snapshot，pending TF帧为0。NAV_READY/CONTROL_ARMED、外部门槛时效、
+定位、local costmap、三个Nav2 action服务、深度单位及motion_fault_clear均正常。
+**已确认直接阻断：本轮观察器始终未收到RGB，不能组成RGB-D对，启动等待门槛未通过；
+不是已经生成候选后被规划拒绝，也没有证据把这次等待归因于图像TF。**
+
+代码顺序为go2_check.run_ros先等待vlm_input_ready，再进入explore生成候选。
+启动时generated_display为空，generated_exploration_markers仅返回DELETEALL；14:44:33起
+7秒有界小消息采样收到13条、均仅action=3。RViz订阅和实验发布者话题一致，双方为
+RELIABLE/TRANSIENT_LOCAL，故当前无标注与未运动由同一输入阻断解释。
+默认安装的go2_check.py/go2_exploration.py与源码SHA256一致。
+
+补充本地域有界只读检查：RGB与depth原话题各有1个camera发布端及1个实验订阅端，
+发布RELIABLE、订阅BEST_EFFORT，无可靠性不兼容；发布端存在不代表新鲜数据到达。
+14:42:57起6秒彩色CameraInfo无消息、深度CameraInfo收到新时间戳；稍后7秒窗口两路
+CameraInfo均无消息，不据此宣称深度持续正常。读取现有相机参数enable_color/depth/sync
+均true，两路profile均640x480x15，未写参数。没有新增Image/PointCloud诊断订阅；
+临时CameraInfo/MarkerArray/diagnostic小消息订阅均已退出。observation_only本来不启动
+diagnostics定时器，未收到该诊断不能另判节点失活。
+
+前一轮14:33:36实验 `experiment.20261018_143336.dd206535` 曾生成3候选、选择P2并提交导航；
+14:33:57因RGB-D帧年龄2.006s超过2.0s而取消，stop_confirmed=true。该时刻同步率仍29/30，
+NAV_READY外部门槛、定位及costmap正常；不能将健康中的nav_ready=false误读为底层Nav2故障。
+用户补充相机终端异常、显示约十分钟前的时间；这是用户观察，不单凭终端日志时间认定相机时钟偏移。
+远端彩色驱动/USB状态与DDS传输原因尚未区分，未因本次诊断放宽RGB-D门槛或自动重启相机。
+
+审计保存在 `build/go2-field/evidence/startup-input-audit-20261018/report.json` 及
+`metadata.144440.json`（build不受Git保护，须保留）。离线断言核对事件顺序、无运动、
+RGB/depth窗口、其他健康门槛及前一轮超龄取消均通过；未构建或重跑无关测试。
+下一步先检查相机终端实际报错/远端彩色流，在恢复后按runbook做单观察器inspect；
+不能在旧实验仍运行时叠加原始RGB检查订阅，也不把恢复输入当作获得新实验运动授权。
+
+### 2026-10-18 相机重启后的新失败：检出目标后接近候选受局部窗口限制
+
+用户报告重启相机后恢复、新实验突然报错。本轮只读日志/源码和离线复现，无新ROS节点、
+传感器订阅、参数写入、SSH、API或运动；仅补证据及本文，保留已有未提交修改。
+最新 `build/go2-vlm-experiments/experiment.20261018_144454.0fe0b41a`：
+14:45:16观察点P2导航SUCCEEDED，后续4次Spin均SUCCEEDED；14:45:55第4视角检出
+A=灭火器、confidence=.95、position_valid=true，地图目标=(.744896,2.911190)。
+随后立即结束扫描并停稳，TARGET_FOUND→ARRIVAL_CONTRACT→APPROACH_PLANNING→
+APPROACH_UNREACHABLE(no safe standoff candidate)→APPROACH_FAILED，stop_confirmed=true。
+没有PICKUP_NAV、HEALTH_FAILED、SCAN_HEALTH_FAILED或APPROACH_CANDIDATE_CHECK事件。
+不是这轮识别API或Spin失败；result.health为启动快照，不将它当失败时的健康实测。
+
+接近参数实际读值xy=.25、planner=.5、成功半径=.81、margin=.03，生成圆半径=.53。
+事件297停稳base_link=(.266456,-.103364)，距目标3.052285m；圆上任一点距机器人
+至少2.522285m，实际8点最近2.530200m。运行生成配置
+`/tmp/vlm_nav2_go2_zqtdc2jo.yaml`（14:38:35）为local width=height=3m、resolution=.05、
+rolling_window=true；与启动报告60×60格一致。居中3×3窗口半对角线仅2.121320m，
+因此该圈候选即使无障碍也在局部覆盖范围之外，不依赖map/odom相对旋转判断。
+
+当前select_approach在调用compute_path之前，先用local costmap_candidate_free检查
+每个候选整车矩形；出边界即false。探索观察点已改用全局停车预检，但接近候选仍保留
+此局部窗口门槛，外层candidate_allowed的全局检查也无法救回已在内层排除的点。
+这解释了本轮接近预检约2.4ms即返回、没有进入路径预算检查和接近导航的现象。
+
+使用现场venv、从/tmp导入默认实际安装，调用原select_approach/costmap_candidate_free，
+用记录的目标/base位置和全空3×3局部格离线复现：8点均拒绝、planner_calls=0、
+reason=no locally reachable candidate。系统Python首次导入缺httpx，未改依赖，改用已有
+`/home/isee-pst/venv/co-nav-real/bin/python`完成上述复现；未初始化ROS。
+该人为全空网格不是故障时原始costmap回放；当时原始格及逐候选拒绝原因未保存，
+不能证明目标处真实障碍格情况或断言改用全局后一定可达。
+证据 `build/go2-field/evidence/approach-local-window-audit-20261018/report.json`，
+同目录保留实际运行配置nav2-launch.yaml；build证据不得清理。
+尚未修改接近逻辑、扩大局部窗口、放宽安全/距离条件或重新实验；后续若修复应保留
+局部运行健康与避障，补足远端候选的全局完整车体/路径检查及对应回归。
+
+### 2026-10-18 单机指引的一条命令入口（仅制作及离线验证）
+
+用户要求按 `/home/isee-pst/Notes/协同VLM启动指引.md` 制作脚本，并明确选择完整流程：
+真实初始位姿仍人工设置，必要SSH/底层启动以及ARM/一次探索保留现场确认。
+新增 `scripts/start_go2_vlm.sh` / `scripts/start_go2_vlm.py`；使用仓库源入口，
+一条命令及依赖顺序见[runbook新增节](go2_runbook.md#2026-10-18-go2-单机一条命令启动)。
+复用CoVLM_env、现有相机SSH、正式预检、go2_system、当前Sport转换及generated_candidates_vlm入口；
+不修改导航/接近算法、配置或现有安装，不启动双机链路。保留全部已有未提交修改。
+
+实际实现包括唯一发布者/已有owner检查、当前安装prefix检查、冷启动独立新报告、
+人工AMCL定位屏障、NAV_READY/四个Nav2参数及单观察器inspect稳定输入检查、
+按状态确认reset/ARM、一次300秒探索、确认stop_confirmed后DISARM。
+Ctrl+C转交本次探索并等待其停车报告；停止未确认时不清理锁、不自动重启或关闭底层。
+新建检查日志在 `build/go2-field/single-vlm.<随机ID>/`；原实验托管/保留策略不变。
+各硬件终端继续运行，停止顺序及异常处理已写入runbook；`--prepare-only`不ARM/不探索。
+
+验证：新增23项离线编排测试、既有相关6项（VLMNav入口及CoVLM环境）均通过，共29项；
+仅替换外部命令，不初始化ROS。Bash/Python语法、帮助入口和git diff --check均通过。
+新增编排测试覆盖冷启动/复用、RGB-D不稳定/定位/停稳/其他owner拒绝、
+服务失败、探索失败/证据未完成、未确认停车不DISARM及取消后停车再DISARM。
+复核发现只结束ros2 run包装进程可能残留inspect观察器；真实父子进程测试先复现失败，
+修为独立进程组并在检查超时/中断时清理整组后通过，不用真实ROS模拟该生命周期。
+本轮没有SSH、传感器或ROS启动、API、ARM、录包或真机运动；不构建、不切overlay、不自动提交。
+上述2026-10-18现场输入/接近失败的历史限制仍有效；启动脚本不构成这些问题的修复或新现场验收。
+
+### 2026-10-18 接近候选局部窗口限制修复（独立构建，未切换默认入口）
+
+用户明确要求修复：全局完整footprint检查、局部覆盖不足不单独否决但覆盖区碰撞仍拒绝，
+地图/TF异常保留明确失败；保持8候选、0.53m对应距离预算、扫描及运行避障，本轮不启动真机运动。
+分支/HEAD仍为go2-cooperative-task-layer / eb32b4527c37cd0b278c1790f7c0bdde7bf5ad75，保留所有原有改动。
+本轮前快照在build/go2-approach-coverage-20261018/before/，便于与既有dirty状态区分；未提交。
+
+- adapters/go2.py复用原坐标变换、车体矩形及栅格交叠检查，增加结构化costmap_candidate_check。
+  原costmap_candidate_free仍严格要求完整覆盖；新approach_candidate_free要求全局free且
+  local为free/coverage_insufficient，局部覆盖区253/254/255仍拒绝。缺失/无效/超龄/TF失败
+  为unavailable，不等同覆盖不足。select_approach在规划前后复用新检查，保持原8点及距离排序。
+- go2_exploration.py在原请求点/实际规划终点预算复核处使用同一全局+局部检查，去掉残留的
+  局部完整覆盖门槛；传播ApproachResult.reason并明确记录规划失败。
+- go2_check.py独立approach及agent_node.py的Go2 live入口开启既有global订阅，补齐共享调用方。
+  原单机explore已有该订阅；未改变其他动作/消息协议或传感器订阅。
+- 接近日志新增APPROACH_FOOTPRINT_CHECK（global_check/local_check、accepted）及
+  APPROACH_PATH_CHECK（reachable/accepted、reason）；coverage_insufficient的reason为“局部检查覆盖不足”，
+  collision、全局out_of_bounds与unavailable分开。规划失败也无条件重检输入，不掩盖同期map/TF失效。
+
+实际运行Nav2参数只读核对时间14:57：local plugins含voxel_layer，enabled=true、
+observation_sources=go2_cloud、topic=/vlm_nav/obstacle_cloud，marking/clearing均true；
+3×3m/.05m/rolling_window=true保持。障碍过滤器发布端与local/global costmap订阅端均存在，
+BEST_EFFORT兼容；没有新增完整点云/RGB检查订阅，也没有写运行参数。
+配置/端点证据为新输出的runtime-obstacle-input.json；不将端点存在或启用配置当作动态避障验收。
+
+仅multi_agent_nav构建到build/go2-approach-coverage-20261018/{build,install,log}，成功；
+根包复用go2-manual-takeover-20261015、消息包复用go2-coop，未覆盖旧overlay。
+从/tmp核对四个实际安装模块（adapters.go2、go2_exploration、go2_check、agent_node）均在新输出，
+与源码SHA256一致。完整构建、同输出测试及人工选用步骤只维护在runbook新增的2026-10-18小节。
+
+初始相关基线165项通过。实际安装最终256项通过（新增36、既有220），XML为
+installed-coverage.xml（253项）及installed-dynamic.xml（3项静态配置/launch检查）。
+新增首批25项修前失败、1项既有边界通过；另补非有限位姿日志3项和末候选规划失败同时
+local/global map或TF失效4项，均先失败再修复。复核发现的输入故障短路日志问题已修复。
+覆盖全局障碍/未知、局部交叠碰撞/未知、完整车体越界、旋转TF/网格原点、地图缺失/无效/
+header与接收超龄、规划期间变化、远端请求点及返回终点复核；新旧scan、tick、停止、导航、
+compute_path、执行路径与costmap输入加载函数AST一致。git diff --check通过。
+
+CoVLM_env仍默认go2-arrival-budget-20261015；本轮未部署或更新运行中的进程。
+后续选用新输出需先退出旧实验并停稳，再按runbook加载并核对prefix；原输入/授权门槛仍适用。
+未运行原生costmap标记/清除测试、无关全量基线、API、SSH/Ranger、桥接、ARM或真机运动。
+未验证远目标实际可达、定位/语义位置误差及动态避障的现场效果；不把单元测试当任务验收。
+
+### 2026-10-18 15:06实验仍为旧接近链路，默认入口尚未切换
+
+用户要求分析当前报错；本轮仅查现有日志/代码及本地导入，不初始化ROS、不SSH/API、不改运行配置或运动。
+保留另会话新增的start_go2_vlm脚本、测试及所有其他已有改动；未自动接入新安装。
+实验 `build/go2-vlm-experiments/experiment.20261018_150602.909f2a46` 于15:06:18到P3
+Nav2 SUCCEEDED；15:06:24首次Spin SUCCEEDED；15:06:32首视角检出A=.95、position_valid=true，
+目标map=(.790566,2.867219)，API returned/validation_success均true。随后
+TARGET_FOUND→ARRIVAL_CONTRACT→APPROACH_PLANNING→APPROACH_UNREACHABLE，旧通用原因
+no safe standoff candidate；最终APPROACH_FAILED、stop_confirmed=true，无PICKUP_NAV、
+HEALTH_FAILED或SCAN_HEALTH_FAILED。无新增APPROACH_FOOTPRINT_CHECK/APPROACH_PATH_CHECK。
+
+当前CoVLM_env第11行仍无条件指向go2-arrival-budget-20261015；在/tmp source默认环境后，
+实际multi_agent_nav prefix及adapters.go2/go2_exploration均来自该旧安装，adapter无
+approach_candidate_free、探索无新helper调用。修复版go2-approach-coverage-20261018安装仍存在，
+两个关键模块与源码逐字节一致；前节已明确本次独立构建未切默认入口。
+新scripts/start_go2_vlm.sh第8行也会重新source CoVLM_env，若使用它，事先手动加载新overlay
+仍会被该默认赋值覆盖。未发现与本轮对应的一键启动日志目录，不能断言这次用了该脚本。
+实验未保存逐进程__file__；日志行为与旧adapter+旧探索一致，当前默认导入路径是本轮只读实测，
+不将其写作历史逐进程模块路径实测。
+
+本轮末停稳base=(-.318146,1.232401)，距目标1.975316m；与前一轮3.052m不同，
+不能复用上轮“整圈必在局部窗口外”的几何证明。旧版未保存每候选拒绝理由及失败时原始costmap，
+无法从该实验区分边界、障碍/未知或输入瞬态；只能确认接近未发出且修复版完整链路未运行。
+审计 `build/go2-field/evidence/approach-version-audit-20261018_150602/report.json`；
+事件顺序、无接近运动、新日志缺失、默认旧模块及新安装摘要离线断言通过，git diff --check通过。
+下一步需按runbook选用新安装并核对实际prefix；若希望一键入口默认使用新版本，应同步处理
+CoVLM_env及入口校验，不能仅在运行前source后又被脚本覆盖。本轮只分析，未切换默认入口或重跑实验。
+
+
+### 2026-10-18 默认实验入口已接入接近覆盖修复安装（无现场启动）
+
+用户明确授权先接入新安装、核对加载路径，原地修改Notes启动指引及scripts/start_go2_vlm.sh；
+本轮未授权新实验或运动。保留原分支、HEAD和所有已有dirty修改，不重建或覆盖现有安装。
+
+- CoVLM_env.bash的GO2_EXPLORE_OUTPUT由go2-arrival-budget-20261015切为
+  go2-approach-coverage-20261018；EXTRA_SETUP_FILES及ROS_LOG_DIR随同切换。
+  相机/过滤/生成候选/RGB-D/Sport覆盖层及顺序保持。已运行实验进程不会自动更新。
+- scripts/start_go2_vlm.sh在source之后、进入原Python启动器之前校验两个真实模块路径
+  （adapters.go2/go2_exploration）必须位于预期prefix，且Go2Adapter含approach_candidate_free。
+  不匹配明确失败并阻止启动流程；--help仍直接退出、不加载环境。原启动器现场/ARM确认未修改。
+- /home/isee-pst/Notes/协同VLM启动指引.md已原地更新日期、新prefix、无ROS模块核对命令和
+  全局/局部候选安全语义及新日志。先准备并核对完整diff/语法，再摘要核对原文件未被并发修改后写回。
+  原文件快照在build/go2-approach-coverage-20261018/entry-integration/before/，不清理。
+  旧实验退出且确认停稳后，终端4须重新source并按更新指引第6步核对，原相机/1/2/3可继续运行。
+
+实际从/tmp加载默认环境，ros2 pkg prefix multi_agent_nav为
+/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-approach-coverage-20261018/install/multi_agent_nav。
+四个模块adapters.go2、go2_exploration、go2_check、agent_node均来自该安装且与修复源码SHA256一致。
+root vlm_nav仍来自go2-manual-takeover-20261015。独立执行一键入口的source/导入检查段通过，
+没有进入Python启动器；新安装multi_agent_go2_check shebang为既有co-nav-real解释器。
+实际ros2 run新入口--offline --require-ready输出single_robot_experiment_gates=[]，未初始化ROS。
+证据均在上述entry-integration目录：default-import-audit.json、entry-import-check.log、offline-config.json。
+
+本轮基线26项通过；更新环境断言及新增4项入口测试后30项通过（既有26＋新增4），
+覆盖正确安装、错误路径/缺修复拒绝、help不加载环境。修改前新增断言4项失败、2项既有边界通过，
+XML为baseline.xml、red.xml、installed-entry.xml；未因环境改动重跑前节256项候选/协同测试。
+Notes全部22个Bash命令块及入口脚本语法、模块核对命令、链接和git diff --check通过。
+完整构建命令仍只在runbook，新增默认入口接入小节记录本轮实际路径与验证。
+
+未运行真实一键启动、相机/驱动/ROS节点、API、SSH/Ranger、桥接、ARM或真机运动。
+本次仅完成默认文件/环境接入；目标实际接近、局部动态障碍停止/重规划效果仍待后续授权现场验证。
+
+
+### 2026-10-18 15:20实验在首次识别等待期间因RGB-D快照超龄取消
+
+用户确认问题对应experiment.20261018_152003.83586c9e；本轮仅读取已有日志/代码并离线审计。
+15:20:18.856 VIEWPOINT_NAV在P3 SUCCEEDED；15:20:21.687首次SCAN_SPIN SUCCEEDED。
+15:20:24.180 SCAN_HEALTH_FAILED发生于INFER/view_index=0，仅failed_gates=[rgbd_ready]。
+最新有效RGB-D快照接收年龄2.009976s，超过既有2.0s；camera_tf_age=1.872490s<3.0s，
+同步窗口30/30匹配、rate=1.0，pending TF=0，定位/局部costmap/odom/外部gate及action服务器检查均通过。
+两路已记录header窗口止于15:20:22.179785；说明观察端新鲜快照出现约2秒更新空窗，
+不能仅凭此判定相机退出、USB故障、网络丢包或接收处理阻塞。启动时的past extrapolation警告
+（15:20:04）后已有正常导航/快照和TF，不是此刻失败门槛；不将其当直接根因。
+
+原scan健康保护先StopMove/取消观察，再记录失败；最终observation cancelled，stop_confirmed=true。
+VLM未超20s API预算，约8.002s后于15:20:29.803正常返回并校验通过，A=DETECTED/.95，
+但任务早5.62s取消，故VLM_VIEW_RESULT为CANCELED，无TARGET_FOUND/接近规划/候选检查或PICKUP_NAV。
+result.json的vlm_evidence_pending=true是退出报告时后台证据未结束；之后metadata已完成，不能判API失败。
+该轮未进入接近候选链路，不能据此判定覆盖修复现场通过或失败。通用health.reason里的
+execution path missing or receive timeout也不是触发门槛：导航终态会清除执行路径，本次仅rgbd_ready失败。
+
+审计build/go2-field/evidence/rgbd-stale-audit-20261018_152003/report.json及离线断言通过；
+核对get_health/vlm_input_ready/tick、实验events及VLM metadata，未改代码/阈值、未重跑测试或实验。
+git diff --check通过；未初始化ROS、额外订阅图像/点云、SSH、API、ARM或运动。
+后续根因仍需故障时发布端相机日志和接收端时序证据；本次不以放宽阈值或重启代替定位。
+
+
+### 2026-10-18 15:28实验因网线断开导致SYSTEM_READY丢失（用户现场确认）
+
+最新experiment.20261018_152827.2e0abea6在15:28:45.435到P1导航SUCCEEDED，
+15:28:49.158首次SCAN_SPIN SUCCEEDED；15:28:49.611 Sport桥记录
+bridge entered FAULT: SYSTEM_READY lost while ARMED，随后拒绝cmd_vel并保持FAULT。
+15:28:49.614 SCAN_HEALTH_FAILED位于FRAME/view_index=0，仅control_armed_gate=false；
+RGB-D age=.595719s、同步30/30、TF及局部costmap/定位检查通过，不是上一轮RGB-D超龄。
+雷达转换器15:28:49.619起received=1339/published=1338，后续多条5秒周期报告均不再增长；
+FAST-LIO最后帧日志15:28:49.081。失败样本odom_age=.530363s>.5s，无法依新鲜里程计确认停稳。
+SYSTEM_READY监督器只记录Bool变化，不能从该样本指定其内部某一个最先失败的输入条件。
+
+本地只读检查时enp4s0 link/carrier仍UP，但无IPv4，NetworkManager显示30(disconnected)、无连接。
+用户先确认未人为操作网络/电源，随后明确确认“是网线断了”，据此根因确定为网线断开引起底层通信中断。
+链路为输入中断→SYSTEM_READY下降→Sport桥锁存FAULT/control_armed=false→扫描取消。
+未进入VLM识别或接近候选规划；最终observation cancelled、STOP_UNCONFIRMED、stop_confirmed=false。
+只证明曾发送StopMove，不证明该轮实际停稳；不得当作自动恢复运动依据。
+
+离线断言及审计build/go2-field/evidence/system-ready-audit-20261018_152827/report.json通过，
+其中已补用户现场确认；未更改代码/网络/阈值、未初始化ROS或额外订阅、未SSH/API/ARM/运动。
+系统journal普通权限不可读，sudo -n需密码，未取得对应内核/NetworkManager事件；没有要求用户提供密码。
+git diff --check通过。接线后输入恢复、实际停稳及既有reset/ARM门槛尚未验证，本轮未执行恢复或重试。
+
+
+### 2026-10-18 本轮 C 全程不共享坐标，各机独立寻找（源码及独立构建完成）
+
+用户确认“本轮全程不共享、靠自己寻找”，场内只有一个实物 C，并批准简短设计：
+各机提前识别 C 后保存在本机，仅同步本机是否已定位；双方 READY 后各用自己缓存，缺少的一方继续找，
+仍保留 Go2 先放入并整机退出、Ranger 后放入和退出及原资源许可。该明确指令覆盖旧设计的本轮共享 C 策略。
+未授权部署、SSH/Ranger、桥接或新现场实验；保留原分支 HEAD 及所有此前未提交修改，未提交。
+
+- scene.yaml 设置 `share_c_coordinates: false`；缺省 true 保留旧共享流程，mock 原基线不改。
+  make_machine 将策略传入本机 context，配置检查拒绝非 boolean。
+- AgentMachine 增加当前任务内存 C 缓存，只有当前未取消扫描的有效 C 可缓存；新任务清空，重启不复用。
+  外发 C 的位置及 reason 均清空，只有有效缓存才发 `CACHED`、position_valid=false。
+  A/B 共享不变；agent_node 私有模式忽略对端 C。没有新增相机/点云常驻诊断订阅。
+- 协调器只记录每台自己的 C observation_id，不接受 C 坐标。双方 READY 后仅派未有本机 C 的一方继续搜索；
+  双方都有 C 后，APPROACH_DEPOSIT 仅传各自引用、两个位置字段为空、position_valid=false。
+  agent 仅从自己本轮缓存解析后在本机规划，拒绝缺失缓存或附带坐标的私有 C 命令，不用零值后备导航。
+- 独立复核复现同一扫描 API_ERROR 后重试成功被旧记录遮住，已允许同机同引用非 CACHED→CACHED 升级；
+  端到端回归先失败再通过。未改变普通观测去重或取物逻辑。
+- 补 `SYNC_LOCAL_C` 模式握手（现有 string 动作字段，无消息字段变更）：
+  旧 agent 或新版共享配置拒绝私有同步，私有配置拒绝普通同步，建立任务身份前检查。
+  双方 task_id 屏障未满足则不发扫描；独立复核实测旧版 agent 也不会进入本轮任务或发出 C。
+  两端公共任务代码及配置必须一致；外部 Ranger live adapter/安装未更新，不能声称双机已实际关闭共享。
+
+独立输出 `build/go2-local-c-20261018/{build,install,log}`，仅构建 multi_agent_nav 成功；
+依赖复用 go2-coop/install/multi_agent_task_msgs 及 go2-manual-takeover-20261015/install/vlm_nav，未覆盖它们。
+从 /tmp 加载该输出核对十个模块实际路径/SHA256 和 scene=false；真实 ROS 消息序列化往返及
+接收端 C 忽略、A 保留的无初始化断言通过，证据 `installed-audit.json`。
+未切换 CoVLM_env 或一键入口，默认仍为前节 go2-approach-coverage-20261018；运行进程未热改。
+构建环境及复现命令仅维护在 [runbook 本轮 C 小节](go2_runbook.md#2026-10-18-双机各自定位-c本轮不共享-c-坐标)。
+
+验证：原核心基线 52 项通过；最终新安装核心 **85 项通过（原52＋新增33）**，
+`installed-core.xml`，含完整双机 fake、两端各找 C、独立引用、重开缓存失效、重试恢复、
+模式混用不扫描及放入/退出许可。新增测试先确认缺少功能时失败；独立只读复核两项问题修后关闭。
+扩展源码检查修正日志环境、明确排除项后 **413 通过、5 deselected**，见 `source-selected.xml`，
+不与核心检查累加计数。没有宣称全量测试或完整现场验收通过。
+
+首次扩展 `source-offline.xml` 为406通过/6失败/1deselected，当时新增28项：
+两项 launch 静态检查因 ~/.ros/log 不可写，改为可写日志后通过；
+flags 旧断言与当前用户已验证配置不符、现场 motion_slot 锁已有16字节标记，两项保留未修；
+两个 Domain31 合成原生 costmap 退出检查用旧 go2-coop host 出现 -11，未在本轮排查原生根因或重跑。
+具体全部失败用例名及最终5个deselected/ROS smoke未执行项见runbook，未隐藏首次失败。
+扩展检查还创建并销毁 Domain31 localhost 的只读观察节点；合成 costmap进程均已退出。
+本轮不能写为“完全未初始化ROS”，但未连接真机、SSH/Ranger、bridge、真实API、录包、ARM或真机运动。
+未清理现场停车锁，前节网线断开后的STOP_UNCONFIRMED对账仍待完成，不能据本轮测试恢复运动。
+
+剩余：后续按授权核对两端安装并部署、Ranger任务适配及现场闭环；当前缓存不做跨进程磁盘持久化。
+观测晚于扫描终态可能提前耗尽的既有问题未在本轮扩展；本轮唯一C假设由用户确认，未从现场重新验证。
+
+
+### 2026-10-18 双机旧状态通信检查脚本（仅制作及离线验证）
+
+用户要求Go2、Ranger各一个通信验证脚本；承接此前旧里程计state链路讨论。
+新增 `scripts/check_go2_comm.sh`、`scripts/check_ranger_comm.sh` 和共用
+`scripts/check_multi_agent_comm.py`，没有改启动入口、底层/桥路由、DDS配置或新任务协议。
+从源码直接运行，不需构建；两个入口依赖已加载的本机Humble/旧multi_agent_msgs/Domain0 DDS环境。
+Go2旧接口独立安装环境实查为
+`/home/isee-pst/unitree_ros2/install/multi_agent_msgs/share/multi_agent_msgs/local_setup.bash`，
+只加载该包，不用旧整套overlay覆盖当前包。Ranger自身安装和网卡路径仍待本机核实。
+
+检查依次为本机真实里程计（Go2 `/odometry` / Ranger `/odom`）、本机旧agent状态、对端旧状态。
+每层默认10秒，最大龄2秒，唯一发布者/消息类型/本机agent来源/robot_id必须匹配；
+至少3条且时间戳推进2次，拒绝零/倒退/超龄/未来时间，并比较真实agent里程计订阅QoS。
+早先订阅保持更新，退出前复核新鲜度、发布者和agent订阅QoS。输出端点和QoS、收包/时间戳推进次数和最新年龄。
+退出0是本机检查通过，1是数据/端点失败，2是配置/运行错误，130是中断；两端均PASS才能确认旧链双向连通。
+不启动驱动、agent、桥、coordinator或运动，不订阅图像/点云，不把旧state当READY或新任务验收。
+操作前置条件、Go2环境顺序及Ranger复制文件说明见
+[runbook通信脚本小节](go2_runbook.md#2026-10-18-双机旧状态通信检查脚本)。
+
+新增 `test/test_check_multi_agent_comm.py` 并注册CMake pytest项。
+新增33项离线测试通过，相关既有 `test_go2_docs.py` / `test_go2_offline_tools.py` 15项通过（共48项）。
+覆盖时间戳/身份/新鲜度、缺失/重复发布者、Go2/Ranger完整检查流程、QoS不匹配、输入中断、退出和清理；
+ROS I/O使用测试替身，没有初始化DDS。只读复核发现退出前遗漏端点复查，动态图4项回归先失败后修复通过；
+另真实Humble消息/API导入、QoS的OK/ERROR/WARNING三种无初始化断言通过。
+最初QoS探针把双方SYSTEM_DEFAULT liveliness错误预期为OK而失败，查实际返回为WARNING；
+脚本原本就拒绝未知兼容性，没有为通过探针放宽现场门槛。
+两入口Bash语法、Python编译和git diff --check通过。
+未全量测试、构建或部署，没有执行实际通信检查、初始化ROS、连接Ranger/SSH、启动桥接/驱动、录包或真机动作。
+两端输入/agent/桥须先按已有授权和部署就绪；当前IP、Ranger配置及实际双向通信均待现场验证。
+
+
+### 2026-10-18 根据用户通讯记录重制新任务PAUSED脚本（未现场执行）
+
+用户提供 `/media/isee-pst/MNGS2/Temp/3.通讯验收.md`，要求按其中Ranger命令及本地Go2代码重做两端脚本。
+已读原文件：本轮目标是 **multi_agent_task_msgs新协议的PAUSED状态传输**，不是前节旧里程计state链。
+该文件给操作命令而非实际收包输出；不能据此声称今早或当前双向通信已通过。
+本轮仅获制作/离线验证授权，未扩大为部署、Ranger连接、ROS参与者、桥接、agent或运动实验。
+
+原 `scripts/check_go2_comm.sh`、`scripts/check_ranger_comm.sh` 与共用Python脚本已原地改为新协议；
+runbook原旧协议小节标为历史，保留此前33项结果，不把旧结果改写为新版测试。
+当前使用方法及逐终端依赖顺序在
+[新任务PAUSED通信脚本](go2_runbook.md#2026-10-18-新任务paused通信脚本)。
+
+- Go2入口source本地 `CoVLM_env.bash`，配置取GO2_CONFIG，否则取其既有GO2_EXPLORE_CONFIG。
+  Ranger入口按新记录source `/home/isee601/ws/VLM_Nav/RangerVLM_env.bash`，配置取RANGER_CONFIG；
+  不再依据此前GitHub旧main中的 `/home/isee-cdh/ws/install` 入口猜测Ranger当前环境。
+  Ranger入口和 `check_multi_agent_comm.py` 须同目录，未自动复制。
+- 默认preflight仅环境/接口导入、读取配置/网卡/Git，不调用rclpy.init；打印实际包/模块路径、
+  三种消息的有序字段及SHA256、实际网卡和真实gates。两端须人工核对三个指纹。
+  拒绝本地域DDS走共享网卡、错误域/额外路由、旧消息和非Reliable/Volatile；不自动改网络/配置。
+- 显式bridge/agent动作重复检查真实gates非空，并用ROS CLI查同名/前缀节点防重复后exec文档命令。
+  bridge使用各自按域XML并unset ROS_DOMAIN_ID；agent用Domain0、simulation=false、/multi_agent，
+  节点名分别multi_agent_go2_agent / multi_agent_ranger_agent。不启coordinator/start或硬件。
+- check默认12秒订阅本机和对端state；检查schema1、身份、simulation=false、PAUSED及非空reason、
+  ready/deposited=false，stamp至少推进2次、至少3条，新鲜度和最大间隔按配置lost_timeout。
+  stamp按协议仅追踪，不以两机墙钟差替代接收监护；阻塞态sequence可一直0，不要求定位/pose有效。
+  采样结束检查本机agent和本机task bridge导入的发布端/类型/QoS，不认证采样期间每条消息来源。
+- `check --expect-peer-stop` 先确认有正常数据，再提示人工Ctrl+C退出对端agent，
+  保持本机agent及两桥以观察停流；期间状态异常、发布端变化或未停流均不通过。
+  先验Go2接收端，再恢复Ranger agent后验反方向，避免同时停两端；停流还须结合人工退出时刻记录。
+  退出0区分PREFLIGHT_OK与DATA_OK，不代表定位/Observation/READY或完整任务验收。
+
+验证：改写前旧协议33项测试在前轮已通过；改写后先确认新协议首批30项失败，再实现通过。
+最终新版脚本 **48项通过**，相关既有test_go2_docs/test_go2_offline_tools **15项通过**（共63，不与历史33累加）。
+覆盖Ranger与Go2流程、当前五话题配置、各自DDS接口、开放gates拒绝及预检后再次拒绝启动、
+真实新字段/sequence0、错误身份/状态/来源/QoS、重复发布者、接收中断、人工停流及退出清理。
+所有流程测试使用ROS/网络测试替身；独立只读复核的当时45项亦通过，未发现阻断缺陷。
+
+另单独加载既有go2-coop、go2-manual-takeover-20261015及go2-approach-coverage-20261018的安装环境，
+检查实际config/agent模块均来自go2-approach-coverage-20261018/install/multi_agent_nav/local/lib/python3.10/dist-packages。
+静态确认settings按local_robot检查gates，AgentNode非空gates分支不创建adapter；
+以当前源码配置目录计算14条真实缺项，包含vision_validated、basket、对齐report、scene disabled、
+Ranger地图身份/路径/digest、wait/exit/viewpoints及path_source/peer_obstacle验证项。
+真实ROS AgentState对象的PAUSED/sequence0断言通过，仅导入/构造消息，没有初始化ROS或创建节点。
+
+实际尝试source CoVLM_env时因enp4s0无192.168.123.x地址失败，未继续执行现场preflight、未改网络/参数或猜测新根因。
+两入口Bash语法、Python编译、文档命令块/链接和git diff --check已核对；不构建、不全量测试、不提交/部署。
+未执行ROS CLI查重/bridge/agent/check、SSH/Ranger连接、录包、API、ARM或真机运动。
+Ranger环境文件/安装实现及两端网络、收包和停流仍待按授权现场核对。
+
+
+### 2026-10-18 用户报告两端新任务状态均DATA_OK
+
+用户在运行新版PAUSED通信脚本后报告“都收到了DATA_OK”。这是用户现场报告，非本轮工具直接收包。
+按当前脚本判据，记录为两端新任务PAUSED状态双向采样通过；不改写为定位、Observation、READY或完整协同通过。
+尚未提供两端完整输出、消息指纹、实际安装路径/当前IP和采样参数，故不补写未知字段或声称独立核实运行版本。
+前节source CoVLM_env时enp4s0无IPv4的错误保留为当时记录，不据此否定用户本次DATA_OK，也不推测现场如何恢复。
+
+下一步仍为runbook中的人工停流核对：先在Go2接收端启动check --expect-peer-stop，待提示再人工退出Ranger agent，
+本机agent和两端bridge保持运行；如需反向核对，先恢复Ranger阻塞agent，随后在Ranger接收端等待并按提示退出Go2 agent。
+两端不能同时停agent，也不能把初始无消息当停流通过。当前未收到STOP_OBSERVED或人工退出时刻记录。
+本轮只追加用户反馈及说明下一步，未运行ROS、连接Ranger、启停节点或发送任何运动/任务命令。
+
+
+### 2026-10-18 固定地图切换为 lab_rescan_20261018_155656_0pa6gm（仅文件及离线核对）
+
+用户指定固定地图改用 `maps/lab_rescan_20261018_155656_0pa6gm`。
+已读AGENTS.md并核对分支go2-cooperative-task-layer、HEAD eb32b4527c37cd0b278c1790f7c0bdde7bf5ad75；
+保留此前全部未提交改动及新地图文件，不提交。此次改动前文件快照在
+`/tmp/go2-map-switch-20261018-pi0f59io/`，不是长期证据目录。
+
+新地图YAML为 `/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml`，
+引用同目录lab.pgm；实读472×578、resolution=0.05、origin=[-8.09,-20.8,0]、mode=trinary、negate=0、
+occupied_thresh=0.65、free_thresh=0.25。
+YAML SHA256=`a4d4a35ed4ba2203cb3decfb8b3a991ff57cb90294ab1c351c063eaef4ad7955`；
+PGM SHA256=`0085c2d7ba8868f8d4ff76eb27aa911e2ca5324ea531f77347d0a1f1a9241520`；
+按现有map_file_info规则得到map_digest=`6ae95d62d745c3bfb6eaf1e247cac27b32542251cbd1a4ccbc55f5d1febdd279`。
+
+- 源robot_go2.yaml更新map_path/map_digest；alignment.yaml更新Go2的local_map_id及sha256版本。
+  Go2等于lab_ref的基准定义保留；既有validated=false/report=null及scene.enabled=false未解锁。
+- scripts/start_go2_vlm.py冷启动地图参数及runbook中的冷启动/隔离标注路径同步新图。
+  一键入口继续显式读取源码GO2_EXPLORE_CONFIG，无需构建；没有修改已有安装或热切运行节点。
+  不带--config-dir的其他入口仍须核对其实际安装配置，不能据源码修改宣称安装已更新。
+- 新图目前只有lab.yaml/lab.pgm；scene.yaml中的两个旧图Go2探索点移出活动列表，列表置空。
+  原始精确点位仍保留于本文此前记录、runbook历史表和改前快照；旧地图目录/语义/观察点文件均未修改。
+  generated_candidates.semantic_yaml及semantic_search.observation_points改指新图目录待采集文件。
+  未复制旧家具坐标、推算点位、伪造标注或沿用旧地图坐标；新图探索点及家具标注须重新实测采集。
+
+验证：相关既有test_start_go2_vlm.py/test_go2_docs.py基线32项通过；更新冷启动地图参数断言后仍32项通过，
+没有新增用例或把断言数当用例数。独立无ROS初始化断言核对地图/图像可读、尺寸、摘要/身份/版本一致、
+map_file_gates为空；固定点加载器拒绝空列表，家具/生成候选策略拒绝缺少新图标注，完整live门槛仍阻止运行。
+默认fixed_viewpoints的--offline摘要不检查空列表，不可把其退出0当可探索；实际explore入口先检查measured_viewpoints。
+文档命令块语法、当前地图链接及git diff --check通过。
+
+未构建、部署、初始化ROS、启停或切换map_server/AMCL/Nav2、连接SSH/Ranger、启动桥接、录包、API、ARM或真机运动。
+当前运行地图、AMCL在新图上的定位、新探索点及双机地图对齐均待按授权验证；历史现场结果不转移到新图。
+
+
+### 2026-10-20 公共本地执行核心（Go2/公共层＋fake Ranger）
+
+用户明确“进入实现”，并补充远端候选使用全局costmap/完整footprint/规划路径，local覆盖不足本身不否决；
+只实施本机独立搜索、READY屏障和原许可链。已阅读AGENTS、单机框架及相关代码，分支仍为
+`go2-cooperative-task-layer`、HEAD仍`eb32b4527c37cd0b278c1790f7c0bdde7bf5ad75`。
+保留此前全部dirty修改、地图、日志及运动锁，不提交、不部署、不切换默认启动环境。
+改前相关源码/配置/测试快照：`build/local-execution-20261020/before/`，按仓库相对路径保存；不是新Git提交。
+
+**实现及修改位置：**
+
+- `go2_exploration.py`提取`explore_steps`，原`explore`同步驱动，协同AgentRunner逐tick驱动同一循环。
+  本地候选、VLM选ID、导航、8×顺时针45°、停稳新RGB-D、图像时刻TF、ABC同图及自身目标提前结束保留。
+  `generated_candidates.py`按robot_id读取自己的地图/身份/几何，图例也标本机。
+- 单机继续读原0.81m合同；`agent_node.py`/`runner.py`给协同注入1.00m。
+  候选预算/补偿/停稳验收同一门槛，实时XY=0.25、余量0.03时预算为0.53/0.72m。
+  当前目标导航SUCCEEDED、身份有效、真实停稳、action terminal、实际base_link距离达标才READY/完成放入；
+  不用已有近距离或距离触发取消替代协同当前导航成功。
+- `planner.py`/`coordinator.py`只发本地目标意图，不派固定点。Go2找A、Ranger找B，各自成功才READY，
+  双方新鲜READY后进入C；C提前只本机缓存，CACHED只报引用，缺自己C则自己继续找。
+  无共同C绑定、无跨机坐标转换，所有网络目标/任务位置均无效且为零。
+- `models.py`在私有模式拒绝坐标式EXECUTE，防止绕回旧pickup验收；
+  `frame_adapter.py`本地路径不做数值变换，保留各端本地地图身份/版本；
+  `config.py`新模式仅取消跨机对齐依赖，仍完整检查本地地图、候选/扫描/到达参数、资源/退出及真实验证项。
+  `agent_node.py`接收端检查本机任务、私有模式、对端健康和固定地图身份，任务内地图变化暂停。
+- `agent.py`/`runner.py`将内部导航交回原AgentMachine路径/门/篮子许可链。
+  门通行释放后恢复原主任务，C许可贯穿放入与EXIT，EXIT保留deposit的parent和token，Go2退出后才放行Ranger。
+  非C接近阶段不申请basket，避免持篮子许可停在READY导致屏障死锁；允许door走原通行退出链。
+  VLM等待交回executor；失联/取消关闭当前核心，迟到Future/goal不能推进；
+  证据清理异常不跳过native cancel/stop，执行器初始化异常也停机回报。
+- `adapters/base.py`列明公共异步/成本图接口，`fake.py`/`mock.py`提供双替身及安装后资源路径加载。
+  `adapters/go2.py`本轮仅补本机图例文字；此前全局/局部覆盖保护实现保留。
+
+**验证（无ROS初始化或现场操作）：**
+
+最初较窄的165项基线162过/3失败：2项因overlay环境，补环境通过；
+1项测试依赖已被清空的现场固定点，改成测试内部合成点，不为真实新图补点。
+新增核心/严格距离和目标任务检查先失败后实现；只读复核发现并复现配置漏检、坐标命令旁路、
+清理异常跳过停车及basket/READY死锁，已修复并补相关检查。
+最终安装相关集合 **276项通过：既有235＋新增41**，排除1项会初始化ROS的observer测试；
+未运行全仓ROS smoke/native节点/现场运动锁测试。原单机扫描、接近及远端候选检查包含在该集合中。
+新增3项core、36项local_tasks、2项runner异常保护；不是colcon条目数或断言个数。
+同样0.90m：单机失败、协同通过；双机>1m/未停稳/取消不READY或放入；
+双fake验证两端VLM选点、心跳/迟到丢弃、独立坐标、A/B→READY→各自C→顺序退出，门/篮子许可不绕过。
+只读复核最终118项也通过，范围仅公共代码和替身。
+
+**独立安装和证据：**
+
+`build/go2-local-execution-20261020/install/multi_agent_nav`已构建（仅1个变化包）。
+根包vlm_nav依赖复用`build/go2-manual-takeover-20261015/install/vlm_nav`，
+消息复用`build/go2-coop/install/multi_agent_task_msgs`，没有修改消息字段、桥接路由或源配置数值。
+从/tmp导入14个安装模块与源码摘要相同，7个配置文件与本轮改前/安装逐字节一致；
+SYNC_LOCAL_C/CACHED真实ROS类型序列化往返通过，rclpy未初始化，完整live gates仍关闭。
+安装版fake首次因源码相对路径查到达文件而失败，已改用已安装vlm_nav资源目录后备加载，最终276项通过。
+证据为`build/go2-local-execution-20261020/installed-related.xml`和`installed-audit.json`；
+源码测试、构建/安装日志及改前快照位于`build/local-execution-20261020/`，不受Git保护，不清理。
+构建、source、安装核对和无节点测试完整命令统一维护在[runbook本轮节](go2_runbook.md#2026-10-20-公共本地执行核心本轮入口差异与离线复现)。
+
+**剩余边界和交接：**
+
+默认CoVLM_env/启动安装仍未切换，不能据源码实现声称当前运行进程已更新。
+新图仍缺家具标注/候选资产，本地basket/门/退出点和真实验证项尚待现场补齐，live gates继续阻止任务。
+本仓库Ranger live分支仍明确要求在Ranger PC安装自身adapter，本轮只fake验证，未接入Ranger硬件。
+最小同步清单、公共接口/命令/状态、私有地图要求及原五话题方向已写入
+[Ranger本轮交接](ranger_handoff.md#2026-10-20-本轮最小接入说明覆盖旧共享-c-要求)。
+不得整体覆盖Ranger分支或复制Go2硬件配置；后续在Ranger电脑保留自身adapter/地图/参数接同一核心，再按新授权真实跨机验收。
+本轮未初始化ROS、连接SSH/Ranger、启停桥接、真实VLM请求、额外订阅/采集/录包、ARM或真机运动；未自动提交。

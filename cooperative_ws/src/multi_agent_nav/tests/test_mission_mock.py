@@ -63,6 +63,38 @@ def test_duplicate_wire_commands_dont_duplicate_navigation():
         ids=[cmd for kind,p,cmd in m.adapters[r].calls]
         assert len(ids)==len(set(ids))
 
+def test_two_consecutive_tasks_finish_with_fresh_command_sequences():
+    m = MockMission()
+    task_ids = []
+    for _ in range(2):
+        start = m.start()
+        assert start.accepted
+        task_ids.append(start.task_id)
+        m.run(100)
+        assert m.coordinator.phase == 'DONE', m.coordinator.reason
+        assert not m.coordinator.resources.held
+        for robot in ('go2', 'ranger'):
+            commands = [c for r, c in m.executed if r == robot and c.task_id == start.task_id]
+            assert commands[0].sequence == 1
+            assert m.coordinator.states[robot].sequence == commands[-1].sequence
+            assert m.coordinator.states[robot].exited
+    assert task_ids[0] != task_ids[1]
+
+def test_paused_task_can_handshake_and_finish_a_new_task():
+    m = MockMission()
+    first = m.start()
+    assert first.accepted
+    m.run(2)
+    m.pause('explicit restart')
+    m.run(5)
+    assert all(s.run_state == 'PAUSED' for s in m.coordinator.states.values())
+    second = m.start()
+    assert second.accepted and second.task_id != first.task_id
+    m.run(100)
+    assert m.coordinator.phase == 'DONE', m.coordinator.reason
+    assert all(s.task_id == second.task_id and s.exited for s in m.coordinator.states.values())
+    assert not m.coordinator.resources.held
+
 def test_door_permit_released_before_basket_and_original_main_command_resumes():
     config=mock_config()
     config['scene']['resources']['door']={'polygon':[[-.5,-5],[.5,-5],[.5,5],[-.5,5]],
