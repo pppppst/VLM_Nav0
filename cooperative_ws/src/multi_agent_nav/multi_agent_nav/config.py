@@ -64,10 +64,6 @@ def go2_local_gates(config, motion=False, vision=False, check_map_files=True, *,
         errors.append('go2: map identity/version missing')
     errors+=map_file_gates(config,robot_id,check_map_files)
     if motion:
-        errors+=region_errors(config['scene'].get('resources'))
-        margin=go2.get('stop_margin')
-        if not isinstance(margin,(int,float)) or not math.isfinite(margin) or margin<=0:
-            errors.append('measured positive stop margin missing')
         for flag in ('costmap_source_verified','camera_calibrated'):
             if go2.get(flag) is not True:errors.append(f'Go2 {flag} field verification required')
         if not go2.get('costmap_topic'):errors.append('Go2 realtime costmap topic missing')
@@ -93,25 +89,12 @@ def live_gates(config,local_robot='go2'):
         from .go2_exploration import exploration_gates
         errors=exploration_gates(config,local_robot,cooperative=True)
         scene=config['scene'];cfg=config[f'robot_{local_robot}']
-        if scene.get('enabled') is not True:errors.append('scene disabled: local field geometry missing')
-        regions=scene.get('resources')
-        if not isinstance(regions,dict):regions={}
-        if 'basket' not in regions:errors.append('basket resource polygon missing')
-        exits=scene.get('exit_points')
-        if not isinstance(exits,dict) or not valid_numbers(exits.get(local_robot),3):
-            errors.append(f'{local_robot}: local exit point missing/invalid')
-        for name,entry in regions.items():
-            if name!='basket':
-                transit=entry.get('transit_exits') if isinstance(entry,dict) else None
-                points=transit.get(local_robot,[]) if isinstance(transit,dict) else []
-                if not points or not all(valid_numbers(p,3) for p in points):errors.append(f'{name}: local transit exits missing/invalid')
+        if scene.get('enabled') is not True:errors.append('scene disabled: live task not enabled')
         for flag in ('path_source_verified','peer_obstacle_verified'):
             if cfg.get(flag) is not True:errors.append(f'{local_robot} {flag} field verification required')
         return errors
     errors = go2_local_gates(config,motion=True,vision=True,check_map_files=local_robot=='go2')
     alignment, scene = config['alignment'], config['scene']
-    if not isinstance(scene.get('resources'),dict) or 'basket' not in scene['resources']:
-        errors.append('basket resource polygon missing')
     if alignment.get('validated') is not True or not alignment.get('report'):
         errors.append('validated alignment report missing')
     else:
@@ -139,15 +122,9 @@ def live_gates(config,local_robot='go2'):
         points=scene.get('viewpoints',{}).get(robot,[])
         if not points or any(not p.get('id') or not valid_numbers(p.get('pose'),3) for p in points):
             errors.append(f'{robot}: measured viewpoints missing/invalid')
-        for field in ('wait_points','exit_points'):
+        for field in ('wait_points',):
             if not valid_numbers(scene.get(field,{}).get(robot),3):
                 errors.append(f'{robot}: {field} missing/invalid')
-    for name,entry in scene.get('resources',{}).items():
-        if name!='basket':
-            for robot in ('go2','ranger'):
-                exits=entry.get('transit_exits',{}).get(robot,[])
-                if not exits or not all(valid_numbers(p,3) for p in exits):
-                    errors.append(f'{name}: {robot} transit exits missing/invalid')
     if any(not isinstance(scene.get('targets',{}).get(t),str) or not scene['targets'][t].strip()
            or '现场填写' in scene['targets'][t] for t in ('A','B','C')):
         errors.append('measured A/B/C target descriptions missing')

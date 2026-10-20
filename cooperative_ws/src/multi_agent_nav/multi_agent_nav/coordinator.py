@@ -1,7 +1,6 @@
 import uuid
 from .models import *
 from .planner import RulePlanner
-from .resource_manager import ResourceManager
 
 class Coordinator:
     def __init__(self, scene, alignment_id, map_ids, simulation, gates=None):
@@ -13,8 +12,7 @@ class Coordinator:
         self.sequence = {r:0 for r in ROBOTS}
         self.acked = {r:0 for r in ROBOTS}
         self.planner = RulePlanner()
-        self.resources = ResourceManager()
-        self.releases = {}
+        self.resources = None
         self.started = 0.0
         self.c_observation = ''
         self.local_c = {}
@@ -57,8 +55,6 @@ class Coordinator:
         if previous and previous.task_id == state.task_id and state.sequence < previous.sequence:
             return
         self.states[state.robot_id], self.received_at[state.robot_id] = state, received_at
-        if self.resources:
-            self._resource_feedback(state, received_at)
 
     def ingest_observation(self, observation, received_at):
         if not self._identity(observation) or observation.simulation != self.simulation or observation.task_id != self.task_id:
@@ -84,12 +80,10 @@ class Coordinator:
             return StartReply(False, reason='task already active')
         if scenario_id != self.scene['scenario_id'] or not self.scene['enabled'] or self.gates:
             return StartReply(False, reason='; '.join(self.gates) or 'scenario disabled/unknown')
-        if self.resources and self.resources.held:
-            return StartReply(False, reason='held resource requires field clearance; no automatic reset')
         for robot in ROBOTS:
             state = self.states.get(robot)
             if not state or now-self.received_at[robot] > self.lost_timeout or not (
-                self._healthy(state) and state.stopped) or state.token:
+                self._healthy(state) and state.stopped):
                 return StartReply(False, reason=f'{robot}: fresh healthy stopped state required')
         self.task_id = uuid.uuid4().hex
         self.phase, self.started, self.reason = 'SEARCH_AB', now, ''
@@ -110,10 +104,6 @@ class Coordinator:
 
     def pause(self, reason):
         self.phase, self.reason = 'PAUSED', reason
-        if self.resources:
-            for robot in ROBOTS:
-                self.resources.freeze(robot, reason)
-                if robot in self.commands:self.resources.cancel_queued(robot,self.commands[robot].command_id)
         return [self.control(r, 'PAUSE') for r in ROBOTS] if self.task_id else []
 
     def _complete_commands(self):
@@ -124,7 +114,6 @@ class Coordinator:
             if state.reply not in ('SUCCEEDED','FAILED','CANCELED') or not state.stopped:
                 continue
             self.acked[robot] = command.sequence
-            self.resources.cancel_queued(robot,command.command_id)
             if not self.share_c_coordinates and state.reply != 'SUCCEEDED':
                 self.pause(f'{robot}: local task failed: {state.reason}')
             if command.kind == 'SEARCH_VIEWPOINT':
@@ -163,10 +152,8 @@ class Coordinator:
         if self.phase == 'SEARCH_AB' and all(self.states[r].ready for r in ROBOTS) and not self.commands:
             self.phase = 'SEARCH_C'
         if self.phase == 'SEARCH_C':
-            if 'basket' not in self.scene['resources'] or self.share_c_coordinates and any(r not in self.scene['exit_points'] for r in ROBOTS):
-                return output+self.pause('C region or exit geometry missing')
             if not self.share_c_coordinates:
-                if all(r in self.local_c for r in ROBOTS) and not self.commands:
+                if self.local_c:
                     self.phase = 'DEPOSIT'
             else:
                 clue = next((o for o in self.observations.values() if o.target_id=='C' and o.navigable), None)
@@ -174,11 +161,10 @@ class Coordinator:
                     self.c_observation = clue.observation_id
                     self.scene['bound_c'] = clue.observation_id
                     self.phase = 'DEPOSIT'
-        if self.phase == 'DEPOSIT' and all(self.states[r].deposited and self.states[r].exited for r in ROBOTS):
+        if self.phase == 'DEPOSIT' and not self.commands and all(
+            self.states[r].deposited and self.states[r].stopped for r in ROBOTS):
             self.phase = 'DONE'
             return output
-        if self.resources:
-            output += self._resource_commands(now)
         snapshot = Snapshot(self.phase, self.states, self.observations, self.reservations,
             self.resources, self.commands, self.scene, now, self.received_at, self.rejected, self.local_c)
         actions = self.planner.decide(snapshot)
@@ -202,34 +188,4 @@ class Coordinator:
         # Retry until a matching state acknowledges; duplicate execution is idempotent.
         output += [command for robot,command in self.commands.items() if
                    self.states[robot].command_id != command.command_id or self.states[robot].reply == '']
-        return output
-
-    def _resource_feedback(self, state, now):
-        if not state.token or state.task_id!=self.task_id:
-            return
-        feedback=ResourceFeedback(state.task_id,state.robot_id,state.permit_command_id,
-            state.resource_id,state.token,state.resource_status,state.localization_valid,
-            state.resource_status in ('EXIT_CONFIRMED','CANCEL_OUTSIDE'),state.stopped)
-        if self.resources.update(feedback,now) and feedback.status in ('EXIT_CONFIRMED','CANCEL_OUTSIDE'):
-            self.releases[state.robot_id]=feedback
-
-    def _resource_commands(self, now):
-        output=[]
-        for robot,state in self.states.items():
-            release=self.releases.get(robot)
-            if release:
-                if state.token==release.token:
-                    output.append(self.control(robot,'GRANT_RESOURCE',kind='RELEASE',
-                        resource_id=release.resource_id,token=release.token,parent_command_id=release.parent_command_id))
-                else:
-                    del self.releases[robot]
-            if not state.requested_resource or robot not in self.commands:
-                continue
-            cmd=self.commands[robot]
-            if state.requested_command_id!=cmd.command_id or state.requested_resource not in self.scene['resources']:
-                continue
-            permit=self.resources.request(ResourceRequest(self.task_id,robot,cmd.command_id,state.requested_resource),now)
-            if permit.granted:
-                output.append(self.control(robot,'GRANT_RESOURCE',resource_id=permit.request.resource_id,
-                    token=permit.token,parent_command_id=permit.request.parent_command_id))
         return output

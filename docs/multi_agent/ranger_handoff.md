@@ -1,5 +1,8 @@
 # Ranger PC handoff (no Ranger connection performed)
 
+> 最新行为以文末2026-10-20独立C/取消保护区章节为准；此前资源许可与顺序退出记录属于历史版本。
+
+
 当前私有 C 模式以本文末尾 **2026-10-20 本轮最小接入说明** 为准；前文保留为旧共享模式参考。
 
 Transfer the commits on `go2-cooperative-task-layer` through the final commit
@@ -174,3 +177,47 @@ Ranger按自身真实网卡隔离。不得桥接TF/costmap/图像/action/速度�
 先在 Ranger 本机接入公共接口并完成本地验证，再按新增现场授权测试真实跨机任务、握手失联停车、
 资源ID一致、门整机退出及Go2→Ranger顺序；本轮fake通过不替代这些检查。
 构建和无节点复现统一见 [runbook](go2_runbook.md#2026-10-20-公共本地执行核心本轮入口差异与离线复现)。
+
+## 2026-10-20 空地点生成补充
+
+当前用户选择不录入家具标签。公共`generated_candidates_vlm`现以已知自由地图网格为基础，
+有合法家具标注时保留原家具观察点并合并；无标注路径/缺文件/合法空家具可正常生成点，已有坏标注仍报错。
+本补充覆盖前文把家具标注列为必需资产的描述，不取消本地资源/退出点或真实验证门槛。
+
+Ranger需同步`generated_candidates.py`、`go2_exploration.py`、`go2_check.py`及候选VLM提示词变化，
+保留自己的adapter和参数；没有新增消息/话题/配置项。网格仍由自身footprint/旋转半径、地图分辨率和原点生成。
+候选按当前位置由近到远检查，每轮最多12个；空地点的内部furniture_id为空、稳定ID以free/开头。
+VLM双图接口保持，无标签时家具层为空，空地点同样可选。不得在Ranger端继续将无家具作为启动失败条件。
+0.81/1.00m入口差异、ABC扫描、C本机缓存和门/篮子许可链未变。
+独立安装与无节点回归命令见[runbook新节](go2_runbook.md#2026-10-20-空地候选与可选家具标注)。
+本轮依旧只有fake Ranger验证，不表示其硬件接入或真实跨机验收通过。
+
+## 2026-10-20 独立C与取消保护区（最新覆盖）
+
+用户已明确取消门/篮子保护区、资源许可和C先后顺序。本节覆盖前文同日仍保留许可/顺序退出的说明。
+双方当前A/B成功且真实停稳后READY；双方READY后各自使用有效本机C缓存，否则本机继续探索。
+一方找到C即可执行APPROACH_DEPOSIT，不等待对端找到C；双方可同时接近。
+双方deposited且stopped、当前命令按task/command/sequence匹配结束后DONE。完成停在接近位置；不下发EXIT，不伪造exited。
+这里deposited仍为接近验收/模拟放入，不包含实体机械臂动作。
+
+**公共包同步范围：**在原公共执行核心/空地候选版本之上，合并models.py、agent.py、runner.py、coordinator.py、
+coordinator_node.py、planner.py、config.py、mock.py、go2_exploration.py、go2_check.py及对应测试。
+基本路径/完整footprint检查统一为models.motion_path_error；独立navigate/scan也不再调用RegionGuard。
+ResourceManager/RegionGuard旧工具类仅保留兼容导入与原几何工具复用，活动任务不调用。
+Ranger必须在自身控制电脑接入同一公共接口，保留自己的adapter/地图/TF/相机/footprint/Nav2参数；不得整体覆盖其分支。
+
+**命令和状态：**SYNC_LOCAL_C、EXECUTE APPROACH_PICKUP/SEARCH_VIEWPOINT/APPROACH_DEPOSIT、PAUSE/CANCEL语义保留。
+GRANT_RESOURCE与EXECUTE EXIT明确拒绝；不再申请资源、转入DOOR_TRANSIT或要求parent/token链。
+resource_id/token/parent_command_id和状态资源字段保留schema兼容，正常新任务为空；exited保留false，不能作为完成门槛。
+READY/deposited必须来自当前目标的成功导航、真实停稳、动作终态和≤1.00m距离；单机仍≤0.81m。
+不要混用旧版还等待EXIT/许可的Ranger，即使消息字段指纹一致。
+
+**配置和路由：**不增加字段/话题，不修改桥接YAML；沿用前文五条Reliable/Volatile定向路由及Domain0/40隔离。
+本轮不传地图坐标，无地图对齐要求；CACHED仍只传本机引用，无双缓存屏障。
+不再要求scene.resources、transit_exits、exit_points或区域stop_margin；旧值即使存在也不拦截。
+各端地图身份/摘要、全局候选完整footprint和规划路径、局部运动避障、心跳/失联停车/取消与迟到保护继续有效。
+没有任务层C互斥和固定退让，不能据此承诺C处两机先后通行；现场仍需验证各自局部避障。
+
+Go2独立安装为build/go2-independent-c-20261020/install/multi_agent_nav，默认环境尚未切换。
+完整构建与离线回归统一见[runbook最新节](go2_runbook.md#2026-10-20-取消保护区与独立c执行最新)。
+本轮仅fake Ranger验证，不能称为Ranger真实接入或跨机验收；后续须在其电脑完成接口后再按现场授权验收。

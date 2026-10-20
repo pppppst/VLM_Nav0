@@ -2,7 +2,7 @@ from dataclasses import replace
 from .models import *
 
 NAV_KIND = {'SEARCH_VIEWPOINT':'VIEWPOINT_NAV', 'APPROACH_PICKUP':'PICKUP_NAV',
-            'WAIT':'WAIT_NAV', 'APPROACH_DEPOSIT':'DEPOSIT_NAV', 'EXIT':'EXIT_NAV'}
+            'WAIT':'WAIT_NAV', 'APPROACH_DEPOSIT':'DEPOSIT_NAV'}
 
 class AgentMachine:
     def __init__(self, context, frame, lost_timeout=3.0, path_start_timeout=1.0):
@@ -33,15 +33,12 @@ class AgentMachine:
         self.excluded = []
         self.selected_goal = None
         self.health = Health()
-        self.guard = None
-        self.transit_goal = None
         self.local_c_observations = {}
         self.local_execution_enabled = False
         self.local_motion = None
         self.local_target = None
         self.local_approach_succeeded = False
         self.success_radius = 1.0
-        self.local_exit = None
 
     def state(self):
         return replace(self._state) if self.context.share_c_coordinates else replace(
@@ -59,13 +56,6 @@ class AgentMachine:
             'APPROACH_PICKUP','SEARCH_VIEWPOINT','APPROACH_DEPOSIT'):
             self.effects.append(Effect('LOCAL_EXECUTION'))
             return
-        if self.local_execution_enabled and self.command.kind == 'EXIT':
-            if self.local_exit is None:
-                self.stop('local exit point missing')
-                return
-            self.selected_goal=self.local_exit
-            self.effects.append(Effect('PLAN',self.selected_goal))
-            return
         if self.command.kind.startswith('APPROACH'):
             self.effects.append(Effect('APPROACH', (self.frame.to_local(self.command.object_position), list(self.excluded))))
         else:
@@ -78,7 +68,7 @@ class AgentMachine:
         if sync and command.task_id != self.context.task_id:
             if command.task_id in self.retired_tasks:
                 return CommandReply(False, 'retired task')
-            if self._state.token or self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
+            if self._state.run_state not in ('IDLE', 'PAUSED') or not self._state.stopped or not self.health.motion_terminal:
                 return CommandReply(False, 'not stopped for new task')
             candidate = replace(self.context, task_id=command.task_id)
             reply = validate_command(command, candidate)
@@ -93,7 +83,7 @@ class AgentMachine:
                 simulation=candidate.simulation, common_pose=self._state.common_pose,
                 pose_valid=self._state.pose_valid, localization_valid=self._state.localization_valid,
                 nav_ready=self._state.nav_ready, stopped=self._state.stopped)
-            self.command = self.selected_goal = self.transit_goal = None
+            self.command = self.selected_goal = None
             self.effects.clear()
             self.local_c_observations.clear()
             self.local_motion = None
@@ -118,28 +108,13 @@ class AgentMachine:
                 return CommandReply(False, 'cancel command mismatch')
             self.stop('coordinator pause/cancel')
             return reply
-        if command.action == 'GRANT_RESOURCE':
-            if command.kind == 'RELEASE' and command.token == self._state.token and command.parent_command_id == self._state.permit_command_id:
-                self._state.token = self._state.resource_id = self._state.permit_command_id = self._state.resource_status = ''
-                return reply
-            owner = self.command.parent_command_id if self.command and self.command.kind == 'EXIT' else (self.command.command_id if self.command else '')
-            if not command.token or command.parent_command_id != owner or command.resource_id != self._state.requested_resource:
-                # Repeated grants for an already-held token are harmless.
-                return CommandReply(command.token == self._state.token and command.parent_command_id == self._state.permit_command_id, 'permit mismatch')
-            self._state.resource_id, self._state.token = command.resource_id, command.token
-            self._state.permit_command_id = owner
-            self._state.resource_status = 'RESERVED'
-            self._state.requested_resource = ''
-            if self.selected_goal:
-                self.effects.append(Effect('PLAN', self.selected_goal))
-            return reply
         if command.sequence <= self.last_sequence:
             return CommandReply(command.command_id == self._state.command_id, 'duplicate/stale command')
         if command.phase != self.phase:
             return CommandReply(False, 'phase must be synchronized before execution')
         if command.kind == 'APPROACH_PICKUP' and (self.phase != 'SEARCH_AB' or self._state.ready):
             return CommandReply(False, 'pickup phase/READY mismatch')
-        if command.kind in ('APPROACH_DEPOSIT','EXIT') and (self.phase != 'DEPOSIT' or not self._state.ready):
+        if command.kind == 'APPROACH_DEPOSIT' and (self.phase != 'DEPOSIT' or not self._state.ready):
             return CommandReply(False, 'deposit requires READY and deposit phase')
         if self.paused or self._state.run_state == 'STOPPING':
             return CommandReply(False, 'paused: new task required')
@@ -150,9 +125,6 @@ class AgentMachine:
             return CommandReply(False, 'one active command')
         if not self._state.stopped or not self.health.motion_terminal:
             return CommandReply(False, 'previous motion not stopped')
-        if command.kind == 'EXIT' and (not self._state.deposited or command.token != self._state.token or
-                command.parent_command_id != self._state.permit_command_id or command.resource_id != self._state.resource_id):
-            return CommandReply(False, 'EXIT must preserve deposit permit identity')
         if command.kind == 'APPROACH_DEPOSIT' and not self.context.share_c_coordinates:
             observation = self.local_c_observations.get(command.observation_id)
             if not observation or not observation.navigable or observation.task_id != self.context.task_id:
@@ -186,38 +158,12 @@ class AgentMachine:
         self.selected_goal = goal
         self.health.path = result.path
         self.health.path_valid = True
-        if self.guard:
-            check_path = result.path
-            if self._state.resource_id in self.guard.regions and self._state.resource_id != 'basket':
-                self.transit_goal = self.guard.transit_exit(self._state.resource_id, self.context.robot_id, result.path)
-                if self.transit_goal is None:
-                    self.stop('missing door transit exit')
-                    return
-                # Precompute transit path through adapter, not a straight-line substitute.
-                if goal != self.transit_goal:
-                    self.effects.append(Effect('PLAN_TRANSIT', self.transit_goal))
-                    return
-            decision = self.guard.check(self.health.pose, self.health.footprint, result.path,
-                                       {self._state.resource_id: self._state.token} if self._state.token else {}, self.health)
-            if decision.action == 'STOP':
-                self.stop(decision.reason)
-                return
-            if decision.resource_id:
-                if self.local_execution_enabled and decision.resource_id=='basket' and self.command.kind!='APPROACH_DEPOSIT':
-                    self.fail('basket is reserved for C approach/exit')
-                    return
-                self._state.requested_resource = decision.resource_id
-                self._state.requested_command_id = self.command.command_id
-                self._state.run_state = 'WAITING_RESOURCE'
-                return
-        if self.command.kind == 'APPROACH_DEPOSIT' and not self.transit_goal and self._state.resource_id != 'basket':
-            self._state.requested_resource = 'basket'
-            self._state.requested_command_id = self.command.command_id
-            self._state.run_state = 'WAITING_RESOURCE'
+        error=motion_path_error(self.health,result.path)
+        if error:
+            self.stop(error)
             return
-        nav_goal = self.transit_goal or goal
-        kind = 'DOOR_TRANSIT' if self.transit_goal else self.local_motion['kind'] if self.local_motion else NAV_KIND[self.command.kind]
-        self.effects.append(Effect('NAVIGATE', (nav_goal, kind)))
+        kind=self.local_motion['kind'] if self.local_motion else NAV_KIND[self.command.kind]
+        self.effects.append(Effect('NAVIGATE', (goal, kind)))
 
     def navigation_started(self, goal_id, goal_kind, now=0.0):
         self.navigation_started_at, self.path_acquired = now, False
@@ -231,7 +177,7 @@ class AgentMachine:
             return []
         self._state.goal_id = ''
         local = self.local_motion
-        if local is not None and result.goal_kind != 'DOOR_TRANSIT' and (
+        if local is not None and (
             result.status == 'SUCCEEDED' or result.status != 'ABORTED' or self.retry >= 1
         ):
             if result.status == 'SUCCEEDED' and result.goal_kind in ('PICKUP_NAV','DEPOSIT_NAV'):
@@ -248,18 +194,13 @@ class AgentMachine:
             else:
                 self.fail(result.reason or result.status)
             return []
-        if self.goal_kind == 'DOOR_TRANSIT':
-            self._state.run_state = 'TRANSIT_STOP'
-        elif self.command.kind == 'SEARCH_VIEWPOINT':
+        if self.command.kind == 'SEARCH_VIEWPOINT':
             self._state.run_state = 'SCAN_STOP'
         else:
             if self.goal_kind == 'PICKUP_NAV' and self.command.kind == 'APPROACH_PICKUP':
                 self._state.ready = True
             elif self.goal_kind == 'DEPOSIT_NAV' and self.command.kind == 'APPROACH_DEPOSIT':
                 self._state.deposited = True
-            elif self.goal_kind == 'EXIT_NAV' and self.command.kind == 'EXIT':
-                self._state.run_state = 'EXIT_STOP'
-                return []
             self._state.reply, self._state.run_state = 'SUCCEEDED', 'IDLE'
         return []
 
@@ -352,8 +293,8 @@ class AgentMachine:
             if health.stopped and health.motion_terminal:
                 self._state.run_state = 'PAUSED'
             return self.take_effects()
-        if self.guard and self.command:
-            self._monitor_region(health, now)
+        if self.command and self._state.run_state=='NAVIGATING':
+            self._monitor_path(health, now)
         if health.stopped and health.motion_terminal:
             if self._state.run_state == 'RETRY_STOP':
                 self._state.run_state = 'PLANNING'
@@ -361,41 +302,14 @@ class AgentMachine:
             elif self._state.run_state == 'SCAN_STOP':
                 self._state.run_state = 'SCANNING'
                 self.effects.append(Effect('SCAN', self.command.command_id))
-            elif self._state.run_state == 'TRANSIT_STOP' and not self._state.token:
-                self.transit_goal = None
-                self._plan()
-            elif self._state.run_state == 'EXIT_STOP' and not self._state.token:
-                self._state.exited = True
-                self._state.run_state, self._state.reply = 'IDLE', 'SUCCEEDED'
         return self.take_effects()
 
-    def _monitor_region(self, health, now=0.0):
-        from .region_guard import footprint_intersects
-        import math
-        if len(health.footprint)<3 or not all(len(p)==2 and all(math.isfinite(v) for v in p) for p in health.footprint):
-            self.stop('invalid footprint monitor')
+    def _monitor_path(self, health, now=0.0):
+        if health.path_valid and health.path:
+            self.path_acquired=True
+        elif not self.path_acquired and health.stopped and now-self.navigation_started_at < self.path_start_timeout:
+            error=motion_path_error(replace(health,path_valid=True),[health.pose])
+            if error:self.stop(error)
             return
-        if self._state.token and health.localization_valid:
-            polygon=self.guard.regions[self._state.resource_id]['polygon']
-            intersects=footprint_intersects(health.pose,health.footprint,polygon)
-            if intersects:
-                self._state.resource_status='ENTERED'
-            elif self._state.resource_status=='ENTERED' and health.stopped and self._state.run_state in ('EXIT_STOP','TRANSIT_STOP'):
-                self._state.resource_status='EXIT_CONFIRMED'
-        if self._state.run_state=='NAVIGATING':
-            if health.path_valid and health.path:
-                self.path_acquired = True
-            elif not self.path_acquired and health.stopped and now-self.navigation_started_at < self.path_start_timeout:
-                # Only inspect the stationary stopping envelope while awaiting the
-                # first executing path. Never substitute the preflight path.
-                decision=self.guard.check(health.pose,health.footprint,[health.pose],
-                    {self._state.resource_id:self._state.token} if self._state.token else {},
-                    replace(health,path_valid=True))
-                if decision.action!='ALLOW':
-                    self.stop('unsafe stationary envelope while awaiting executing path')
-                return
-            decision=self.guard.check(health.pose,health.footprint,health.path,
-                {self._state.resource_id:self._state.token} if self._state.token else {},health)
-            if decision.action!='ALLOW':
-                # A replanned path requires cancellation and physical stop before new permission.
-                self.stop('replanned path needs permit or boundary monitor failed')
+        error=motion_path_error(health,health.path)
+        if error:self.stop(error)

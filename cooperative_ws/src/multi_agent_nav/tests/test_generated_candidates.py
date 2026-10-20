@@ -41,12 +41,13 @@ def test_each_edge_faces_furniture_for_both_windings(generated_config):
             doc=yaml.safe_load(path.read_text());doc['furniture'][0]['polygon'].reverse()
             path.write_text(yaml.safe_dump(doc))
         catalog=GeneratedCandidates(generated_config)
-        positions={tuple(p['pose'][:2]) for p in catalog.points}
+        furniture=[p for p in catalog.points if p['furniture_id']]
+        positions={tuple(p['pose'][:2]) for p in furniture}
         assert positions=={(0.,-2.),(2.,0.),(0.,2.),(-2.,0.)}
-        for point in catalog.points:
+        for point in furniture:
             x,y,yaw=point['pose']
             assert x*math.cos(yaw)+y*math.sin(yaw)<-1.99
-        assert len({p['id'] for p in catalog.points})==4
+        assert len({p['id'] for p in furniture})==4
 
 
 def test_static_filter_rejects_unknown_occupied_bounds_and_scan_corner(generated_config):
@@ -65,9 +66,9 @@ def test_static_filter_rejects_unknown_occupied_bounds_and_scan_corner(generated
     doc['source_map'].update(yaml_sha256=info['yaml_sha256'],image_sha256=info['image_sha256'])
     path.write_text(yaml.safe_dump(doc))
     catalog=GeneratedCandidates(generated_config)
-    assert [p['pose'][:2] for p in catalog.points]==[[-2.,0.]]
+    assert [p['pose'][:2] for p in catalog.points if p['furniture_id']]==[[-2.,0.]]
     generated_config['robot_go2']['generated_candidates']['observation_distance']=10.
-    assert not GeneratedCandidates(generated_config).points
+    assert not any(p['furniture_id'] for p in GeneratedCandidates(generated_config).points)
 
 
 @pytest.mark.parametrize('fault',['distance','polygon','digest'])
@@ -141,7 +142,7 @@ def run_generated(config,tmp_path,mode='normal'):
     def stop():adapter.stop_motion('stop');adapter.advance(now[0]+1);return True
     try:
         outcome=explore(adapter,spin,config,FrameAdapter('fixture','1','lab_ref','',[0,0,0]),
-                        60.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0])
+                        600.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0])
     except Exception:
         if mode in ('invalid','late','cancel'):assert not adapter.calls
         if mode=='api':assert len(adapter.calls)==1 and adapter.scans==1
@@ -151,9 +152,11 @@ def run_generated(config,tmp_path,mode='normal'):
 
 def test_fake_select_observe_next_and_current_id_mapping(generated_config,tmp_path):
     adapter,events,requests,outcome=run_generated(generated_config,tmp_path)
-    assert outcome=='EXHAUSTED' and adapter.scans==4 and len(requests)==4
-    assert [(c[1].x,c[1].y) for c in adapter.calls]==[(0.,-2.),(2.,0.),(0.,2.),(-2.,0.)]
-    assert len({r['decision_id'] for r in requests})==4
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    points=GeneratedCandidates(generated_config).points
+    assert outcome=='EXHAUSTED' and adapter.scans==len(points) and len(requests)==len(points)
+    assert {(c[1].x,c[1].y) for c in adapter.calls}=={tuple(p['pose'][:2]) for p in points}
+    assert len({r['decision_id'] for r in requests})==len(points)
     assert requests[0]['task_id']==next(e['task_id'] for e in events if e['state']=='NAVIGATING')
     assert requests[1]['candidates'][0]['display_id']=='P1'
     assert requests[1]['candidates'][0]['id']!=requests[0]['candidates'][0]['id']
@@ -227,6 +230,8 @@ def test_candidate_api_sends_only_two_images_ids_and_history(monkeypatch,tmp_pat
     text=captured[1]['content'][0]['text']
     assert 'internal' not in text and 'pose' not in text and 'polygon' not in text
     assert json.loads(text)['allowed_candidate_ids']==['P1']
+    assert 'optional furniture' in json.loads(text)['images'][1]
+    assert '家具标注可以为空' in captured[0]['content']
 
 
 @pytest.mark.parametrize('raw',[
@@ -265,7 +270,8 @@ def test_repeated_geometry_disabled_furniture_and_map_change(generated_config):
     doc['furniture'].append(dict(doc['furniture'][0],id='disabled',enabled=False))
     path.write_text(yaml.safe_dump(doc))
     catalog=GeneratedCandidates(generated_config)
-    assert len(catalog.points)==4 and catalog.unchanged()
+    assert len([p for p in catalog.points if p['furniture_id']])==4 and catalog.unchanged()
+    assert len({p['id'] for p in catalog.points})==len(catalog.points)
     path.write_text(path.read_text()+'\n')
     assert not catalog.unchanged()
 
@@ -279,7 +285,8 @@ def test_cap_twelve_and_no_reselect_of_observed(generated_config,tmp_path):
             polygon=[[x-.4,y-.4],[x+.4,y-.4],[x+.4,y+.4],[x-.4,y+.4]]))
     path.write_text(yaml.safe_dump(doc))
     adapter,events,requests,outcome=run_generated(generated_config,tmp_path)
-    assert outcome=='EXHAUSTED' and adapter.scans==16
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    assert outcome=='EXHAUSTED' and adapter.scans==len(GeneratedCandidates(generated_config).points)
     assert len(requests[0]['candidates'])==12
     seen=set()
     for request in requests:
@@ -301,4 +308,5 @@ def test_offline_generated_entry_does_not_initialize_ros(monkeypatch,capsys,gene
     monkeypatch.setattr(go2_check,'run_ros',lambda *_:pytest.fail('offline initialized ROS'))
     assert go2_check.main(['--offline','--strategy','generated_candidates_vlm'])==0
     report=json.loads(capsys.readouterr().out)
-    assert len(report['semantic_search']['points'])==4 and not report['motion_sent']
+    assert sum(bool(p['furniture_id']) for p in report['semantic_search']['points'])==4
+    assert any(not p['furniture_id'] for p in report['semantic_search']['points']) and not report['motion_sent']

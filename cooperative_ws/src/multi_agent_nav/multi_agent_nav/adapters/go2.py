@@ -141,13 +141,14 @@ class ABCClient(OpenAICompatibleVLMClient):
         robot_label='Ranger' if snapshot.get('robot_id')=='ranger' else 'Go2'
         context.update(allowed_candidate_ids=allowed,
             legend=f'Blue circle/arrow: {robot_label}. Orange P IDs: selectable. Gray: observed, cannot select.',
-            images=['occupancy map','furniture semantic map'])
+            images=['occupancy map','exploration map with optional furniture annotations'])
         content=[dict(type='text',text=json.dumps(context,ensure_ascii=False))]
         for path in snapshot['images']:
             data=base64.b64encode(Path(path).read_bytes()).decode('ascii')
             content.append(dict(type='image_url',image_url=dict(url='data:image/png;base64,'+data)))
         messages=[dict(role='system',content=(
-            f'根据搜索目标、家具语义、蓝色{robot_label}位置和已观察记录，选择图中下一橙色观察点。'
+            f'根据搜索目标、地图自由空间、可选家具语义、蓝色{robot_label}位置和已观察记录，选择图中下一橙色观察点。'
+            '家具标注可以为空；空地观察点同样可选，不要求在家具周围探索。'
             '仅允许本轮 allowed_candidate_ids；灰色已观察点不可选。'
             '历史P编号仅对应历史决策，不代表本轮同名点。'
             '只返回JSON，字段恰为candidate_id和reason。不要生成坐标，不判断运动安全，不宣布目标不存在。'

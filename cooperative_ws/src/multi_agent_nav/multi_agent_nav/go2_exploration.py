@@ -1,11 +1,10 @@
-"""Serial local exploration using the existing Go2 adapter and resource guard."""
+"""Serial local exploration using the existing adapter and motion checks."""
 from dataclasses import asdict, replace
 import math
 import time
 import uuid
 from .config import valid_numbers, go2_local_gates
-from .models import Pose2D
-from .region_guard import RegionGuard
+from .models import Pose2D, motion_path_error
 from vlm_nav.arrival import target_distance, stop_radius, arrival_decision, load_contract
 from .semantic_search import FixedViewpoints, SemanticFurniture, SelectionState, load_catalog
 from .generated_candidates import GeneratedCandidates, GeneratedCandidatesVLM, render_selection
@@ -78,11 +77,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                   stop, before_motion, clock=time.monotonic, *, robot_id='go2',
                   target_id='A', success_radius=None, require_navigation_success=False,
                   navigation=None, stopping=None, on_observations=None,
-                  initial_observation=None, task_id=None, parent_command_id=None,
-                  guard=None, permits=None):
+                  initial_observation=None, task_id=None, parent_command_id=None):
     robot_config = config[f'robot_{robot_id}']
-    permits = permits or (lambda: {})
-    guard = guard or RegionGuard(config['scene']['resources'], robot_config['stop_margin'])
     task_id = task_id or robot_id + '_explore/' + uuid.uuid4().hex
     current = {}
     strategy = robot_config.get('exploration_strategy', 'fixed_viewpoints')
@@ -99,7 +95,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
     decision_id = None
     if generated and geometry is not None:
         record(dict(state='CANDIDATE_GEOMETRY',task_id=state.task_id,candidates=points,
-                    rotation_radius=geometry.radius,semantic_yaml=str(geometry.semantic_path)))
+                    rotation_radius=geometry.radius,semantic_yaml=str(geometry.semantic_path) if geometry.semantic_path else None))
 
     def catalog_unchanged():
         return geometry.unchanged() if generated else load_catalog(config) == catalog
@@ -113,10 +109,6 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             history.append(dict(decision_id=decision_id,candidate_id=current['display_id'],
                 furniture_id=current['furniture_id'],result=status))
         emit('OBSERVATION_RECORD', observation_status=status, records=state.records.copy())
-
-    def path_allowed(decision):
-        return decision.action=='ALLOW' or (navigation is not None and decision.action=='REQUEST'
-            and (decision.resource_id!='basket' or initial_observation is not None))
 
     def health_check(path=None, navigating=False, began=0., acquired=False):
         health = adapter.get_health()
@@ -140,9 +132,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         else:
             checked = replace(health, path_valid=True)
             checked_path = path if path is not None else [health.pose]
-        decision = guard.check(health.pose, health.footprint, checked_path, permits(), checked)
-        if decision.action != 'ALLOW':
-            raise ExplorationStopped(decision.reason or 'protected resource requires coordinator permit')
+        error=motion_path_error(checked,checked_path)
+        if error:raise ExplorationStopped(error)
         return health, acquired
 
     def stopped():
@@ -213,9 +204,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if not reasons:
                 if not adapter.approach_candidate_free(goal) or not adapter.approach_candidate_free(endpoint):
                     reasons.append('requested goal or path endpoint footprint rejected')
-                if not path_allowed(guard.check(health.pose, health.footprint, result.path, permits(),
-                               replace(health, path_valid=True))):
-                    reasons.append('path resource guard rejected')
+                if motion_path_error(replace(health,path_valid=True),result.path):
+                    reasons.append('invalid planned path or footprint')
             accepted = not reasons
             selected.clear()
             selected.update(distance_frame='map', robot_reference='base_link',
@@ -347,7 +337,9 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         epoch = getattr(adapter, 'selection_epoch', 0)
         if not catalog_unchanged():raise ExplorationStopped('selection map assets changed')
         candidates = []
-        for candidate in points:
+        health, _ = health_check()
+        ordered=sorted(points,key=lambda p:(math.hypot(p['pose'][0]-health.pose.x,p['pose'][1]-health.pose.y),p['id'])) if generated else points
+        for candidate in ordered:
             if candidate['id'] not in state.eligible(clock()):
                 continue
             health, _ = health_check()
@@ -368,9 +360,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             result = future.result()
             health, _ = health_check()
             if (not result.reachable or not result.path or generated and not parking_free(goal) or
-                    not path_allowed(guard.check(health.pose, health.footprint, result.path, permits(),
-                                replace(health, path_valid=True)))):
-                state.update(candidate['id'], 'navigation_failed', clock(), reason='no permitted path')
+                    motion_path_error(replace(health,path_valid=True),result.path)):
+                state.update(candidate['id'], 'navigation_failed', clock(), reason='no valid path')
                 continue
             length = sum(math.hypot(a.x-b.x, a.y-b.y) for a,b in zip(result.path, result.path[1:]))
             candidates.append(dict(candidate, path_length=length))
@@ -470,9 +461,9 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if not result.path:
             raise ExplorationStopped('planner returned empty path')
         health, _ = health_check()
-        decision = guard.check(health.pose, health.footprint, result.path, permits(), replace(health, path_valid=True))
-        if not path_allowed(decision):
-            emit('RESOURCE_BLOCKED', reason=decision.reason or 'no protected resource permit')
+        error=motion_path_error(replace(health,path_valid=True),result.path)
+        if error:
+            emit('PATH_REJECTED', reason=error)
             if semantic:update('navigation_failed')
             continue
         if not health.stopped or not health.motion_terminal:

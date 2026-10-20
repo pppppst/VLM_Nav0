@@ -10,6 +10,7 @@ def machine():
     agent = AgentMachine(ctx, FrameAdapter('g', 'v', 'lab_ref', 'a', (0, 0, 0)))
     agent.accept(Command(task_id='t', recipient_id='go2', alignment_id='a', action='SYNC'), 0)
     agent.peer_received = 0
+    agent.health=FakeAdapter('go2').get_health()
     return agent
 
 def command(kind='APPROACH_PICKUP', sequence=1):

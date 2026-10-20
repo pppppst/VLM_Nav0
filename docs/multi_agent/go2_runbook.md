@@ -1,9 +1,13 @@
 # Go2 cooperative tasks
 
+> 最新行为以文末2026-10-20独立C/取消保护区章节为准；此前资源许可与顺序退出记录属于历史版本。
+
+
 Repository: `/home/isee-pst/unitree_ros2/VLM_Nav`.
 ROS: Humble. New sources: `cooperative_ws/src` (root `vlm_nav` remains a separate package).
 Current state, installation location and unresolved work: [session_handoff.md](session_handoff.md).
 This runbook lists commands, not authorization to start hardware or a new experiment.
+2026-10-20更新：家具标签已可选，空地图从已知自由区域生成候选；当前能力与新安装见[空地候选节](#2026-10-20-空地候选与可选家具标注)，旧记录中的家具必需条件不再适用于新版generated_candidates_vlm。
 2026-10-18 固定地图改用 `maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml`，
 472×578、分辨率0.05m、origin=[-8.09,-20.8,0]。源码任务配置及一键冷启动入口已同步；
 沿用 `--config-dir "$GO2_EXPLORE_CONFIG"` 下次启动读取，无需重建，已有进程不会热切图。
@@ -2696,3 +2700,165 @@ AB→READY→本机C→Go2整机退出→Ranger，以及门通行、篮子顺序
 证据：`build/go2-local-execution-20261020/installed-related.xml`、`installed-audit.json`；
 源码及构建过程记录在`build/local-execution-20261020/`。两处build证据不受Git保护，不清理。
 没有运行ROS初始化、真实模型、真机、桥接、额外采集或Ranger连接；这些结果不能解锁现场门槛。
+
+## 2026-10-20 空地候选与可选家具标注
+
+用户确认当前新图故意不录入家具标签。`generated_candidates_vlm`现以已知自由区域网格为基础，
+有合法家具标注时额外合并原家具观察点；单机和协同复用同一生成器，不新增模式配置或协议。
+标注未配置/文件不存在/合法空家具均允许，不自动创建标注文件；已有文件损坏、摘要或身份不符仍拒绝。
+标注出现/删除/变化或地图/图像变化使当前选择失效。
+
+网格间距为max(1m,2×完整旋转半径)，向上取整到地图分辨率；从半步格子中心采样，朝向地图X轴。
+沿用完整旋转圆/地图边界/障碍未知检查，且避开家具占据区；空地点不冒充家具，内部furniture_id为空。
+每轮按距当前机器人位置的距离与稳定ID排序，经过原实时全局costmap/路径/资源检查，最多提供12点给VLM。
+已观察点排除与失败冷却不变。双图保留，无标签时家具图层为空，提示词明确空地点可选。
+
+0.81m单机/1.00m协同验收、扫描/补偿/重试/总时限、C本机缓存、门/篮子许可及顺序退出均未改变。
+固定点和旧semantic_furniture策略保留。家具可选不代表basket/门保护区、退出点或真实验证项可省略；
+完整live gates目前仍关闭，Ranger实际接入仍待完成。本轮不启动ROS/桥/SSH/真机/API/采集，不自动切换默认环境。
+
+### 本轮独立构建与安装检查
+
+Go2控制电脑独立Bash，仓库目录；自动退出，不启动节点。复现选未占用新输出，避免覆盖旧现场安装。
+依赖复用原消息与根包，只重建变化的multi_agent_nav；构建仍发现根目录和cooperative_ws/src两处。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-manual-takeover-20261015/install/local_setup.bash"
+export GO2_FREE_REPO="$PWD" GO2_FREE_OUTPUT="$PWD/build/go2-free-space-20261020"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1
+colcon --log-base "$GO2_FREE_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select multi_agent_nav \
+  --build-base "$GO2_FREE_OUTPUT/build" --install-base "$GO2_FREE_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建退出0、multi_agent_nav成功后才继续；失败先处理构建，不切换运行进程。
+同一终端最后source本轮安装，在/tmp核对实际模块摘要并计算当前地图候选；自动退出，无ROS初始化。
+
+```bash
+source "$GO2_FREE_OUTPUT/install/local_setup.bash"
+cd /tmp
+/home/isee-pst/venv/co-nav-real/bin/python - <<'PY'
+import hashlib,importlib,os
+from pathlib import Path
+from ament_index_python.packages import get_package_prefix
+from multi_agent_nav.config import load_config,live_gates
+from multi_agent_nav.generated_candidates import GeneratedCandidates
+repo=Path(os.environ['GO2_FREE_REPO']);prefix=Path(get_package_prefix('multi_agent_nav'))
+assert prefix==Path(os.environ['GO2_FREE_OUTPUT'])/'install/multi_agent_nav'
+for name in ('generated_candidates','go2_exploration','go2_check','adapters.go2'):
+    installed=Path(importlib.import_module('multi_agent_nav.'+name).__file__).resolve()
+    source=repo/'cooperative_ws/src/multi_agent_nav/multi_agent_nav'/(name.replace('.','/')+'.py')
+    assert installed.is_relative_to(prefix)
+    assert hashlib.sha256(installed.read_bytes()).digest()==hashlib.sha256(source.read_bytes()).digest()
+config=load_config(str(repo/'cooperative_ws/src/multi_agent_nav/config'))
+catalog=GeneratedCandidates(config)
+assert catalog.points and catalog.unchanged()
+assert live_gates(config)
+print('FREE_SPACE_INSTALL=OK; candidates=',len(catalog.points),'furniture=',len(catalog.furniture))
+PY
+```
+
+预期FREE_SPACE_INSTALL=OK，当前地图无标签也有非零候选；完整live gates仍非空。
+静态候选数不等于实时可达数或完整搜索覆盖。失败先查安装/地图，不启真机补证。
+同一终端随后进行相关无节点回归，自动退出：
+
+```bash
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest -p no:cacheprovider -q \
+  "$GO2_FREE_REPO/cooperative_ws/src/multi_agent_nav/tests/"{test_free_space_candidates.py,test_execution_core.py,test_local_tasks.py,test_local_c.py,test_runner.py,test_protocol.py,test_agent.py,test_coordinator.py,test_resources.py,test_safety_regressions.py,test_mission_mock.py,test_go2_exploration.py,test_generated_candidates.py,test_approach_costmap.py,test_go2_scan_evidence.py,test_go2_adapter.py,test_semantic_search.py} \
+  -k 'not observation_only_node' --junitxml="$GO2_FREE_OUTPUT/evidence/installed-related.xml" --tb=short
+```
+
+预期全部通过，排除的observer测试会初始化ROS；本集合不包含ROS smoke/native节点或现场运动锁测试。
+构建/测试日志和基线在`build/go2-free-space-20261020/evidence/`，build证据不受Git保护，不清理。
+`CoVLM_env.bash`和`start_go2_vlm.sh`默认仍选旧安装，不会自动获得新能力；使用新包须按上述顺序显式加载，
+原一键脚本会重载旧环境，不应在新环境中调用它来验证本轮改动。
+
+本轮实际：独立安装核对FREE_SPACE_INSTALL=OK，当前472×578新图在无标签时生成518个静态候选，
+源码与安装4个变化模块摘要一致，7个源/安装配置与HEAD逐字节相同；rclpy未初始化。
+实际离线单机检查退出0、single_robot_experiment_gates为空，完整live_gates仍非空，motion_sent=false。
+源码及安装版相关集合各320项通过（既有304＋新增16），1项ROS observer排除。
+此前较窄的改前核心基线276项通过；最终集合另加入旧semantic_furniture回归28项。
+证据为evidence/baseline.xml、red.log、source-related.xml、installed-related.xml、installed-audit.json。
+无家具生成已可用，不代表Ranger实机/真实协同验收通过，也没有切换正在运行的进程。
+
+
+## 2026-10-20 取消保护区与独立C执行（最新）
+
+本节覆盖前文仍要求门/basket保护区、资源许可、固定EXIT和Go2先退出的描述。
+双方A/B验收后READY；双方READY后各自使用自己的C线索，否则各自继续找。
+一方找到C即可独立接近，不等对方缓存C；双方可同时执行。
+两端deposited、真实停稳且当前命令已匹配结束才DONE。结束停在本机C接近位置，不安排固定退出、不置exited。
+旧资源字段保留空值兼容消息，EXIT/GRANT_RESOURCE明确拒绝；旧资源多边形/stop_margin/退出点不再成为任务或独立检查入口的门槛。
+常规costmap、完整footprint、路径新鲜度/有效性、真实停稳、取消与迟到结果隔离继续执行。
+取消任务层互斥后，C处不再保证两机先后通行；各端运动依赖自身Nav2避障。
+单机0.81m/协同1.00m、候选预算、8×45°及其他参数不变；不更改配置数值、消息或桥接路由。
+
+### 本轮独立构建
+
+Go2控制电脑独立Bash、仓库目录；自动退出，不启动ROS。复现请选未占用的新输出，不覆盖旧安装。
+复用原消息/根包，只重建multi_agent_nav：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-manual-takeover-20261015/install/local_setup.bash"
+export GO2_INDEPENDENT_REPO="$PWD" GO2_INDEPENDENT_OUTPUT="$PWD/build/go2-independent-c-20261020"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1
+colcon --log-base "$GO2_INDEPENDENT_OUTPUT/log" build \
+ --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select multi_agent_nav \
+ --build-base "$GO2_INDEPENDENT_OUTPUT/build" --install-base "$GO2_INDEPENDENT_OUTPUT/install" \
+ --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE=/usr/bin/python3 \
+ -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建退出0且包成功后才继续；失败处理构建，不进入真机。最后加载本轮安装，在/tmp检查并回归：
+
+```bash
+source "$GO2_INDEPENDENT_OUTPUT/install/local_setup.bash"
+cd /tmp
+/home/isee-pst/venv/co-nav-real/bin/python - <<'PY'
+import hashlib,importlib,os
+from pathlib import Path
+from ament_index_python.packages import get_package_prefix
+from multi_agent_nav.config import load_config,live_gates
+repo=Path(os.environ['GO2_INDEPENDENT_REPO'])
+prefix=Path(get_package_prefix('multi_agent_nav'))
+assert prefix==Path(os.environ['GO2_INDEPENDENT_OUTPUT'])/'install/multi_agent_nav'
+for name in ('models','agent','config','coordinator','coordinator_node','planner','mock','runner','go2_exploration','go2_check'):
+    actual=Path(importlib.import_module('multi_agent_nav.'+name).__file__).resolve()
+    source=repo/'cooperative_ws/src/multi_agent_nav/multi_agent_nav'/(name+'.py')
+    assert actual.is_relative_to(prefix)
+    assert hashlib.sha256(actual.read_bytes()).digest()==hashlib.sha256(source.read_bytes()).digest()
+config=load_config(str(repo/'cooperative_ws/src/multi_agent_nav/config'))
+assert config['scene']['share_c_coordinates'] is False
+assert live_gates(config)
+print('INDEPENDENT_C_INSTALL=OK; live gates still closed')
+PY
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest -p no:cacheprovider -q \
+  "$GO2_INDEPENDENT_REPO/cooperative_ws/src/multi_agent_nav/tests/"{test_independent_c.py,test_free_space_candidates.py,test_execution_core.py,test_local_tasks.py,test_local_c.py,test_runner.py,test_protocol.py,test_agent.py,test_coordinator.py,test_resources.py,test_safety_regressions.py,test_mission_mock.py,test_go2_exploration.py,test_generated_candidates.py,test_approach_costmap.py,test_go2_scan_evidence.py,test_go2_adapter.py,test_semantic_search.py,test_field_preparation.py} \
+  "$GO2_INDEPENDENT_REPO/test/test_check_multi_agent_comm.py" \
+  -k 'not observation_only_node and not readonly_observer' \
+  --junitxml="$GO2_INDEPENDENT_OUTPUT/evidence/installed-related.xml" --tb=short
+```
+
+预期安装摘要一致、回归全部通过；两个排除项会真实初始化ROS。不包含全仓ROS smoke/native节点和运动锁现场测试。
+源码/构建/安装证据保留在build/go2-independent-c-20261020/evidence，不清理。
+默认CoVLM_env/一键入口仍未切换，旧free-space安装不含本次取消约束；必须显式最后source本轮新输出。
+本地scene.enabled与真实vision/path/peer验证项仍未满足；不因此解锁live。Ranger仅fake，实际adapter待其控制电脑接入。
+
+本轮实测：源码与安装相关集合各461项通过（既有452＋新增9），2项ROS observer排除；
+12模块安装摘要一致、7配置与HEAD一致，当前无家具地图518静态候选，单机离线门槛为空，完整live仍关闭，rclpy未初始化。
+新增为6项独立C、1项DONE停稳/当前命令、2项独立检查旧区域/缺区域回归；原区域/顺序退出断言按新语义更新。
+默认环境和Ranger硬件均未切换，未执行现场验证。

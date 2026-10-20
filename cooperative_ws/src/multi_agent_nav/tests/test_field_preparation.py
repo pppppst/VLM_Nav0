@@ -43,25 +43,25 @@ def test_live_gates_reject_incomplete_scene_and_unverified_costmap():
     c['scene']['resources']={'door':{'polygon':[[0,0],[1,0],[1,1]]}}
     c['scene']['exit_points']={'go2':[2,2,0]}
     errors=live_gates(c)
-    assert any('basket' in e for e in errors)
-    assert any('ranger' in e and ('exit' in e or 'viewpoint' in e) for e in errors)
+    assert not any('basket' in e or 'exit' in e for e in errors)
+    assert any('vision_validated' in e for e in errors)
     assert any('costmap_source_verified' in e for e in errors)
 
-def test_empty_resources_allow_independent_exploration_but_not_cooperative_live():
+def test_empty_resources_do_not_gate_single_or_cooperative_execution():
     from multi_agent_nav.go2_exploration import exploration_gates
     c=load_config()
     c['scene']['resources']={}
     c['robot_go2'].update(stop_margin=.1,costmap_source_verified=True,
         camera_calibrated=True,path_topic='/fixture/path',path_source_verified=True)
     assert exploration_gates(c)==[]
-    assert any('basket' in e for e in live_gates(c))
+    assert not any('basket' in e for e in live_gates(c))
     c['robot_go2']['stop_margin']=None
-    assert any('stop margin' in e for e in exploration_gates(c))
+    assert not any('stop margin' in e for e in exploration_gates(c))
 
 @pytest.mark.parametrize('resources',[None,[],{'door':{'polygon':[[0,0],[1,0]]}}])
-def test_independent_motion_rejects_missing_or_malformed_resources(resources):
+def test_independent_motion_ignores_retired_resource_configuration(resources):
     c=load_config();c['scene']['resources']=resources
-    assert any('resource' in e for e in go2_local_gates(c,motion=True))
+    assert not any('resource' in e for e in go2_local_gates(c,motion=True))
 
 def test_actual_costmap_vetoes_static_free_map_and_bad_updates():
     a=adapter()
@@ -327,7 +327,8 @@ def test_full_gates_only_read_the_current_pcs_map_files():
     ('navigate',[],True,'rgbd_warmup',0),
     ('navigate',[],True,'rgbd_unavailable',1),
     ('navigate',[],True,'rgbd_deadline',1),
-    ('navigate',[],True,'no_path_stopped',1)])
+    ('navigate',[],True,'no_path_stopped',1),
+    ('navigate',[],True,'old_regions',0),('navigate',[],True,'no_regions',0)])
 def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,tmp_path,capsys,action,owners,terminal,change,expected):
     """Exercise entry dispatch/cleanup with ROS initialization stubbed, never a live domain participant."""
     import json
@@ -352,6 +353,10 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         costmap_source_verified=True,camera_calibrated=True,stop_margin=.1,
         path_topic='/unit/path',path_source_verified=False)
     c['scene']['resources']={'basket':{'polygon':[[100,100],[102,100],[102,102],[100,102]]}}
+    if change=='old_regions':
+        c['scene']['resources']={'basket':{'polygon':[[-10,-10],[10,-10],[10,10],[-10,10]]}}
+    if change=='no_regions':
+        c['scene'].pop('resources');c['robot_go2'].pop('stop_margin')
     f=Future();f.set_result(S(values=[S(string_value=str(path))]))
     def rgbd_ready(t):
         if change=='rgbd_blink':return not (5.<=t<5.5)
@@ -366,6 +371,7 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         def __init__(self,*args,**kwargs):
             super().__init__('go2',delay=20. if change in ('path_timeout','no_path_moving','no_path_stopped') else .5)
             self.costmap=None;self.planned=False;self.nav_started=None
+            self.vision.poll=lambda:None
         def costmap_transform(self):return None if self.planned and change=='costmap' else Pose2D()
         def costmap_candidate_free(self,candidate):return True
         def tick(self):
@@ -435,14 +441,14 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     if change=='evidence_error':
         assert report['evidence_write_failed'] and report['stop_confirmed']
         assert 'stop' in calls and ('close',False) in calls
-    elif action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error','path_finished','path_timeout','no_path_moving','no_path_stopped','rgbd_warmup'):
+    elif action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error','path_finished','path_timeout','no_path_moving','no_path_stopped','rgbd_warmup','old_regions','no_regions'):
         assert 'navigate' not in calls and 'stop' not in calls and not report['motion_sent']
     else:
         assert 'navigate' in calls and 'stop' in calls
         assert report['stop_confirmed']==(change not in ('cleanup','stop_error'))
         if change in ('path_timeout','no_path_moving','no_path_stopped'):
             assert 'cancel' in calls
-            assert report['result']=='executing path/resource guard failed'
+            assert report['result']=='executing path check failed'
             if change=='path_timeout':assert now[0]-2.>5.
             if change=='no_path_stopped':assert now[0]-2.>=1.
     if change=='rgbd_warmup':assert now[0]>=5.
@@ -464,7 +470,7 @@ def test_offline_single_robot_config_does_not_require_cooperative_certification(
 def test_rejected_motion_keeps_evidence_without_exploration_viewpoints(action,monkeypatch,tmp_path,capsys):
     import json
     import multi_agent_nav.go2_check as check
-    config=load_config();config['robot_go2']['stop_margin']=None
+    config=load_config();config['robot_go2']['footprint']=[]
     monkeypatch.setattr(check,'load_config',lambda _:config)
     output=tmp_path/'evidence'
     args=['--action',action,'--allow-motion','--output-dir',str(output)]

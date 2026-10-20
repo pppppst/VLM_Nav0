@@ -46,21 +46,29 @@ class GeneratedCandidates:
             raise ValueError('positive finite observation_distance required')
         self.radius=rotation_radius(robot['footprint'],robot.get('footprint_padding',0.))
         self.map_path=Path(robot['map_path']).resolve()
-        self.semantic_path=Path(options['semantic_yaml']).resolve()
+        self.semantic_path=Path(options['semantic_yaml']).resolve() if options.get('semantic_yaml') else None
         info=map_file_info(self.map_path)
         identity=config['alignment']['robots'][robot_id]
         if (info['map_digest']!=robot['map_digest'] or identity['map_version']!='sha256:'+info['map_digest']):
             raise ValueError('generated map identity mismatch')
         source=yaml.safe_load(self.map_path.read_text())
-        semantic=yaml.safe_load(self.semantic_path.read_text())
-        if (not isinstance(semantic,dict) or semantic.get('schema_version')!=1 or semantic.get('source_robot')!=robot_id
-                or semantic.get('frame_id')!='map' or semantic.get('units')!='meters'):
-            raise ValueError('invalid semantic map frame/schema')
-        for key in ('yaml_sha256','image_sha256'):
-            if semantic['source_map'][key]!=info[key]:raise ValueError('semantic source digest mismatch')
-        for key,other in (('yaml','yaml_path'),('image','image_path')):
-            if Path(semantic['source_map'][key]).resolve()!=Path(info[other]):
-                raise ValueError('semantic source path mismatch')
+        semantic_bytes=None
+        if self.semantic_path is not None:
+            try:semantic_bytes=self.semantic_path.read_bytes()
+            except FileNotFoundError:pass
+        self.furniture=[]
+        if semantic_bytes is not None:
+            try:semantic=yaml.safe_load(semantic_bytes)
+            except yaml.YAMLError as error:raise ValueError('invalid semantic YAML') from error
+            if (not isinstance(semantic,dict) or semantic.get('schema_version')!=1 or semantic.get('source_robot')!=robot_id
+                    or semantic.get('frame_id')!='map' or semantic.get('units')!='meters'):
+                raise ValueError('invalid semantic map frame/schema')
+            for key in ('yaml_sha256','image_sha256'):
+                if semantic['source_map'][key]!=info[key]:raise ValueError('semantic source digest mismatch')
+            for key,other in (('yaml','yaml_path'),('image','image_path')):
+                if Path(semantic['source_map'][key]).resolve()!=Path(info[other]):
+                    raise ValueError('semantic source path mismatch')
+            self.furniture=semantic['furniture']
         if (source.get('mode','trinary')!='trinary' or source.get('negate') not in (0,1)
                 or not valid_numbers(source.get('origin'),3)
                 or not valid_numbers([source.get('resolution')],1) or source['resolution']<=0
@@ -74,7 +82,6 @@ class GeneratedCandidates:
         self.raw=np.flipud(np.where(occupancy<source['free_thresh'],0,
                                    np.where(occupancy>source['occupied_thresh'],254,255))).copy()
         self.source=dict(source,image=info['image_path'],width=pixels.shape[1],height=pixels.shape[0])
-        self.furniture=semantic['furniture']
         if not isinstance(self.furniture,list):raise ValueError('furniture list required')
         self.points=[];ids=set()
         for item in self.furniture:
@@ -107,11 +114,30 @@ class GeneratedCandidates:
                 if any(math.hypot(x-p['pose'][0],y-p['pose'][1])<source['resolution'] for p in self.points):continue
                 self.points.append(dict(id=f'{fid}/edge_{index}',furniture_id=fid,
                                         pose=[x,y,math.atan2(-ny,-nx)],side=index))
-        self.digests={path:hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in (self.map_path,Path(info['image_path']),self.semantic_path)}
+        resolution=source['resolution']
+        step=math.ceil(max(1.,2*self.radius)/resolution)
+        spacing=step*resolution
+        ox,oy,yaw=source['origin'];c,s=math.cos(yaw),math.sin(yaw)
+        furniture_points=list(self.points)
+        for row in range(step//2,self.raw.shape[0],step):
+            for col in range(step//2,self.raw.shape[1],step):
+                mx,my=(col+.5)*resolution,(row+.5)*resolution
+                if not circle_free(self.raw,mx,my,self.radius,resolution,lambda a:a>=253):continue
+                x,y=ox+c*mx-s*my,oy+s*mx+c*my
+                if any(path_intersects([Pose2D(x,y)],f['polygon'],self.radius) for f in self.furniture):continue
+                if any(math.hypot(x-p['pose'][0],y-p['pose'][1])<spacing/2 for p in furniture_points):continue
+                self.points.append(dict(id=f'free/{row}/{col}',furniture_id='',pose=[x,y,yaw]))
+        self.digests={self.map_path:info['yaml_sha256'],Path(info['image_path']):info['image_sha256']}
+        if self.semantic_path is not None:
+            self.digests[self.semantic_path]=hashlib.sha256(semantic_bytes).hexdigest() if semantic_bytes is not None else None
 
     def unchanged(self):
-        return all(hashlib.sha256(path.read_bytes()).hexdigest()==digest for path,digest in self.digests.items())
+        for path,digest in self.digests.items():
+            try:actual=hashlib.sha256(path.read_bytes()).hexdigest()
+            except FileNotFoundError:actual=None
+            except OSError:return False
+            if actual!=digest:return False
+        return True
 
     def map_xy(self,x,y):
         ox,oy,yaw=self.source['origin'];c,s=math.cos(yaw),math.sin(yaw)

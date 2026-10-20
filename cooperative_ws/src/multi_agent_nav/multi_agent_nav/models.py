@@ -138,6 +138,16 @@ class Health:
     motion_terminal: bool = True
     reason: str = ''
 
+def motion_path_error(health, path):
+    if not health.localization_valid or not health.pose.valid or not health.path_valid or not path or any(not p.valid for p in path):
+        return 'invalid pose or executing path'
+    footprint=health.footprint
+    if not isinstance(footprint,(list,tuple)) or len(footprint)<3 or any(
+        not isinstance(p,(list,tuple)) or len(p)!=2 or any(not isinstance(v,(int,float)) or not math.isfinite(v) for v in p)
+        for p in footprint):
+        return 'invalid footprint'
+    return ''
+
 @dataclass
 class PathResult:
     reachable: bool
@@ -218,14 +228,14 @@ def validate_command(command, context):
     for name in ('task_id', 'common_frame_id', 'alignment_id', 'simulation'):
         if getattr(command, name) != getattr(context, name):
             return CommandReply(False, f'{name} mismatch')
-    if command.action not in ('EXECUTE', 'SYNC', 'SYNC_LOCAL_C', 'PAUSE', 'CANCEL', 'GRANT_RESOURCE'):
+    if command.action not in ('EXECUTE', 'SYNC', 'SYNC_LOCAL_C', 'PAUSE', 'CANCEL'):
         return CommandReply(False, 'unknown action')
     if command.action in ('SYNC', 'SYNC_LOCAL_C') and (
         (command.action == 'SYNC') != context.share_c_coordinates
     ):
         return CommandReply(False, 'C sharing policy mismatch')
     if command.action == 'EXECUTE':
-        if command.kind not in KINDS or command.phase not in PHASES:
+        if command.kind not in KINDS or command.kind=='EXIT' or command.phase not in PHASES:
             return CommandReply(False, 'unknown kind/phase')
         local_intent = not context.share_c_coordinates
         if local_intent:

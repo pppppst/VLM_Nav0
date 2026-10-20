@@ -13,21 +13,17 @@ class RulePlanner:
             if robot in snapshot.commands or not state.stopped:
                 continue
             if snapshot.phase == 'DEPOSIT':
-                first = snapshot.states['go2']
-                if robot == 'ranger' and not first.exited:
-                    continue
-                if state.exited:
-                    continue
                 if state.deposited:
-                    actions.append(PlannedAction(robot, 'EXIT', goal=None if local else Pose2D(*snapshot.scene['exit_points'][robot]),
-                        resource_id=state.resource_id, token=state.token, parent_command_id=state.permit_command_id))
+                    continue
+                if local and robot not in snapshot.local_c:
+                    actions.append(PlannedAction(robot,'SEARCH_VIEWPOINT',target_id='C'))
                 else:
                     local_c = not snapshot.scene.get('share_c_coordinates', True)
                     obs_id = snapshot.local_c[robot] if local_c else snapshot.scene['bound_c']
                     obs = snapshot.observations[obs_id]
                     if (robot, obs_id) not in snapshot.rejected:
                         actions.append(PlannedAction(robot, 'APPROACH_DEPOSIT', target_id='C',
-                            observation_id=obs_id, goal=None if local_c else obs.common_position, resource_id='basket'))
+                            observation_id=obs_id, goal=None if local_c else obs.common_position))
                 continue
             target = {'go2':'A','ranger':'B'}[robot] if snapshot.phase == 'SEARCH_AB' else 'C'
             if snapshot.phase == 'SEARCH_AB' and state.ready:

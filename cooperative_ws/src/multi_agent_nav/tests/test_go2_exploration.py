@@ -71,7 +71,7 @@ def test_explore_requires_explicit_motion_and_new_output_directory(tmp_path):
 def test_config_rejection_is_recorded_without_acquiring_motion_lock(monkeypatch,tmp_path):
     import multi_agent_nav.go2_check as check
     from multi_agent_nav.config import load_config
-    invalid=load_config();invalid['robot_go2']['stop_margin']=None
+    invalid=load_config();invalid['robot_go2']['footprint']=[]
     invalid['scene']['viewpoints']['go2']=[dict(id='fixture',pose=[1.,0.,0.])]
     monkeypatch.setattr(check,'load_config',lambda *args:invalid)
     def forbidden():
@@ -81,7 +81,7 @@ def test_config_rejection_is_recorded_without_acquiring_motion_lock(monkeypatch,
     assert check.main(['--action','explore','--allow-motion','--output-dir',str(output)]) == 1
     row=json.loads((output/'events.jsonl').read_text().splitlines()[0])
     assert row['state']=='REJECTED' and row['motion_sent'] is False
-    assert any('stop margin' in reason for reason in row['reasons'])
+    assert any('footprint' in reason for reason in row['reasons'])
     assert json.loads((output/'result.json').read_text())['motion_sent'] is False
     assert check.main(['--action','explore','--allow-motion','--output-dir',str(output)]) == 1
     assert len((output/'events.jsonl').read_text().splitlines()) == 1

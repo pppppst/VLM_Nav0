@@ -9,7 +9,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from .config import load_config,live_gates,go2_local_gates,map_file_info
-from .models import Pose2D
+from .models import Pose2D,motion_path_error
 
 MOTION=('navigate','scan','explore')
 MOTION_LOCK='/tmp/go2-coop-acceptance-motion.lock'
@@ -92,7 +92,7 @@ def config_report(config,map_yaml=None):
         from .generated_candidates import GeneratedCandidates
         try:
             geometry=GeneratedCandidates(config)
-            semantic_report=dict(points=geometry.points, semantic_yaml=str(geometry.semantic_path),
+            semantic_report=dict(points=geometry.points, semantic_yaml=str(geometry.semantic_path) if geometry.semantic_path else None,
                                  rotation_radius=geometry.radius, max_candidates_per_request=12)
         except (OSError, KeyError, TypeError, ValueError) as error:
             semantic_report={'error':str(error)}
@@ -143,7 +143,6 @@ def run_ros(config,args,events=None):
     from rcl_interfaces.srv import GetParameters
     from .adapters.go2 import Go2Adapter,make_observer
     from .frame_adapter import FrameAdapter
-    from .region_guard import RegionGuard
     motion=args.action in MOTION
     rclpy.init(args=[],signal_handler_options=SignalHandlerOptions.NO)
     node=adapter=executor=None
@@ -339,14 +338,12 @@ def run_ros(config,args,events=None):
             result=future.result();report['preflight']=asdict(result)
             if args.action!='navigate':return 0 if (result.goal if args.action=='approach' else result.reachable) else 1
             if not result.reachable:return 1
-        guard=RegionGuard(config['scene']['resources'],config['robot_go2']['stop_margin'])
-        # This entry has no resource authority: every protected region remains unpermitted.
         health=adapter.get_health()
         if not health.nav_ready or not health.localization_valid or not health.stopped or not health.motion_terminal or adapter.costmap_transform() is None or other_owners(node):
             report['rejected']=['motion prerequisites changed during preflight'];return 1
         check_path=result.path if args.action=='navigate' else [health.pose]
-        decision=guard.check(health.pose,health.footprint,check_path,{},replace(health,path_valid=True))
-        if decision.action!='ALLOW':report['rejected']=[decision.reason or 'protected resource requires real coordinator permit'];return 1
+        error=motion_path_error(replace(health,path_valid=True),check_path)
+        if error:report['rejected']=[error];return 1
         started=True
         began=time.monotonic();acquired=False
         if args.action=='navigate':adapter.start_navigation(goal,'go2_acceptance',uuid.uuid4().hex,'WAIT_NAV')
@@ -368,10 +365,10 @@ def run_ros(config,args,events=None):
                 waiting=not acquired and health.stopped and time.monotonic()-began<config['robot_go2'].get('path_start_timeout',1.)
                 path=[health.pose] if waiting else health.path
                 checked=replace(health,path_valid=True) if waiting else health
-                if guard.check(health.pose,health.footprint,path,{},checked).action!='ALLOW':
-                    report['result']='executing path/resource guard failed';return 1
+                if motion_path_error(checked,path):
+                    report['result']='executing path check failed';return 1
             else:
-                if guard.check(health.pose,health.footprint,[health.pose],{},replace(health,path_valid=True)).action!='ALLOW':
+                if motion_path_error(replace(health,path_valid=True),[health.pose]):
                     report['result']='spin stopping envelope failed';return 1
                 if future.done():
                     observations=future.result();report['observations']=[asdict(o) for o in observations]

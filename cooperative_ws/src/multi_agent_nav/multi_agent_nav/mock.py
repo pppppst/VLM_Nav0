@@ -4,7 +4,6 @@ from .models import *
 from .frame_adapter import FrameAdapter, LocalFrame
 from .agent import AgentMachine
 from .coordinator import Coordinator
-from .region_guard import RegionGuard
 from .adapters.fake import FakeAdapter
 from .runner import AgentRunner
 
@@ -32,14 +31,6 @@ def make_machine(config,robot,simulation):
         frame=LocalFrame()
     machine=AgentMachine(context,frame,config['scene'].get('lost_timeout',3.0),
         config[f'robot_{robot}'].get('path_start_timeout',1.0))
-    regions={}
-    for key,region in config['scene']['resources'].items():
-        value=dict(region,polygon=frame.polygon_to_local(region['polygon']))
-        value['transit_exits']={r:[[p.x,p.y,p.yaw] for p in (frame.to_local(Pose2D(*point)) for point in points)]
-                                 for r,points in region.get('transit_exits',{}).items()}
-        regions[key]=value
-    machine.guard=RegionGuard(regions,config[f'robot_{robot}'].get('stop_margin'))
-    machine.local_exit=Pose2D(*config['scene']['exit_points'][robot]) if robot in config['scene'].get('exit_points',{}) else None
     return machine,frame
 
 def make_coordinator(config,simulation,gates=None):

@@ -35,26 +35,22 @@ def test_ready_barrier_and_early_c_saved():
     commands = c.tick(.1)
     assert c.phase == 'DEPOSIT'
     execute = [x for x in commands if x.action=='EXECUTE']
-    assert len(execute)==1 and execute[0].recipient_id=='go2' and execute[0].observation_id=='C1'
+    assert len(execute)==2 and all(x.observation_id=='C1' for x in execute)
 
-def test_deposit_exit_preserves_original_permit_and_order():
-    c = coord()
-    c.phase, c.c_observation = 'DEPOSIT', 'C1'
-    c.scene['bound_c'] = 'C1'
-    c.observations['C1'] = Observation(target_id='C', status='DETECTED', common_position=Pose2D(2,2), position_valid=True)
-    for r in ROBOTS: c.states[r].ready=True
-    deposit = next(x for x in c.tick(0) if x.action=='EXECUTE')
-    c.ingest_state(replace(c.states['go2'], command_id=deposit.command_id, sequence=deposit.sequence,
-        reply='SUCCEEDED', deposited=True, resource_id='basket', token='tok',
-        permit_command_id=deposit.command_id), .1)
-    commands = c.tick(.1)
-    exit_cmd = next(x for x in commands if x.action=='EXECUTE')
-    assert exit_cmd.kind=='EXIT' and exit_cmd.recipient_id=='go2'
-    assert exit_cmd.token=='tok' and exit_cmd.parent_command_id==deposit.command_id
-    assert not any(x.recipient_id=='ranger' and x.kind=='APPROACH_DEPOSIT' for x in commands)
-    c.ingest_state(replace(c.states['go2'], command_id=exit_cmd.command_id, sequence=exit_cmd.sequence,
-                           reply='SUCCEEDED', exited=True, token=''), .2)
-    assert any(x.recipient_id=='ranger' and x.kind=='APPROACH_DEPOSIT' for x in c.tick(.2))
+def test_deposit_commands_run_in_parallel_without_exit_or_permits():
+    c=coord();c.phase='DEPOSIT';c.scene['bound_c']='C1'
+    c.observations['C1']=Observation(target_id='C',status='DETECTED',common_position=Pose2D(2,2),position_valid=True)
+    for r in ROBOTS:c.states[r].ready=True
+    commands=[x for x in c.tick(0) if x.action=='EXECUTE']
+    assert {x.recipient_id for x in commands}==set(ROBOTS)
+    assert all(x.kind=='APPROACH_DEPOSIT' and not x.token for x in commands)
+    for command in commands:
+        r=command.recipient_id
+        c.ingest_state(replace(c.states[r],command_id=command.command_id,sequence=command.sequence,
+            reply='SUCCEEDED',deposited=True),.1)
+    assert not any(x.action=='EXECUTE' for x in c.tick(.1))
+    assert c.phase=='DONE'
+
 
 def test_old_ready_mixed_mode_and_receiver_clock():
     c = coord()
@@ -67,12 +63,12 @@ def test_old_ready_mixed_mode_and_receiver_clock():
     c.ingest_state(replace(c.states['ranger'], simulation=False), .1)
     assert c.phase=='PAUSED'
 
-def test_restart_and_unconfigured_c_do_not_resume():
+def test_no_resource_geometry_requirement_and_restart_stays_idle():
     c = coord()
     c.scene['resources']={}
     for r in ROBOTS: c.states[r].ready=True
     c.tick(.1)
-    assert c.phase=='PAUSED'
+    assert c.phase=='SEARCH_C'
     restarted = Coordinator(scenario(), 'a', {'go2':('g','v'), 'ranger':('r','v')}, True)
     assert restarted.phase=='IDLE' and restarted.tick(0)==[]
 
@@ -115,3 +111,25 @@ def test_sync_retries_keep_task_deadline_and_block_dispatch_until_both_confirm()
     for robot in ROBOTS:
         c.ingest_state(replace(c.states[robot], task_id=task_id), 3.02)
     assert not any(command.action == 'EXECUTE' for command in c.tick(3.02))
+
+
+def test_done_requires_stopped_matching_terminal_commands():
+    c=coord();c.phase='DEPOSIT';c.scene['bound_c']='C1'
+    c.observations['C1']=Observation(target_id='C',status='DETECTED',common_position=Pose2D(2,2),position_valid=True)
+    for r in ROBOTS:c.states[r].ready=True
+    commands=[x for x in c.tick(0) if x.action=='EXECUTE']
+    for command in commands:
+        r=command.recipient_id
+        c.ingest_state(replace(c.states[r],command_id=command.command_id,sequence=command.sequence,
+            reply='SUCCEEDED',deposited=True,stopped=False),.1)
+    c.tick(.1)
+    assert c.phase=='DEPOSIT' and len(c.commands)==2
+    for r in ROBOTS:
+        c.ingest_state(replace(c.states[r],command_id='late-command',stopped=True),.2)
+    c.tick(.2)
+    assert c.phase=='DEPOSIT' and len(c.commands)==2
+    for command in commands:
+        r=command.recipient_id
+        c.ingest_state(replace(c.states[r],command_id=command.command_id),.3)
+    c.tick(.3)
+    assert c.phase=='DONE' and not c.commands

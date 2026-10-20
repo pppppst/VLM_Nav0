@@ -121,15 +121,14 @@ def test_private_mission_finishes_with_own_c_and_coordinate_free_wire():
         assert command.observation_id.startswith(robot + '/')
         assert not command.position_valid
         assert command.object_position == command.common_goal == Pose2D()
-        exit_command = next(c for r, c in mission.executed if r == robot and c.kind == 'EXIT')
-        assert exit_command.parent_command_id == command.command_id and exit_command.token
+        assert not command.token and not command.resource_id
     assert not any(c.phase == 'SEARCH_C' and c.kind == 'SEARCH_VIEWPOINT'
                    for _, c in mission.executed)
     assert all(not o.position_valid and o.common_position == Pose2D()
                for o in wire if o.target_id == 'C')
     assert any(o.target_id == 'A' for o in wire)
     assert all(not o.position_valid and o.common_position == Pose2D() for o in wire)
-    assert not mission.coordinator.resources.held
+    assert not any(s.token for s in mission.coordinator.states.values())
 
 
 @pytest.mark.parametrize('missing', ['go2', 'ranger'])
@@ -140,9 +139,9 @@ def test_peer_c_never_substitutes_for_missing_own_detection(missing):
     mission.run(100)
     assert mission.coordinator.phase == 'PAUSED'
     searches = [(r, c) for r, c in mission.executed
-                if c.phase == 'SEARCH_C' and c.kind == 'SEARCH_VIEWPOINT']
+                if c.phase in ('SEARCH_C','DEPOSIT') and c.kind == 'SEARCH_VIEWPOINT']
     assert searches and all(r == missing for r, _ in searches)
-    assert not any(c.kind == 'APPROACH_DEPOSIT' for _, c in mission.executed)
+    assert not any(r == missing and c.kind == 'APPROACH_DEPOSIT' for r, c in mission.executed)
 
 
 def test_missing_robot_can_find_c_after_ready_and_finish():
@@ -151,9 +150,9 @@ def test_missing_robot_can_find_c_after_ready_and_finish():
     assert mission.start().accepted
     for _ in range(100):
         mission.step()
-        if mission.coordinator.phase == 'SEARCH_C':
+        if mission.coordinator.phase in ('SEARCH_C','DEPOSIT'):
             break
-    assert mission.coordinator.phase == 'SEARCH_C'
+    assert mission.coordinator.phase in ('SEARCH_C','DEPOSIT')
     assert all(s.ready for s in mission.coordinator.states.values())
     mission.adapters['ranger'].detections['C'] = Pose2D(9, 1)
     mission.run(100)
@@ -171,8 +170,8 @@ def test_new_task_cannot_reuse_previous_local_c():
     mission.run(100)
     assert mission.coordinator.phase == 'PAUSED'
     assert not mission.machines['go2'].local_c_observations
-    assert not any(c.kind == 'APPROACH_DEPOSIT' and c.task_id == second.task_id
-                   for _, c in mission.executed)
+    assert not any(r == 'go2' and c.kind == 'APPROACH_DEPOSIT' and c.task_id == second.task_id
+                   for r, c in mission.executed)
 
 
 @pytest.mark.parametrize('changes', [
@@ -249,7 +248,7 @@ def test_local_c_scan_api_failure_pauses_without_deposit(monkeypatch):
 
     def failing_scan(descriptions, scan_id, **options):
         values = scan(descriptions, scan_id, **options).result()
-        if mission.coordinator.phase == 'SEARCH_C':
+        if mission.coordinator.phase in ('SEARCH_C','DEPOSIT'):
             attempts.append(scan_id)
             values = [replace(o, status='API_ERROR') if o.target_id == 'C' else o
                       for o in values]
@@ -260,4 +259,4 @@ def test_local_c_scan_api_failure_pauses_without_deposit(monkeypatch):
     mission.run(120)
     assert attempts
     assert mission.coordinator.phase == 'PAUSED'
-    assert not any(c.kind == 'APPROACH_DEPOSIT' for _, c in mission.executed)
+    assert not mission.machines['go2'].state().deposited

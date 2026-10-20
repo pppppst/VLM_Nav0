@@ -26,7 +26,7 @@ def test_planner_sends_target_intents_without_choosing_viewpoints():
                and c.common_goal == c.object_position == Pose2D() for c in commands)
 
 
-def test_dual_fake_local_tasks_keep_private_c_and_ordered_permits():
+def test_dual_fake_local_tasks_keep_private_c_without_permits():
     mission = private_mission()
     wire = []
     for runner in mission.runners.values():
@@ -37,16 +37,15 @@ def test_dual_fake_local_tasks_keep_private_c_and_ordered_permits():
     assert mission.start().accepted
     mission.run(400)
     assert mission.coordinator.phase == 'DONE', mission.coordinator.reason
-    assert all(s.ready and s.deposited and s.exited for s in mission.coordinator.states.values())
+    assert all(s.ready and s.deposited and s.stopped for s in mission.coordinator.states.values())
     deposits = [(r,c) for r,c in mission.executed if c.kind == 'APPROACH_DEPOSIT']
     assert [r for r,_ in deposits] == ['go2','ranger']
     for robot, deposit in deposits:
         assert deposit.observation_id.startswith(robot + '/')
-        exit_command = next(c for r,c in mission.executed if r == robot and c.kind == 'EXIT')
-        assert exit_command.parent_command_id == deposit.command_id and exit_command.token
+        assert not deposit.token and not deposit.resource_id
     assert all(not o.position_valid and o.common_position == Pose2D() for o in wire)
     assert all(not c.position_valid for _,c in mission.executed)
-    assert not mission.coordinator.resources.held
+    assert not any(s.token for s in mission.coordinator.states.values())
 
 
 @pytest.mark.parametrize('distance', [1.01, 1.5])
@@ -104,8 +103,9 @@ def test_live_local_gates_require_local_assets_but_not_remote_alignment():
     config['alignment']['robots']['ranger']['transform'] = None
     errors = live_gates(config)
     assert not any('alignment report' in error or 'ranger: map' in error for error in errors)
-    assert any('exit' in error for error in errors)
-    assert any('generated' in error for error in errors)
+    assert not any('exit' in error for error in errors)
+    assert not any('generated' in error for error in errors)
+    assert any('vision_validated' in error for error in errors)
 
 
 def test_map_identity_change_pauses_active_local_task():
@@ -179,7 +179,7 @@ def test_pending_vlm_keeps_heartbeat_and_late_selection_cannot_move(generated_co
     assert not adapter.calls and mission.runners['go2'].execution is None
 
 
-def test_local_navigation_preserves_door_and_basket_permit_chain():
+def test_local_navigation_ignores_legacy_door_and_basket_regions():
     mission=private_mission()
     # Recreate machines with the additional local resource polygon.
     mission.config['scene']['resources']['door']={'polygon':[[-.5,-5],[.5,-5],[.5,5],[-.5,5]],
@@ -192,9 +192,9 @@ def test_local_navigation_preserves_door_and_basket_permit_chain():
     assert mission.coordinator.phase=='DONE',mission.coordinator.reason
     calls=mission.adapters['go2'].calls
     deposit=next(c.command_id for r,c in mission.executed if r=='go2' and c.kind=='APPROACH_DEPOSIT')
-    assert any(kind=='DOOR_TRANSIT' and command==deposit for kind,_,command in calls)
+    assert all(kind!='DOOR_TRANSIT' for kind,_,_ in calls)
     assert any(kind=='DEPOSIT_NAV' and command==deposit for kind,_,command in calls)
-    assert not mission.coordinator.resources.held
+    assert not any(s.token for s in mission.coordinator.states.values())
 
 
 @pytest.mark.parametrize('kind', ['PICKUP_NAV','DEPOSIT_NAV'])
@@ -272,7 +272,7 @@ def test_confirmed_current_target_navigation_within_radius_completes(distance):
     assert mission.machines['go2'].state().ready and mission.machines['go2'].state().deposited
 
 
-def test_search_cannot_hold_basket_and_deadlock_ready_barrier():
+def test_legacy_basket_region_cannot_block_search_or_ready_barrier():
     mission=private_mission()
     mission.config['scene']['resources']['basket']['polygon']=[[-.5,-5],[.5,-5],[.5,5],[-.5,5]]
     mission=MockMission(mission.config)
@@ -280,9 +280,9 @@ def test_search_cannot_hold_basket_and_deadlock_ready_barrier():
         'ranger':[dict(id='r',pose=[-2,-2,0])]}
     assert mission.start().accepted
     mission.run(120)
-    assert mission.coordinator.phase=='PAUSED'
-    assert not mission.coordinator.resources.held
-    assert not any(c.kind=='APPROACH_DEPOSIT' for _,c in mission.executed)
+    assert mission.coordinator.phase=='DONE'
+    assert not any(s.token for s in mission.coordinator.states.values())
+    assert any(c.kind=='APPROACH_DEPOSIT' for _,c in mission.executed)
 
 
 def test_distinct_local_map_coordinates_need_no_shared_transform():

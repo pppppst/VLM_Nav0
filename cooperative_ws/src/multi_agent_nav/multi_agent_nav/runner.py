@@ -63,9 +63,7 @@ class AgentRunner:
             require_navigation_success=True,navigation=self.local_navigation,stopping=self.local_stop,
             on_observations=observations,task_id=command.task_id,parent_command_id=command.command_id,
             initial_observation=self.machine.local_c_observations.get(command.observation_id)
-                if command.kind=='APPROACH_DEPOSIT' else None,
-            guard=self.machine.guard,permits=lambda: {self.machine.state().resource_id:self.machine.state().token}
-                if self.machine.state().token else {})
+                if command.kind=='APPROACH_DEPOSIT' else None)
 
     def motion_ready(self,task_id,command_id):
         command=self.machine.command
@@ -98,7 +96,7 @@ class AgentRunner:
             try:
                 value=future.result()
                 if kind=='APPROACH':self.machine.on_approach(value,now)
-                elif kind in ('PLAN','PLAN_TRANSIT'):self.machine.on_path(value,goal,now)
+                elif kind=='PLAN':self.machine.on_path(value,goal,now)
                 else:self.machine.scan_completed(value,now)
             except Exception:
                 if kind=='SCAN':
@@ -159,7 +157,7 @@ class AgentRunner:
                         continue
                     if self.machine.command is not command:continue
                     if effect.kind=='APPROACH':future=self.adapter.select_approach(*effect.payload);goal=None
-                    elif effect.kind in ('PLAN','PLAN_TRANSIT'):
+                    elif effect.kind=='PLAN':
                         goal=effect.payload;future=self.adapter.compute_path(goal)
                     elif effect.kind=='SCAN':
                         future=self.adapter.start_scan(self.descriptions,effect.payload);goal=None

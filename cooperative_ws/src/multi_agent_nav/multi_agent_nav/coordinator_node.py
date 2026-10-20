@@ -48,7 +48,7 @@ class CoordinatorNode(Node):
         for command in self.coordinator.tick(time.monotonic()):self.command_pub.publish(to_ros(command))
         message=String()
         message.data=json.dumps({'task_id':self.coordinator.task_id,'phase':self.coordinator.phase,
-            'reason':self.coordinator.reason,'held_resources':list(self.coordinator.resources.held),
+            'reason':self.coordinator.reason,'held_resources':[],
             'online_robots':list(self.coordinator.states),
             'bound_c':self.coordinator.c_observation,'local_c':self.coordinator.local_c})
         self.status_pub.publish(message)
