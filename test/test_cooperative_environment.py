@@ -8,7 +8,7 @@ import pytest
 
 
 @pytest.mark.parametrize('override', [False, True])
-def test_go2_environment_selects_target_plan_overlay_and_preserves_override(tmp_path, override):
+def test_go2_environment_selects_single_robot_parity_overlay_and_preserves_override(tmp_path, override):
     root = Path(__file__).resolve().parents[1]
     shutil.copy2(root/'Cooperative_env.bash', tmp_path/'Cooperative_env.bash')
     config = tmp_path/'config'
@@ -19,7 +19,7 @@ def test_go2_environment_selects_target_plan_overlay_and_preserves_override(tmp_
     setups = {
         'build/go2-independent-c-20261020/install/local_setup.bash':'old',
         'build/go2-rviz-markers-20261022/install/local_setup.bash':'old-rviz',
-        'build/go2-target-plan-20261025/overlay/install/local_setup.bash':'target-plan',
+        'build/go2-single-parity-20261025/overlay/install/local_setup.bash':'single-parity',
         'custom/install/local_setup.bash':'override',
     }
     for path, marker in setups.items():
@@ -32,6 +32,6 @@ def test_go2_environment_selects_target_plan_overlay_and_preserves_override(tmp_
         'offline-env-test',str(tmp_path/'Cooperative_env.bash')],
         env=environment, capture_output=True, text=True, check=True)
     lines = result.stdout.splitlines()
-    assert lines[0] == ('override' if override else 'target-plan')
+    assert lines[0] == ('override' if override else 'single-parity')
     assert lines[1] == str(tmp_path/('custom/install/local_setup.bash' if override else
-        'build/go2-target-plan-20261025/overlay/install/local_setup.bash'))
+        'build/go2-single-parity-20261025/overlay/install/local_setup.bash'))

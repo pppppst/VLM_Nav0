@@ -96,13 +96,14 @@ def test_runner_enables_initial_camera_only_for_live_go2_search(monkeypatch,tmp_
     runner=AgentRunner.__new__(AgentRunner)
     command=S(kind=kind,target_id='A',command_id='command',task_id='task',observation_id='cached')
     runner.machine=S(command=command,context=S(robot_id=robot),frame=None,task_started=0.,
-        success_radius=1.,local_c_observations={})
+        success_radius=1.,local_c_observations={},single_robot_mode=robot=='go2' and not simulation)
     runner.config={'scene':{'task_timeout':600.},'robot_'+robot:{'experiment_records_root':str(tmp_path)}}
     runner.adapter=S(simulation=simulation)
     runner.on_event=display_events.append
     runner.clock=lambda:0.;runner.descriptions={'A':'target'};runner.owners=lambda:[]
     runner.start_local_execution()
     assert captured[0]['initial_camera_check'] is expected
+    assert (captured[0]['approaching'] is not None) == (robot=='go2' and not simulation)
     assert display_events==[dict(state='DISPLAY_RESET',task_id='task'),dict(state='PATH_PLANNED',path=[])]
 
 

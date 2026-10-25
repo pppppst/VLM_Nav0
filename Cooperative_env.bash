@@ -15,7 +15,7 @@ _cooperative_environment() {
   [[ -r "$base" ]] || { echo "缺少本机基础环境：$base" >&2; return 1; }
   overlay="${COOP_SETUP_FILE:-}"
   if [[ "$side" == go2 && -z "$overlay" ]]; then
-    overlay="$repo/build/go2-target-plan-20261025/overlay/install/local_setup.bash"
+    overlay="$repo/build/go2-single-parity-20261025/overlay/install/local_setup.bash"
   fi
   [[ -z "$overlay" || -r "$overlay" ]] || { echo "缺少协同 overlay：$overlay；请将 COOP_SETUP_FILE 指向本机已构建的新任务 overlay。" >&2; return 1; }
   set +u

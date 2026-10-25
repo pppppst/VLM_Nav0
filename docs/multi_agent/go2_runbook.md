@@ -3809,3 +3809,155 @@ ctest --test-dir "$GO2_TEMPORAL_OUTPUT/build/vlm_nav" --output-on-failure \
 各条失败先检查对应日志，不进入下一项。结果分别为14个gtest用例（6原有+8新增，ctest仅显示2个条目）、3项实际过滤节点测试、30项配置回归和2项原生costmap测试；合计49用例通过，其中新增11用例（8 C++、2参数化节点用例、1配置用例）。原生costmap验证未确认云不能mark、确认云可mark、原云可clear及两种正常退出。运行结束节点均已关闭，不需保持终端。非现场确认门槛测试仍失败（当前配置已验证而旧测试要求false），Python注册清单测试亦存在旧期望未包含新增历史文件的问题，明确排除这2项。最初另有一项未加载包/ROS日志目录权限造成的环境失败，加载正确underlay并使用/tmp日志后通过，不当作产品缺陷或跳过项。
 
 证据`build/go2-temporal-20261025/evidence/`保存修改前快照、RED/GREEN、构建、原生costmap和最终回归日志、增量diff与文件SHA。独立审查指出诊断误报OK（已复现并修正）；其“TF晚20–50ms必然丢计数”判断被实际延迟TF测试及PCL内部1秒等待实现否定，实际复现的是同步等待阻塞后续清除点云，已改为非阻塞有界队列并通过回归。未做真实点云回放、现场标记/清除、移动障碍与运动验收；不能据离线通过断言上一轮三角形障碍或APPROACH_FAILED已经修复。
+
+### 2026-10-25 冻结单机接近行为迁移（离线源码验证）
+
+本轮按[附件计划](../superpowers/plans/2026-10-25-go2-single-robot-parity.md)和[来源对应表](../superpowers/plans/2026-10-25-go2-single-robot-parity-sources.md)迁移真实 Go2 本地协作接近。起始 HEAD 为 `df1a519df222c40f32e5222801d42fe20d8c4c44`，单机唯一依据为 `32eab6244ec4b483807f8ed68e8667f5495874bb`。独立工作副本 `/tmp/go2-single-parity-20261025`，检查通过后仅将限定源码、测试和文档同步回原工作区；未构建、安装或切换默认环境。
+
+#### 已执行的离线测试环境与命令
+
+使用普通 Bash 终端，不需保持运行。以下为实施副本中的实际环境；测试仅使用受控 future、消息类型及 fake 数据，不调用 `rclpy.init`、真实 action/service、VLM 或硬件。现有 overlay 仅提供消息等依赖，最后将实施源码置于 PYTHONPATH 首位，不将测试误跑到旧安装。
+
+```bash
+cd /tmp/go2-single-parity-20261025
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-target-plan-20261025/overlay/install/local_setup.bash
+export PYTHONPATH="$PWD:$PWD/cooperative_ws/src/multi_agent_nav${PYTHONPATH:+:$PYTHONPATH}"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+export PYTHONDONTWRITEBYTECODE=1
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest --noconftest -q -p no:cacheprovider \
+  cooperative_ws/src/multi_agent_nav/tests/test_target_nav2_endpoint.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_local_tasks.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_local_c.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_go2_executing_path.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_runner.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_go2_exploration.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_initial_camera.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_dual_acceptance.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_approach_costmap.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_generated_candidates.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_candidate_camera.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_independent_c.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_startup_handshake.py \
+  test/test_arrival_contract.py \
+  cooperative_ws/src/multi_agent_nav/tests/test_single_robot_approach_parity.py
+```
+
+差分测试需要本地存在完整单机 Git 对象；它从 Git 读取真实方法，不使用当前分支单机文件替代。环境导入失败须先修正依赖加载，不删用例；基线门槛失败也须逐项报告，不凭退出码笼统宣称通过。
+
+实际结果：
+
+- 原五文件基线：130 通过、3 失败；首轮漏加载消息包导致额外 1 项导入失败，补齐后消失。
+- 扩大后的原代码基线（上述命令不含新增 parity 文件，原仓库尚未同步时执行）：365 通过、4 失败，pytest 退出 1。
+- 最终修改后完整上述命令：428 通过、相同 4 失败，pytest 退出 1，17.65 秒；新增 63 项均通过，未排除任何用例。
+- 新增 parity 文件含 57 项；其他新增为真实模式 A/C/规划失败 4 项和 explore 路径监护隔离 2 项。初始相机入口的原夹具补充模式属性及接线断言，没有增加或放宽原用例。
+
+四项保留的原失败：
+
+1. `test_local_tasks.py::test_live_local_gates_require_local_assets_but_not_remote_alignment`：仍预期当前已验证配置报 vision_validated 错误。
+2. `test_local_tasks.py::test_malformed_local_geometry_is_reported_as_gate_failure[resources]`：仍预期本地独立模式要求旧资源几何。
+3. 同文件 `[exit_points]`：仍预期旧退出点门槛。
+4. `test_independent_c.py::test_no_gate_requires_resource_geometry_or_stopping_envelope_margin`：仍预期 vision_validated 错误；扩大基线在原代码中复现，未顺手修复。
+
+独立审查发现新入口漏接原 `owners()` 门槛，已用入口、规划回调与运动中三个失败测试复现，再在 runner 周期检查和发送前 guard 恢复；另用任务开始前检查防止新增 idle 暂停。最终回归包括该修正。没有剩余已确认的重要审查问题。
+
+完整日志、退出码与先失败后通过证据位于 `build/go2-single-parity-20261025/evidence/`。`git diff --check`、Python 语法和文档本地链接检查通过；受保护 YAML、地图、原单机、coordinator、消息、Ranger 及默认安装入口均未改。
+
+默认安装仍为 `build/go2-target-plan-20261025/overlay/install`，与本轮源码不一致。后续使用前须另行新目录成对构建和安装一致性核对，不能跳过预检或原地覆盖旧输出；本节不提供现场启动授权。未执行构建、Domain31 节点测试、完整仓库测试、现场参数读取或真机验收。离线通过不说明疑似动态障碍已消除、目标必然可达或双机避碰已通过。
+
+### 2026-10-25 单机接近迁移构建与默认安装更新
+
+用户明确要求构建、更新安装及协同入口，且不改变无必要的脚本流程。本节覆盖上一节“仅源码”的安装状态。新成对安装为 `build/go2-single-parity-20261025/overlay/install/local_setup.bash`，同时包含当前单机接近迁移与此前已实现的动态障碍连续三周期确认；原安装、证据与运行中进程保留。
+
+必要脚本修改只有三处：`Cooperative_env.bash` 的Go2默认路径、`scripts/start_go2_vlm.py` 的协同安装预期、`scripts/cooperative.sh` 的Go2安装检查清单增加 `single_robot_approach`。显式 `COOP_SETUP_FILE` 仍优先；Ranger不增加该模块检查。`start_go2_cooperative.sh` 和 `start_go2_cooperative_task.py` 与改前逐字节一致，准备、ARM、握手、启动和退出流程未改。两份现有路径测试夹具及正式启动文档同步新路径。
+
+#### 实际构建与安装核对
+
+执行目录仓库根目录，独立Bash环境；只构建，不启动ROS节点，完成不需保持终端。以下输出本轮已创建，未来再次构建须选择新目录，不能覆盖旧已验证输出。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-manual-takeover-20261015/install/local_setup.bash"
+source "$PWD/build/go2-target-plan-20261025/overlay/install/local_setup.bash"
+export GO2_PARITY_OUTPUT="$PWD/build/go2-single-parity-20261025/overlay"
+test ! -e "$GO2_PARITY_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_PARITY_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_PARITY_OUTPUT/build" --install-base "$GO2_PARITY_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建退出0，两包成功，23.1秒。保留既有PCL_ROOT/CMP0074、根包未使用COOPERATIVE_RUNTIME_PYTHON及复用go2-coop消息包的告警；未修改消息包或新增依赖。失败应先处理构建日志，不继续启动。构建后更新的脚本/文档通过本轮新目录的 `cmake --install "$GO2_PARITY_OUTPUT/build/vlm_nav"` 同步至 share；没有重建或覆盖任何旧输出。
+
+安装核对从 `/tmp` 执行，避免源码遮盖安装，最后source新输出：
+
+```bash
+export GO2_PARITY_REPO=/home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source "$GO2_PARITY_REPO/build/go2-coop/install/local_setup.bash"
+source "$GO2_PARITY_REPO/build/go2-single-parity-20261025/overlay/install/local_setup.bash"
+cd /tmp
+/home/isee-pst/venv/co-nav-real/bin/python \
+  "$GO2_PARITY_REPO/build/go2-single-parity-20261025/evidence/install-update/check_install.py"
+```
+
+判据为退出0、all_matches=true、两包prefix和实际导入均位于新输出。本轮54个Python文件、根包config、协同scene/robot_go2配置逐字节一致；新增接近模块实际导入自新安装，冻结接近参数核对通过，A/B=灭火器、C=椅子。安装内入口脚本副本及正式启动文档也与源码一致。独立执行预检的模块校验循环验证Go2包含新模块、Ranger不包含；这不是完整预检通过。
+
+#### 实际离线回归
+
+沿用上述安装环境、`/tmp`目录，不添加源码PYTHONPATH。现有两文件环境/入口基线41项通过。安装回归命令：
+
+```bash
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest --noconftest -q -p no:cacheprovider \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_single_robot_approach_parity.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_target_nav2_endpoint.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_local_tasks.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_local_c.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_executing_path.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_runner.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_go2_exploration.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_initial_camera.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_dual_acceptance.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_approach_costmap.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_generated_candidates.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_candidate_camera.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_independent_c.py" \
+ "$GO2_PARITY_REPO/cooperative_ws/src/multi_agent_nav/tests/test_startup_handshake.py" \
+ "$GO2_PARITY_REPO/test/test_arrival_contract.py" \
+ "$GO2_PARITY_REPO/test/test_cooperative_environment.py" \
+ "$GO2_PARITY_REPO/test/test_start_go2_vlm.py" \
+ "$GO2_PARITY_REPO/test/test_start_go2_cooperative_task.py"
+ctest --test-dir "$GO2_PARITY_REPO/build/go2-single-parity-20261025/overlay/build/vlm_nav" \
+  --output-on-failure -R '^test_(temporal_obstacle_filter|obstacle_cloud_filter)$'
+```
+
+Python实际553通过、4项上一节已逐项记录的旧门槛失败，11条第三方弃用告警，18.52秒，退出1，未deselect。不得将其写成全绿。两个CTest条目退出0，对应14个C++用例（时间确认8、原空间过滤6），不是2个用例。本轮未新增测试用例，未重复运行真实节点/Domain31实验。Bash/Python语法、文档本地链接和git diff --check通过。
+
+#### 默认预检与用户后续命令
+
+本轮实际运行 `env -u COOP_SETUP_FILE bash scripts/cooperative.sh go2 preflight` 退出1，在基础环境报 `GO2_NET_IFACE=enp4s0 has no 192.168.123.x address`；只读 `ip -brief address show dev enp4s0` 确认为DOWN且无地址。尚未进入完整installed/live_gates/API报告，因此不声称完整离线preflight通过。未改网络、绕过检查或启动任何组件。
+
+恢复原有线网络、按既有流程结束旧任务并确认停稳/原生动作终态后，在Go2图形桌面同一个交互式Bash主终端执行，任意目录均可。旧export会覆盖新默认，必须先替换路径；预检完成无需保持独立后台进程：
+
+```bash
+export COOP_SETUP_FILE=/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-single-parity-20261025/overlay/install/local_setup.bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/cooperative.sh go2 preflight
+```
+
+仅当退出0、安装检查全部matches_source=true、live_gates为空且API环境齐全，才在同一终端运行用户原完整入口；若失败，先处理该报告，不继续启动。主终端及弹出的组件窗口按原流程保持运行：
+
+```bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/start_go2_cooperative.sh
+```
+
+证据 `build/go2-single-parity-20261025/evidence/install-update/` 保存改前快照、构建/安装/测试退出码、安装对比与默认预检失败报告。未修改本轮前的导航源码/参数，未初始化现场ROS、SSH/Ranger/bridge、录包、真实模型请求、ARM/start/运动、停止/重启现场组件、提交或推送。真实接近、动态障碍及双机避碰效果仍未验收，运行中旧进程不会热更新。

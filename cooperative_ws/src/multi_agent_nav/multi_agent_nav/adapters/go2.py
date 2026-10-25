@@ -301,6 +301,8 @@ class Go2Adapter:
         return snapshot
 
     def on_odometry(self,message):
+        approach = getattr(self, 'approach', None)
+        if approach is not None:approach.on_arrival_odom(message)
         now=time.monotonic()
         stamp=message.header.stamp.sec+message.header.stamp.nanosec*1e-9
         ros_now=self.node.get_clock().now().nanoseconds*1e-9
@@ -447,18 +449,22 @@ class Go2Adapter:
             meta.resolution,lambda cells:cells>=self.config.get('costmap_blocked_cost',253))
 
     def _motion_event(self,event,goal_id=None,motion=None,**fields):
-        record=getattr(self,'record_event',None)
-        if record is None:return
         if motion is None:goal_id,motion=getattr(self,'last_motion',('',{}))
+        record=motion.get('record',getattr(self,'record_event',None))
+        if record is None:return
         try:
             record(dict(event=event,task_id=motion.get('task',''),command_id=motion.get('command',''),
                 goal_id=goal_id,native_action_uuid=motion.get('native_uuid',''),
                 goal_kind=motion.get('kind',''),goal_pose=motion.get('target'),
                 monotonic_time=time.monotonic(),**fields))
-        except OSError:
-            # Evidence failure must not prevent cancellation or sending zero.
-            self.evidence_write_failed=True
-            self.motion_fault=True
+        except Exception as error:
+            if getattr(self, 'single_robot_mode', False):
+                self.node.get_logger().warning('Motion diagnostic write failed: '+str(error))
+            elif isinstance(error, OSError):
+                self.evidence_write_failed=True
+                self.motion_fault=True
+            else:
+                raise
 
     def _clear_path(self,reason):
         self.path=[]
@@ -687,11 +693,13 @@ class Go2Adapter:
         attempt()
         return output
 
-    def _motion(self,client,goal,task_id,command_id,kind,target=None):
+    def _motion(self,client,goal,task_id,command_id,kind,target=None,approach=None,token=None):
         if getattr(self,'read_only',False):raise RuntimeError('read-only adapter cannot send motion goals')
         goal_id=uuid.uuid4().hex
         motion={'handle':None,'cancel':False,'reply':Future(),'task':task_id,'command':command_id,'kind':kind,'since':time.monotonic(),
                 'native_uuid':'','target':target}
+        if getattr(self,'single_robot_mode',False):motion['record']=getattr(self,'record_event',None)
+        if approach is not None:approach.goal_id=goal_id
         self.motions[goal_id]=motion
         self.last_motion=(goal_id,motion)
         self._motion_event('MOTION_REQUESTED',goal_id,motion)
@@ -699,13 +707,16 @@ class Go2Adapter:
             self.motions.pop(goal_id,None)
             if kind!='SCAN_SPIN':
                 self._clear_path('motion terminal: '+status)
-                self.results.append(GoalResult(task_id,command_id,goal_id,kind,status))
+                if approach is None:self.results.append(GoalResult(task_id,command_id,goal_id,kind,status))
             self._motion_event('MOTION_TERMINAL',goal_id,motion,status=status,native_status=native_status)
             if not motion['reply'].done():motion['reply'].set_result(status)
         def accepted(done):
             try:
                 handle=done.result()
-                if not handle.accepted:finish('ABORTED');return
+                if not handle.accepted:
+                    finish('ABORTED')
+                    if approach is not None:approach.on_goal_response(done,token,'approach')
+                    return
                 motion['handle']=handle
                 self.last_action_uuid=bytes(handle.goal_id.uuid).hex()
                 motion['native_uuid']=self.last_action_uuid
@@ -716,10 +727,13 @@ class Go2Adapter:
                         status=done.result().status
                         finish({4:'SUCCEEDED',5:'CANCELED',6:'ABORTED'}.get(status,'ABORTED'),status)
                     except Exception:self.motion_fault=True;finish('ABORTED')
+                    if approach is not None:approach.on_navigation_result(done,token,'approach')
+                if approach is not None:approach.on_goal_response(done,token,'approach')
                 handle.get_result_async().add_done_callback(completed)
             except Exception:
                 self.motion_fault=True
                 finish('ABORTED')
+                if approach is not None:approach.on_goal_response(done,token,'approach')
         guard=getattr(self,'motion_guard',None)
         if guard:
             # The unsent request must not count as an active action in the stop check.
@@ -730,7 +744,7 @@ class Go2Adapter:
         except Exception:self.motion_fault=True;finish('ABORTED')
         return goal_id,motion['reply']
 
-    def start_navigation(self,local_goal,task_id,command_id,goal_kind):
+    def start_navigation(self,local_goal,task_id,command_id,goal_kind,*,approach=None,token=None):
         from nav2_msgs.action import NavigateToPose
         if self.motions or self.scan:raise RuntimeError('motion not serial')
         goal=NavigateToPose.Goal()
@@ -738,7 +752,13 @@ class Go2Adapter:
         self._clear_path('new navigation')  # a preflight path is NOT an executing/replanned path
         self.path_after_stamp=self.node.get_clock().now().nanoseconds*1e-9
         return self._motion(self.node.navigator,goal,task_id,command_id,goal_kind,
-                            [local_goal.x,local_goal.y,local_goal.yaw])[0]
+                            [local_goal.x,local_goal.y,local_goal.yaw],approach,token)[0]
+
+    def start_approach_navigation(self, approach, goal, token):
+        goal_id = self.start_navigation(goal, approach.task_id, approach.command_id,
+            approach.goal_kind_wire, approach=approach, token=token)
+        if not goal_id:raise RuntimeError('approach motion ownership unavailable')
+        return goal_id
 
     def cancel_navigation(self,goal_id):
         future=Future()

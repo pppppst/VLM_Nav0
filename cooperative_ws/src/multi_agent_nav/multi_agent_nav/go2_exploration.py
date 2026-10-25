@@ -79,7 +79,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                   target_id='A', success_radius=None, require_navigation_success=False,
                   navigation=None, stopping=None, on_observations=None,
                   initial_observation=None, task_id=None, parent_command_id=None,
-                  initial_camera_check=False):
+                  initial_camera_check=False, approaching=None):
     robot_config = config[f'robot_{robot_id}']
     direct_target = robot_id == 'go2' and require_navigation_success
     task_id = task_id or robot_id + '_explore/' + uuid.uuid4().hex
@@ -120,7 +120,10 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             emit('HEALTH_FAILED',failed_gates=failed,health=asdict(health),health_details=details,
                  costmap_checks=getattr(adapter,'last_costmap_checks',{}),other_goal_owners=other)
             raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost: '+', '.join(failed))
-        if navigating:
+        if navigating and approaching is not None:
+            checked = replace(health, path_valid=True)
+            checked_path = [health.pose]
+        elif navigating:
             acquired = acquired or bool(health.path_valid and health.path)
             waiting = not acquired and health.stopped and clock()-began < robot_config.get('path_start_timeout', 1.)
             checked = replace(health, path_valid=True) if waiting else health
@@ -289,6 +292,11 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         return terminal
 
     def approach_target(observation):
+        if approaching is not None:
+            object_pose = frame.to_local(observation.common_position)
+            emit('APPROACH_PLANNING', object_pose=asdict(object_pose), observation_id=observation.observation_id)
+            return (yield from approaching(object_pose,
+                'DEPOSIT_NAV' if target_id == 'C' else 'PICKUP_NAV', record))
         contract = load_contract(robot_config.get('arrival_config_files'))
         success = contract['target_success_radius'] if success_radius is None else success_radius
         if not valid_numbers([success], 1) or success <= 0:

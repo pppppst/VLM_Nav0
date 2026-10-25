@@ -198,7 +198,7 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
     monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
-    prefix=tmp_path/'build/go2-target-plan-20261025/overlay/install'
+    prefix=tmp_path/'build/go2-single-parity-20261025/overlay/install'
     for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
     app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
     monkeypatch.setattr(app,'check_owners',lambda:None)

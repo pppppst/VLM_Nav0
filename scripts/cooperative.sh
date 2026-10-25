@@ -47,7 +47,7 @@ bridge=validate_bridge(yaml.safe_load(Path(os.environ['COOP_BRIDGE_YAML']).read_
 cfg=load_config(directory)
 if cfg['scene'].get('share_c_coordinates') is not False:raise ValueError('本流程要求share_c_coordinates=false')
 installed={}
-for name in ('agent','agent_node','coordinator','coordinator_node','models','mock','planner','runner','go2_exploration','generated_candidates','exploration_display'):
+for name in ('agent','agent_node','coordinator','coordinator_node','models','mock','planner','runner','go2_exploration','generated_candidates','exploration_display') + (('single_robot_approach',) if side=='go2' else ()):
     module=importlib.import_module('multi_agent_nav.'+name);path=Path(module.__file__)
     source=repo/'cooperative_ws/src/multi_agent_nav/multi_agent_nav'/f'{name}.py'
     installed[name]={'file':str(path),'matches_source':path.read_bytes()==source.read_bytes()}

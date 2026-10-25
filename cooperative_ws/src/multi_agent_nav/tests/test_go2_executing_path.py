@@ -225,3 +225,20 @@ def test_evidence_write_error_cannot_prevent_cancel_and_zero_command(navigation)
     assert 'cancel' in calls and 'zero' in calls
     assert not a.path
     assert a.evidence_write_failed
+
+
+@pytest.mark.parametrize('private_mode',[False,True])
+def test_explore_path_message_gate_is_explicitly_mode_scoped(private_mode):
+    from dataclasses import replace
+    from test_go2_exploration import LocalFixture, run_case
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    a=LocalFixture();health=a.get_health
+    a.get_health=lambda:replace(health(),path_valid=False,path=[]) if a.active else health()
+    events=[]
+    if private_mode:
+        # No target is detected: callback presence scopes observation-point monitoring.
+        assert run_case(a,events,approaching=lambda *args:None)=='EXHAUSTED'
+        assert len(a.calls)==3
+    else:
+        with pytest.raises(ExplorationStopped,match='executing path'):
+            run_case(a,events)

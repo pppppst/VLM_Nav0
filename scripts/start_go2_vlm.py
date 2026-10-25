@@ -183,7 +183,7 @@ class Launcher:
                                 ('multi_agent_nav', 'GO2_EXPLORE_OUTPUT')]:
             expected = Path(os.environ[output]) / 'install' / package
             if self.cooperative_hardware:
-                setup = os.environ.get('COOP_SETUP_FILE') or self.repo / 'build/go2-target-plan-20261025/overlay/install/local_setup.bash'
+                setup = os.environ.get('COOP_SETUP_FILE') or self.repo / 'build/go2-single-parity-20261025/overlay/install/local_setup.bash'
                 paired = Path(setup).resolve().parent / package
                 if package == 'multi_agent_nav' or paired.is_dir():
                     expected = paired

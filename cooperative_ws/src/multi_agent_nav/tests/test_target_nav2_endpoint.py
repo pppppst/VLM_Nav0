@@ -207,3 +207,42 @@ def test_real_runner_revalidates_replanned_path_before_navigation(fault, tmp_pat
     assert not any(kind == 'PICKUP_NAV' for kind, _, _ in adapter.calls)
     assert not mission.machines['go2'].state().ready
     assert mission.runners['go2'].local_path_accept is None
+
+# Old cases above retain the mock/legacy contract. The live private Go2 mode
+# below exercises real adapter transport and the extracted approach executor.
+from test_single_robot_approach_parity import live_stack, navigation
+
+
+@pytest.mark.parametrize('target_id', ['A','C'])
+def test_live_private_target_uses_original_goal_without_geometry_precheck(live_stack,target_id):
+    from dataclasses import replace
+    from multi_agent_nav.go2_exploration import explore_steps
+    from types import SimpleNamespace as S
+    from test_go2_executing_path import accept
+    s=live_stack
+    kind='PICKUP_NAV' if target_id=='A' else 'DEPOSIT_NAV'
+    s.m.command=replace(s.m.command,kind='APPROACH_PICKUP' if target_id=='A' else 'APPROACH_DEPOSIT')
+    observation=Observation(target_id=target_id,status='DETECTED',position_valid=True,
+        common_position=s.m.frame.to_common(Pose2D(2.,0.)))
+    def forbidden(*args,**kwargs):pytest.fail('live approach must not use endpoint geometry/budget/replan')
+    s.a.approach_candidate_free=s.a.select_approach=s.a.compute_path=s.a.read_approach_parameters=forbidden
+    s.r.execution=explore_steps(s.a,s.r.config,s.m.frame,100.,'target',s.events.append,
+        lambda:[],lambda:True,lambda:None,clock=lambda:s.now[0],
+        initial_observation=observation,target_id=target_id,require_navigation_success=True,
+        approaching=s.r.local_approach,task_id='task',parent_command_id='command')
+    s.tick();s.planned()
+    motion=next(iter(s.a.motions.values()))
+    assert motion['target']==[2.,0.,.7] and motion['kind']==kind
+    terminal=accept(s.requests[0]);s.health[0]=replace(s.health[0],pose=Pose2D(1.2,0.))
+    s.tick(.21);terminal.set_result(S(status=5))
+    for _ in range(3):s.odom()
+    s.tick(.21);s.tick()
+    assert s.m.state().ready if target_id=='A' else s.m.state().deposited
+    assert len(s.plans)==len(s.requests)==1
+
+
+@pytest.mark.parametrize('status,accepted',[(6,True),(4,False)])
+def test_live_private_planner_failure_never_sends_navigation(live_stack,status,accepted):
+    s=live_stack;s.tick();s.planned(status,accepted);s.tick();s.tick()
+    assert not s.requests and not s.m.state().ready
+    assert s.m.state().reply=='FAILED'

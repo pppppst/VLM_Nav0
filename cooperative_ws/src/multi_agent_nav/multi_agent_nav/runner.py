@@ -14,10 +14,46 @@ class AgentRunner:
         self.config=config
         self.execution=None
         self.execution_identity=None
+        self.approach=None
+        self.local_completion=None
+        self.adapter.single_robot_mode=machine.single_robot_mode
         self.local_path_accept=None
         self.owners=lambda:[]
         machine.local_execution_enabled=config is not None and not machine.context.share_c_coordinates
         machine.success_radius=success_radius
+
+    def local_approach(self, target, kind, record):
+        from .single_robot_approach import SingleRobotApproach, load_parameters, SUCCEEDED, FAILED
+        identity=self.execution_identity
+        command=self.machine.command
+        if not command or identity!=(command.task_id,command.command_id):
+            raise RuntimeError('approach task identity changed')
+        self.machine.local_approach_succeeded=False
+        self.machine.local_target=target
+        parameters=load_parameters(self.config['robot_go2'].get('arrival_config_files'))
+        approach=SingleRobotApproach(self.adapter,target,*identity,kind,parameters,record,self.clock)
+        self.approach=self.adapter.approach=approach
+        self.machine._state.run_state='LOCAL_EXECUTION'
+        try:
+            while approach.state not in (SUCCEEDED,FAILED):
+                command=self.machine.command
+                if self.machine.paused or not command or identity!=(command.task_id,command.command_id):
+                    raise RuntimeError('approach interrupted')
+                approach.tick()
+                self.machine._state.goal_id=approach.goal_id if self.adapter.motions else ''
+                yield
+            command=self.machine.command
+            if self.machine.paused or not command or identity!=(command.task_id,command.command_id):
+                raise RuntimeError('late approach completion')
+            if approach.state==FAILED:return 'APPROACH_FAILED: '+approach.reason
+            self.machine.local_approach_succeeded=True
+            approach.emit('TARGET_APPROACHED',
+                measured_distance=approach.target_reference_distance(approach.robot_pose()),
+                arrival_retry=approach.arrival_retry_count)
+            return 'TARGET_APPROACHED'
+        finally:
+            if approach.state!=SUCCEEDED:approach.close()
+            self.approach=self.adapter.approach=None
 
     def local_navigation(self,goal,kind,path_accept=None):
         self.local_path_accept=path_accept
@@ -59,11 +95,16 @@ class AgentRunner:
             if event.get('state')=='APPROACH_PLANNING':
                 from .models import Pose2D
                 self.machine.local_target=Pose2D(**event['object_pose'])
-            with (directory/'events.jsonl').open('a') as stream:stream.write(json.dumps(event)+'\n')
-            if self.on_event:self.on_event(event)
+            try:
+                with (directory/'events.jsonl').open('a') as stream:stream.write(json.dumps(event)+'\n')
+                if self.on_event:self.on_event(event)
+            except Exception as error:
+                if not self.machine.single_robot_mode:raise
+                self.adapter.node.get_logger().warning('Task diagnostic write failed: '+str(error))
         def observations(values):
             for value in values:self.machine.on_observation(value,self.clock())
         self.execution_identity=identity
+        if self.machine.single_robot_mode:self.adapter.record_event=record
         self.execution=explore_steps(self.adapter,config,self.machine.frame,
             self.machine.task_started+config['scene'].get('task_timeout',600.),
             self.descriptions[command.target_id],record,self.owners,lambda:True,lambda:None,
@@ -71,6 +112,7 @@ class AgentRunner:
             require_navigation_success=True,navigation=self.local_navigation,stopping=self.local_stop,
             on_observations=observations,task_id=command.task_id,parent_command_id=command.command_id,
             initial_camera_check=robot=='go2' and not self.adapter.simulation and command.kind!='APPROACH_DEPOSIT',
+            approaching=self.local_approach if self.machine.single_robot_mode else None,
             initial_observation=self.machine.local_c_observations.get(command.observation_id)
                 if command.kind=='APPROACH_DEPOSIT' else None)
 
@@ -79,6 +121,8 @@ class AgentRunner:
         if not command or command.command_id!=command_id or (task_id and command.task_id!=task_id):return False
         health=self.adapter.get_health()
         self.machine.check_health(self.clock(),health)
+        if self.machine.single_robot_mode and self.owners():
+            self.machine.stop('other navigation owner present')
         if self.machine.paused:
             self.dispatch(self.machine.take_effects(),self.clock())
             return False
@@ -89,6 +133,9 @@ class AgentRunner:
         # Stop before the adapter can send another scan Spin or consume a late result.
         health=self.adapter.get_health()
         self.machine.check_health(self.clock(),health)
+        if (self.machine.single_robot_mode and (self.execution is not None or self.local_completion is not None)
+                and self.owners()):
+            self.machine.stop('other navigation owner present')
         if self.machine.paused:self.dispatch(self.machine.take_effects(),now)
         if hasattr(self.adapter,'tick'):self.adapter.tick()
         while self.adapter.results:
@@ -129,16 +176,23 @@ class AgentRunner:
             except StopIteration as finished:
                 self.execution=None
                 self.machine.health=self.adapter.get_health()
-                self.machine.complete_local_execution(self.execution_identity,finished.value)
+                self.local_completion=(self.execution_identity,finished.value)
             except Exception as error:
                 self.execution=None
                 self.machine.stop('local execution failed: '+str(error))
             self.dispatch(self.machine.take_effects(),self.clock())
+        if self.local_completion is not None:
+            identity,outcome=self.local_completion
+            if self.machine.complete_local_execution(identity,outcome) is not False:
+                self.local_completion=None
+                self.execution_identity=None
+                if self.machine.single_robot_mode:self.adapter.record_event=None
 
     def dispatch(self,effects,now):
         command=self.machine.command
         for effect in effects:
             if effect.kind=='STOP':
+                self.local_completion=None
                 goal_id,reason=effect.payload
                 execution,self.execution=self.execution,None
                 try:

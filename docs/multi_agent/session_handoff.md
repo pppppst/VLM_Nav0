@@ -3359,3 +3359,29 @@ Sport日志19:08:11初始DISARMED、19:09:19 ARM accepted、19:11:50.808920发St
 验证：原配置基线最初28通过/3失败，修正underlay及/tmp ROS日志目录后其中1项环境失败通过，剩余2项为旧注册清单与旧验证标志期望，未修改。最终14个C++用例（新增8）、35个Python/Domain31用例（新增3）通过，2项既有失败明确排除。Domain31真实过滤节点覆盖缺map/TF、确认延迟、运动坐标一致性、原字段/header保留、TF晚到不阻塞后续原云、诊断WARN；真实costmap覆盖raw不能mark、confirmed可mark、raw可clear及正常退出。未把ctest条目数当用例数。证据build/go2-temporal-20261025/evidence/保存输入快照、失败与成功日志、审查修正、最终diff/SHA；git diff --check通过。
 
 通常增加约1.6～2.4秒确认等待，实际入costmap另受TF/云/地图刷新影响，快速移动或细小障碍可能不满足同格连续命中。已存在的障碍仍靠Nav2射线清除，本次不主动清图、不增加自动过期。未切换现场安装、重启现场组件、初始化Domain0、连接Ranger/SSH/bridge、录包、请求真实模型或执行运动；无额外现场点云订阅。真实幽灵障碍抑制、移动障碍和导航效果仍待现场验证，不宣称此前APPROACH_FAILED已解决。
+
+### 2026-10-25 Go2 接近迁移冻结单机行为（仅源码，离线验证）
+
+按用户[附件计划](../superpowers/plans/2026-10-25-go2-single-robot-parity.md)，从完整 SHA `32eab6244ec4b483807f8ed68e8667f5495874bb` 的真实函数迁移接近状态与回调。起始 HEAD `df1a519df222c40f32e5222801d42fe20d8c4c44` 与附件协作基线一致，原工作区干净；在 `/tmp/go2-single-parity-20261025` 独立副本实施后同步限定源码。每个源函数、新位置与接口变化见[来源对应表](../superpowers/plans/2026-10-25-go2-single-robot-parity-sources.md)。
+
+仅真实 Go2 且 share_c_coordinates=false 的 A/本机 C 接近启用新内部执行器：请求目标 x/y 和机器人当前 yaw，规划成功/非空后导航原请求目标，不替换终点、不作协作新增 footprint/距离预算否决、不二次规划或叠加 ABORTED 重试。内部停稳样本、取消终态与 0.81m 验收沿用源分支；首次 0.89m、原有一次距离重试，重试停止阈值按原函数取成功半径。用户补充确认的半径/动作超时仍读取 max_travel_radius + 0.50 与 goal_timeout，保留 active_motion_origin、goal_started 的原更新时机。参数验证仅做类型/有效值/基线核对，无新余量或运动准入规则。
+
+内部成功和协作放行分开：外层身份、健康、停稳、动作终态、≤1m 尚未满足则等待，不能 READY，也不再导航/追加重试。保留双 READY、失联/PAUSE/CANCEL 与定位门槛；真实 Go2 本地模式的两层首条/5秒执行路径消息停止条件去除，观察点导航也适用，路径记录与真实 path_valid 保留。Ranger/mock/共享模式、候选选点/扫描、导航与障碍参数、地图、传感器保持。
+
+接通被动动作/接近日志，记录原目标/规划终点/导航目标、原生状态、取消/终态、样本、年龄、最终距离及重试；迟到事件保留原任务记录器，新增诊断异常告警而不改变运动决策。独立审查发现漏掉原有其他运动所有者检查，已先复现再修复入口/规划回调/运动过程窗口，并防止扩大成任务开始前暂停；没有剩余已确认的重要审查问题。
+
+验证：原五文件基线130通过/3失败；扩大原代码基线365通过/4失败；最终15文件428通过/相同4项旧失败，新增63项均通过，未deselect。第四项为扩大覆盖后复现的 independent_c 旧vision_validated预期，其他为local_tasks既有验证标志/资源/退出点门槛预期，均未顺手修改。差分参考来自冻结源码真实方法，但隔离了外围ROS/传感器依赖，只证明覆盖的接近子流程；真实adapter/runner/agent离线集成另行覆盖。命令、完整失败名、退出码和环境见[runbook](go2_runbook.md#2026-10-25-冻结单机接近行为迁移离线源码验证)，证据 `build/go2-single-parity-20261025/evidence/`。语法、文档链接及git diff --check通过。
+
+未构建/安装/切换默认环境（仍为go2-target-plan-20261025），源码与默认安装不一致；运行中组件未热更新。未初始化ROS节点、Domain0/31现场流程、SSH/Ranger/bridge、录包、真实模型、ARM/start/运动、提交或推送。现有动态障碍三周期确认改动保留；疑似残留障碍、实际接近效果和双机避碰仍未验证，不把离线迁移写成现场问题已解决。
+
+### 2026-10-25 单机接近迁移安装更新（构建通过，完整预检受有线网络门槛阻塞）
+
+用户要求构建更新，并保持其 `start_go2_cooperative.sh` 实验流程。新成对安装为 `build/go2-single-parity-20261025/overlay/install/local_setup.bash`，两包构建退出0、23.1秒；包含本轮单机接近迁移及此前连续三周期障碍确认，旧安装/证据/进程保留。Cooperative_env的Go2默认、硬件Launcher安装预期、两份原测试路径夹具和正式双机文档统一新路径；显式COOP_SETUP_FILE仍优先，用户旧export须自行替换。
+
+脚本仅增加新接近模块的Go2安装一致性检查，并替换两处默认路径。完整入口 `start_go2_cooperative.sh` 和调度 `start_go2_cooperative_task.py` 与改前逐字节一致，启动/ARM/握手/退出流程未改。新安装的share脚本与文档副本已同步，未覆盖旧overlay。
+
+验证：路径变更前两份原测试41项通过；从/tmp加载新安装后18文件回归553通过/4项旧失败（沿用上一节完整失败清单）、11条第三方弃用告警，未排除用例，本轮未新增用例。新构建的两个CTest条目对应14个C++用例全部通过；未初始化ROS节点或跑Domain31现场流程。两包prefix及实际导入指向新安装，54个Python文件、根包config、协同scene/robot_go2配置和安装内入口脚本/正式文档均与源码一致，冻结接近参数核对通过。Bash/Python语法、文档链接和git diff --check通过。命令、环境、结果与用户执行顺序在[runbook](go2_runbook.md#2026-10-25-单机接近迁移构建与默认安装更新)，证据 `build/go2-single-parity-20261025/evidence/install-update/`。
+
+默认完整离线preflight退出1：基础环境检查报enp4s0无192.168.123.x地址，只读核实该网卡DOWN/无地址，尚未进入installed/live_gates/API报告。独立安装核对通过不能当作完整preflight通过。未更改网络或绕过检查；用户恢复原有线环境后先按runbook显式export新安装并执行preflight，通过后再使用原完整入口，旧任务仍按原流程退出，不能叠加运行。
+
+本轮未启动完整协同入口、SSH/Ranger/bridge、真实VLM、ARM/start/录包/运动，未重启/停止运行中组件或自动提交。旧进程不会热更新；实际接近、动态障碍与双机避碰仍未现场验收。

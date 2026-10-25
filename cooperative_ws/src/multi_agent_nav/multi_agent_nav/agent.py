@@ -50,6 +50,11 @@ class AgentMachine:
         if not context.share_c_coordinates:
             self._state.run_state = 'PREPARING'
 
+    @property
+    def single_robot_mode(self):
+        return (self.context.robot_id == 'go2' and not self.context.simulation
+                and not self.context.share_c_coordinates)
+
     def state(self):
         return replace(self._state) if self.context.share_c_coordinates else replace(
             self._state, common_pose=Pose2D(), pose_valid=False)
@@ -283,7 +288,7 @@ class AgentMachine:
         if local is not None and (
             result.status == 'SUCCEEDED' or result.status != 'ABORTED' or self.retry >= 1
         ):
-            if result.status == 'SUCCEEDED' and result.goal_kind in ('PICKUP_NAV','DEPOSIT_NAV'):
+            if not self.single_robot_mode and result.status == 'SUCCEEDED' and result.goal_kind in ('PICKUP_NAV','DEPOSIT_NAV'):
                 self.local_approach_succeeded = True
             if not local['reply'].done():local['reply'].set_result(result.status)
             self._state.run_state='LOCAL_EXECUTION'
@@ -332,12 +337,17 @@ class AgentMachine:
     def complete_local_execution(self,identity,outcome):
         from vlm_nav.arrival import target_distance
         if self.paused or not self.command or identity!=(self.command.task_id,self.command.command_id):return
+        if self.single_robot_mode and identity[0]!=self.context.task_id:return
         state=self._state
         if self.command.kind=='SEARCH_VIEWPOINT':
             success=outcome=='TARGET_FOUND' and bool(self.local_c_observations)
         else:
             distance=target_distance((self.health.pose.x,self.health.pose.y),
                 (self.local_target.x,self.local_target.y) if self.local_target else None)
+            if self.single_robot_mode and outcome=='TARGET_APPROACHED' and self.local_approach_succeeded:
+                if not (self.health.nav_ready and self.health.localization_valid and self.health.stopped
+                        and self.health.motion_terminal and distance<=self.success_radius):
+                    return False
             success=(outcome=='TARGET_APPROACHED' and self.local_approach_succeeded
                 and self.health.localization_valid and self.health.stopped and self.health.motion_terminal
                 and distance<=self.success_radius)
@@ -429,6 +439,10 @@ class AgentMachine:
         return self.take_effects()
 
     def _monitor_path(self, health, now=0.0):
+        if self.single_robot_mode:
+            error=motion_path_error(replace(health,path_valid=True),[health.pose])
+            if error:self.stop(error)
+            return
         if health.path_valid and health.path:
             self.path_acquired=True
         elif not self.path_acquired and health.stopped and now-self.navigation_started_at < self.path_start_timeout:
