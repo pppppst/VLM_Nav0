@@ -32,6 +32,8 @@ def test_current_goal_only_and_duplicate_execution():
     agent.on_goal_result(replace(result, goal_id='stale'), 0)
     assert not agent.state().ready
     agent.on_goal_result(result, 0)
+    assert not agent.state().ready
+    agent.tick(0, replace(agent.health, pose=Pose2D(1, 0), stopped=True, motion_terminal=True))
     assert agent.state().ready
     assert agent.accept(command(), 0).accepted
     assert not agent.take_effects()

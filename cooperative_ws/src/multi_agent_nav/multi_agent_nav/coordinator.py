@@ -8,6 +8,7 @@ class Coordinator:
         self.gates = list(gates or [])
         self.phase, self.task_id, self.reason = 'IDLE', '', ''
         self.states, self.received_at, self.observations = {}, {}, {}
+        self.transport_received_at, self.state_errors = {}, {}
         self.commands, self.reservations, self.rejected = {}, {}, set()
         self.sequence = {r:0 for r in ROBOTS}
         self.acked = {r:0 for r in ROBOTS}
@@ -26,10 +27,7 @@ class Coordinator:
         if not self.share_c_coordinates:
             if data.robot_id not in ROBOTS or data.schema_version != SCHEMA_VERSION or not data.local_map_id or not data.map_version or data.common_frame_id or data.alignment_id:
                 return False
-            expected=self.map_ids.get(data.robot_id)
-            previous=self.states.get(data.robot_id)
-            if previous:expected=(previous.local_map_id,previous.map_version)
-            return not expected or not all(expected) or (data.local_map_id,data.map_version)==expected
+            return (data.local_map_id,data.map_version)==self.map_ids.get(data.robot_id)
         return data.robot_id in ROBOTS and data.schema_version == SCHEMA_VERSION and (
             data.local_map_id, data.map_version) == self.map_ids[data.robot_id] and (
             data.common_frame_id, data.alignment_id) == ('lab_ref', self.alignment_id)
@@ -38,25 +36,26 @@ class Coordinator:
         return state.localization_valid and state.nav_ready and (state.pose_valid or not self.share_c_coordinates)
 
     def ingest_state(self, state, received_at):
-        previous=self.states.get(state.robot_id)
-        if not self.share_c_coordinates and self.task_id and previous and state.task_id==self.task_id and (
-            state.local_map_id,state.map_version)!=(previous.local_map_id,previous.map_version):
-            self.pause(f'{state.robot_id}: local map identity changed')
+        if state.robot_id not in ROBOTS:return
+        if not self._identity(state) or state.simulation != self.simulation:
+            reason = 'schema/map/frame identity mismatch' if state.simulation == self.simulation else 'simulation/live state mismatch'
+            self.state_errors[state.robot_id] = reason
+            if self.task_id and self.phase not in ('IDLE','SYNCING','PAUSED','DONE','FAILED'):
+                self.pause(f'{state.robot_id}: {reason}')
             return
-        if not self._identity(state):
-            return
-        if state.simulation != self.simulation:
-            if self.task_id:
-                self.pause('simulation/live state mismatch')
-            return
+        self.transport_received_at[state.robot_id] = received_at
+        self.state_errors.pop(state.robot_id, None)
         if self.task_id and state.task_id not in ('', self.task_id):
             return
+        if not self.share_c_coordinates and self.task_id and state.task_id == '' and self.phase not in ('IDLE','SYNCING','PAUSED','DONE','FAILED'):
+            self.pause(f'{state.robot_id}: peer restarted: task identity lost')
         previous = self.states.get(state.robot_id)
         if previous and previous.task_id == state.task_id and state.sequence < previous.sequence:
             return
         self.states[state.robot_id], self.received_at[state.robot_id] = state, received_at
 
     def ingest_observation(self, observation, received_at):
+        if self.phase == 'SYNCING':return
         if not self._identity(observation) or observation.simulation != self.simulation or observation.task_id != self.task_id:
             return
         if observation.target_id not in TARGETS or observation.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN','API_ERROR','CACHED'):
@@ -81,12 +80,21 @@ class Coordinator:
         if scenario_id != self.scene['scenario_id'] or not self.scene['enabled'] or self.gates:
             return StartReply(False, reason='; '.join(self.gates) or 'scenario disabled/unknown')
         for robot in ROBOTS:
+            if robot in self.state_errors:return StartReply(False, reason=f'{robot}: {self.state_errors[robot]}')
             state = self.states.get(robot)
             if not state or now-self.received_at[robot] > self.lost_timeout or not (
                 self._healthy(state) and state.stopped):
                 return StartReply(False, reason=f'{robot}: fresh healthy stopped state required')
+            if not self.share_c_coordinates:
+                preparing = state.run_state in PRETASK_READY_STATES and not state.task_id and not state.reply and clean_private_state(state)
+                restarting = not state.goal_id and (
+                    state.run_state == 'PAUSED' or bool(self.task_id) and state.task_id == self.task_id
+                    and self.phase in ('PAUSED','DONE','FAILED') and state.run_state == 'IDLE') and not any(
+                        getattr(state,name) for name in PRIVATE_RESOURCE_FIELDS)
+                if not (preparing or restarting):
+                    return StartReply(False, reason=f'{robot}: waiting/standby state required')
         self.task_id = uuid.uuid4().hex
-        self.phase, self.started, self.reason = 'SEARCH_AB', now, ''
+        self.phase, self.started, self.reason = ('SEARCH_AB' if self.share_c_coordinates else 'SYNCING'), now, ''
         self.observations, self.commands, self.reservations, self.rejected = {}, {}, {}, set()
         self.planner = RulePlanner()
         self.sequence = {r:0 for r in ROBOTS}
@@ -103,7 +111,7 @@ class Coordinator:
                        common_frame_id='lab_ref' if self.share_c_coordinates else '',simulation=self.simulation, **kwargs)
 
     def pause(self, reason):
-        self.phase, self.reason = 'PAUSED', reason
+        if self.phase != 'PAUSED':self.phase, self.reason = 'PAUSED', reason
         return [self.control(r, 'PAUSE') for r in ROBOTS] if self.task_id else []
 
     def _complete_commands(self):
@@ -128,13 +136,42 @@ class Coordinator:
     def tick(self, now):
         if not self.task_id:
             return []
+        if self.phase == 'SYNCING':
+            if now-self.started > self.task_timeout:
+                self.pause('task timeout during handshake')
+            elif all(robot not in self.state_errors and robot in self.states and now-self.received_at[robot] <= self.lost_timeout and
+                self._healthy(self.states[robot]) and self.states[robot].stopped and
+                self.states[robot].run_state == 'SYNCED' and task_acknowledges(self.states[robot],self.task_id)
+                for robot in ROBOTS):
+                self.phase, self.reason = 'SEARCH_AB', ''
+            else:
+                waiting = []
+                for robot in ROBOTS:
+                    state = self.states.get(robot)
+                    if robot in self.state_errors:reason = self.state_errors[robot]
+                    elif state is None:reason = 'no valid state received'
+                    elif now-self.received_at[robot] > self.lost_timeout:reason = 'heartbeat timeout'
+                    elif not state.localization_valid:reason = 'localization invalid'
+                    elif not state.nav_ready:reason = 'navigation not ready'
+                    elif state.task_id == self.task_id and state.run_state in ('STOPPING','PAUSED'):
+                        return self.pause(f'{robot}: agent paused: {state.reason}')
+                    elif not task_acknowledges(state,self.task_id):reason = 'task synchronization incomplete'
+                    else:continue
+                    waiting.append(f'{robot}: {reason}')
+                self.reason = '; '.join(waiting)
+                return [self.control(r, 'SYNC', ack_sequence=self.acked[r]) for r in ROBOTS]
         if self.phase not in ('PAUSED','DONE','FAILED'):
             for robot in ROBOTS:
                 state = self.states.get(robot)
-                if not state or now-self.received_at[robot] > self.lost_timeout or not (
-                    self._healthy(state)) or (
-                    state.task_id == self.task_id and state.run_state in ('STOPPING','PAUSED')):
-                    self.pause(f'{robot}: health/heartbeat lost')
+                reason = ''
+                if not state:reason = 'no state received'
+                elif now-self.received_at[robot] > self.lost_timeout:reason = 'heartbeat timeout'
+                elif not state.localization_valid:reason = 'localization invalid'
+                elif not state.nav_ready:reason = 'navigation not ready'
+                elif not self._healthy(state):reason = 'pose invalid'
+                elif state.task_id == self.task_id and state.run_state in ('STOPPING','PAUSED'):
+                    reason = 'agent paused: '+state.reason
+                if reason:self.pause(f'{robot}: {reason}')
             if now-self.started > self.task_timeout:
                 self.pause('task timeout')
         output = [self.control(r, 'SYNC', ack_sequence=self.acked[r]) for r in ROBOTS]

@@ -18,7 +18,7 @@ def private_mission():
 def test_planner_sends_target_intents_without_choosing_viewpoints():
     mission = private_mission()
     assert mission.start().accepted
-    mission.run(2)
+    mission.run(5)
     commands = [c for _, c in mission.executed]
     assert len(commands) == 2
     assert [(c.recipient_id, c.target_id) for c in commands] == [('go2','A'), ('ranger','B')]
@@ -83,17 +83,18 @@ def test_successful_nav_without_stopping_cannot_ready():
 def test_peer_health_without_common_pose_keeps_local_heartbeat():
     from types import SimpleNamespace
     from multi_agent_nav.agent_node import AgentNode
+    from multi_agent_nav.ros_codec import to_ros
     mission = private_mission()
     assert mission.start().accepted
-    mission.run(2)
+    mission.run(5)
     agent = mission.machines['go2']
     agent.peer_received = None
     peer = mission.machines['ranger'].state()
     assert not peer.pose_valid and peer.common_pose == Pose2D()
     node = SimpleNamespace(machine=agent, simulation=True, config=mission.config, peer_map_identity=None)
-    AgentNode.peer(node, peer, 'ranger')
+    AgentNode.peer(node, to_ros(peer), 'ranger')
     assert agent.peer_received is not None and not agent.paused
-    AgentNode.peer(node, replace(peer,map_version='changed'), 'ranger')
+    AgentNode.peer(node, to_ros(replace(peer,map_version='changed')), 'ranger')
     assert agent.paused
 
 
@@ -111,7 +112,8 @@ def test_live_local_gates_require_local_assets_but_not_remote_alignment():
 def test_map_identity_change_pauses_active_local_task():
     mission = private_mission()
     assert mission.start().accepted
-    mission.run(2)
+    mission.run(5)
+    assert mission.coordinator.phase == 'SEARCH_AB'
     state = mission.machines['ranger'].state()
     mission.coordinator.ingest_state(replace(state, map_version='new-map'),mission.now)
     assert mission.coordinator.phase == 'PAUSED'
@@ -199,8 +201,9 @@ def test_local_navigation_ignores_legacy_door_and_basket_regions():
 
 @pytest.mark.parametrize('kind', ['PICKUP_NAV','DEPOSIT_NAV'])
 @pytest.mark.parametrize('fault', ['distance','stop','canceled'])
-def test_target_acceptance_rejects_bad_terminal_geometry_or_stop(kind,fault):
-    mission=private_mission();adapter=mission.adapters['go2']
+@pytest.mark.parametrize('robot', ['go2','ranger'])
+def test_target_acceptance_rejects_bad_terminal_geometry_or_stop(kind,fault,robot):
+    mission=private_mission();adapter=mission.adapters[robot]
     advance=adapter.advance
     terminal=[False]
     def inject(now):
@@ -211,24 +214,30 @@ def test_target_acceptance_rejects_bad_terminal_geometry_or_stop(kind,fault):
         if finishing:
             terminal[0]=True
             if fault=='distance':
-                obj=adapter.detections['A' if kind=='PICKUP_NAV' else 'C']
+                obj=adapter.detections[('A' if robot=='go2' else 'B') if kind=='PICKUP_NAV' else 'C']
                 adapter.pose=Pose2D(obj.x-1.1,obj.y)
     adapter.advance=inject
     health=adapter.get_health
     adapter.get_health=lambda:replace(health(),stopped=False) if fault=='stop' and terminal[0] else health()
     assert mission.start().accepted
     mission.run(400)
-    state=mission.machines['go2'].state()
+    state=mission.machines[robot].state()
     assert terminal[0]
     assert not (state.ready if kind=='PICKUP_NAV' else state.deposited)
 
 
 @pytest.mark.parametrize('field,value', [('standoff_distance',None),('approach_distance_margin',0),
     ('arrival_config_files',[]),('scan_angles',[])])
-def test_live_local_gates_reject_executor_parameters_before_motion(field,value):
+def test_live_local_gates_validate_parameters_used_by_target_planning(field,value):
     from multi_agent_nav.config import load_config,live_gates
     config=load_config();config['robot_go2'][field]=value
     errors=live_gates(config)
+    if field=='standoff_distance':
+        from multi_agent_nav.go2_exploration import exploration_gates
+        assert not any('standoff_distance' in error for error in errors)
+        config['robot_go2']['approach_on_detection']=True
+        assert any('standoff_distance' in error for error in exploration_gates(config))
+        return
     expected={'standoff_distance':'standoff_distance','approach_distance_margin':'approach_distance_margin',
         'arrival_config_files':'arrival contract','scan_angles':'scan angles'}
     assert any(expected[field] in error for error in errors)

@@ -113,7 +113,7 @@ def run_semantic(config, mode='normal'):
     adapter.client = SimpleNamespace(choose_furniture=choose)
     pending = Future()
     def submit(fn):
-        if mode in ('timeout', 'cancel', 'late', 'map_change'):
+        if mode in ('timeout', 'cancel', 'late', 'map_change') and events and events[-1].get('state')=='FURNITURE_REQUEST':
             if mode != 'timeout':pending.work = fn
             return pending
         try:return completed(fn())

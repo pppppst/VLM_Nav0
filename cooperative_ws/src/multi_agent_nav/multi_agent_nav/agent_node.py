@@ -41,7 +41,13 @@ class AgentNode(Node):
         else:
             self.get_logger().warning('Live adapter not activated: '+'; '.join(gates))
         if self.machine:
-            self.runner=AgentRunner(self.machine,self.adapter,config['scene']['targets'],self.publish_observation,config=config,success_radius=1.0)
+            on_event=None
+            if robot=='go2' and not simulation:
+                from .exploration_display import ExplorationDisplay
+                self.exploration_display=ExplorationDisplay(self.observer,self.machine.frame)
+                self.adapter.display_path=lambda path:self.exploration_display.publish('planned_path',path)
+                on_event=self.exploration_display.record
+            self.runner=AgentRunner(self.machine,self.adapter,config['scene']['targets'],self.publish_observation,config=config,success_radius=1.0,on_event=on_event)
             if not self.machine.context.share_c_coordinates:
                 from .go2_check import other_owners
                 self.runner.owners=lambda:[name for name in other_owners(self.observer) if name not in
@@ -53,37 +59,28 @@ class AgentNode(Node):
         self.create_subscription(AgentState,f'{prefix}/{peer}/state',lambda m:self.peer(m,peer),qos())
         self.create_subscription(Observation,f'{prefix}/{peer}/observation',lambda m:self.peer_observation(m,peer),qos(True))
         self.last_observations={}
-        self.peer_map_identity=None
         self.create_timer(.05,self.tick)
         self.create_timer(1/config['scene'].get('heartbeat_hz',2.0),self.publish_state)
 
     def command(self,message):
         if not self.machine:return
-        task=self.machine.context.task_id
         reply=self.machine.accept(from_ros(message),time.monotonic())
-        if reply.accepted and self.machine.context.task_id!=task:self.peer_map_identity=None
         if message.recipient_id in (self.robot,'*') and not reply.accepted:
             self.get_logger().warning('command rejected: '+reply.reason,throttle_duration_sec=2)
         self.publish_state()
 
     def peer(self,message,source):
-        if not self.machine or message.robot_id!=source or message.simulation!=self.simulation:return
+        if not self.machine:return
         if not self.machine.context.share_c_coordinates:
-            if message.schema_version!=1 or message.task_id!=self.machine.context.task_id:return
-            if not message.local_map_id or not message.map_version or message.common_frame_id or message.alignment_id:return
-            identity=(message.local_map_id,message.map_version)
-            if self.peer_map_identity is not None and identity!=self.peer_map_identity:
-                self.machine.stop('peer map identity changed');return
-            self.peer_map_identity=identity
-            if message.localization_valid and message.nav_ready:self.machine.peer_received=time.monotonic()
-            else:self.machine.stop('peer localization/navigation invalid')
+            self.machine.receive_peer(from_ros(message),time.monotonic())
             return
+        if message.robot_id!=source or message.simulation!=self.simulation:return
         entry=self.config['alignment']['robots'][source]
         if message.schema_version!=1 or (message.local_map_id,message.map_version,message.common_frame_id,message.alignment_id)!=(
             entry['local_map_id'],entry['map_version'],'lab_ref',self.config['alignment']['alignment_id']):return
         if message.task_id!=self.machine.context.task_id:return
-        if message.localization_valid and message.pose_valid:self.machine.peer_received=time.monotonic()
-        else:self.machine.stop('peer localization invalid')
+        self.machine.peer_received=time.monotonic()
+        if not message.localization_valid or not message.pose_valid:self.machine.stop('peer localization invalid')
 
     def peer_observation(self,message,source):
         if message.robot_id==source and self.machine and message.task_id==self.machine.context.task_id and message.simulation==self.simulation:

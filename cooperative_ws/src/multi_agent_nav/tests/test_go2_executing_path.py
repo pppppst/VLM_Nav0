@@ -70,6 +70,7 @@ def begin(navigation):
 
 def test_path_requires_an_accepted_navigation(navigation):
     a, now, requests = navigation
+    displayed=[];a.display_path=displayed.append
     a.on_path_update(path())
     assert not a.path and not a.get_health().path_valid
     a.start_navigation(Pose2D(2., 0.), 'task', 'command', 'VIEWPOINT_NAV')
@@ -77,12 +78,15 @@ def test_path_requires_an_accepted_navigation(navigation):
     a.on_path_update(path(10.1))
     assert not a.path and not a.get_health().path_valid
     accept(requests[-1])
+    assert not any(p.poses for p in displayed)
     a.on_path_update(path(10.1))
     assert a.path == [Pose2D(), Pose2D(2., 0.)] and a.get_health().path_valid
+    assert displayed[-1].poses[-1].pose.position.x==2.
 
 
 def test_replanning_replaces_the_current_path_and_drops_old_goal_path(navigation):
     a, now, requests = navigation
+    displayed=[];a.display_path=displayed.append
     goal, terminal = begin(navigation)
     a.on_path_update(path(10.1))
     now[0] = 10.2
@@ -96,6 +100,7 @@ def test_replanning_replaces_the_current_path_and_drops_old_goal_path(navigation
     assert not a.path
     a.on_path_update(path(10.3, (3., 0.)))
     assert a.path[-1] == Pose2D(3., 0.)
+    assert [p.poses[-1].pose.position.x for p in displayed if p.poses]==[2.,2.,3.]
 
 
 @pytest.mark.parametrize('status', [4, 5, 6])

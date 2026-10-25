@@ -10,6 +10,70 @@ import pytest
 import yaml
 
 
+@pytest.mark.parametrize('stage',['geometry','unchanged','image','model'])
+@pytest.mark.parametrize('cancel',[False,True])
+def test_expensive_preparation_keeps_heartbeats_and_cancel_responsive(generated_config,tmp_path,monkeypatch,stage,cancel):
+    import threading
+    import time
+    from test_go2_exploration import LocalFixture
+    from test_startup_handshake import activate,peer,sync
+    import multi_agent_nav.go2_exploration as exploration
+    from multi_agent_nav.adapters.go2 import AsyncVision
+    from multi_agent_nav.frame_adapter import LocalFrame
+    config,agent,health=activate()
+    generated_config['robot_go2']['api_timeout']=30.
+    adapter=LocalFixture()
+    adapter.vision=AsyncVision(10.)
+    adapter.selection_evidence_dir=tmp_path/'selection'
+    adapter.client=S(choose_candidate=lambda snapshot:dict(candidate_id='P1',reason='offline'))
+    started=threading.Event();release=threading.Event();main_thread=threading.get_ident()
+    def blocking(function):
+        def work(*args,**kwargs):
+            assert threading.get_ident()!=main_thread,'expensive work ran on heartbeat path'
+            started.set()
+            assert release.wait(2.),'test worker was not released'
+            return function(*args,**kwargs)
+        return work
+    if stage=='geometry':monkeypatch.setattr(exploration,'GeneratedCandidates',blocking(exploration.GeneratedCandidates))
+    elif stage=='unchanged':monkeypatch.setattr(exploration.GeneratedCandidates,'unchanged',blocking(exploration.GeneratedCandidates.unchanged))
+    elif stage=='image':monkeypatch.setattr(exploration,'render_selection',blocking(exploration.render_selection))
+    else:adapter.client.choose_candidate=blocking(adapter.client.choose_candidate)
+    now=[.2];events=[]
+    steps=exploration.explore_steps(adapter,generated_config,LocalFrame(),600.,'target',events.append,
+        lambda:[],lambda:True,lambda:None,clock=lambda:now[0])
+    try:
+        for _ in range(200):
+            adapter.vision.poll();next(steps)
+            if started.is_set():break
+            time.sleep(.001)
+        assert started.is_set()
+        heartbeats=[]
+        for tick in range(1,21):
+            now[0]=.2+tick*.5
+            agent.accept(sync(phase='SEARCH_AB'),now[0])
+            agent.receive_peer(peer(config,task_id='task',run_state='PLANNING'),now[0])
+            agent.tick(now[0],health)
+            heartbeats.append(agent.state())
+            adapter.vision.poll();next(steps)
+        assert len(heartbeats)==20 and not agent.paused and not adapter.calls
+        if cancel:
+            agent.stop('explicit test cancel');agent.tick(now[0],health)
+            steps.close();adapter.vision.cancel()
+            release.set()
+            adapter.vision.executor.shutdown(wait=True)
+            adapter.vision.poll()
+            assert agent.paused and not adapter.calls
+        else:
+            release.set()
+            for _ in range(300):
+                adapter.vision.poll();next(steps)
+                if any(e.get('state')=='CANDIDATE_SELECTED' for e in events):break
+                time.sleep(.001)
+            assert any(e.get('state')=='CANDIDATE_SELECTED' for e in events)
+    finally:
+        release.set();steps.close();adapter.vision.close();adapter.vision.executor.shutdown(wait=True)
+
+
 @pytest.fixture
 def generated_config(tmp_path):
     from multi_agent_nav.config import map_file_info
@@ -104,7 +168,7 @@ def test_dual_images_have_identical_marks_and_do_not_write_map(generated_config,
     assert Path(catalog.source['image']).read_bytes()==original
 
 
-def run_generated(config,tmp_path,mode='normal'):
+def run_generated(config,tmp_path,mode='normal',initial_camera_check=False,camera_snapshot=None):
     from test_go2_exploration import LocalFixture
     from multi_agent_nav.adapters.fake import completed
     from multi_agent_nav.models import Pose2D, Observation, ApproachResult
@@ -112,6 +176,7 @@ def run_generated(config,tmp_path,mode='normal'):
     from multi_agent_nav.go2_exploration import explore
     from concurrent.futures import Future
     adapter=LocalFixture();events=[];requests=[];now=[0.]
+    if camera_snapshot is not None:adapter.selection_camera_snapshot=lambda:camera_snapshot
     adapter.selection_evidence_dir=tmp_path/'requests'
     adapter.observation_candidate_free=lambda goal: mode!='blocked' and not (mode=='arrived_blocked' and adapter.calls)
     def choose(snapshot):
@@ -120,11 +185,11 @@ def run_generated(config,tmp_path,mode='normal'):
     adapter.client=S(choose_candidate=choose)
     pending=Future()
     def submit(fn):
-        if mode in ('cancel','late'):
+        if mode in ('cancel','late') and events and events[-1].get('state')=='CANDIDATE_REQUEST':
             pending.work=fn;return pending
         return completed(fn())
     adapter.vision=S(submit=submit)
-    def scan(descriptions,scan_id,*,stop_on_target=None):
+    def scan(descriptions,scan_id,*,stop_on_target=None,current_view_only=False,task_id=''):
         adapter.scans+=1
         return completed([Observation(target_id=t,view_index=0,
                            status='API_ERROR' if mode=='api' or mode=='partial_detection' and t!='A' else
@@ -142,7 +207,8 @@ def run_generated(config,tmp_path,mode='normal'):
     def stop():adapter.stop_motion('stop');adapter.advance(now[0]+1);return True
     try:
         outcome=explore(adapter,spin,config,FrameAdapter('fixture','1','lab_ref','',[0,0,0]),
-                        600.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0])
+                        600.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0],
+                        initial_camera_check=initial_camera_check)
     except Exception:
         if mode in ('invalid','late','cancel'):assert not adapter.calls
         if mode=='api':assert len(adapter.calls)==1 and adapter.scans==1
@@ -310,3 +376,78 @@ def test_offline_generated_entry_does_not_initialize_ros(monkeypatch,capsys,gene
     report=json.loads(capsys.readouterr().out)
     assert sum(bool(p['furniture_id']) for p in report['semantic_search']['points'])==4
     assert any(not p['furniture_id'] for p in report['semantic_search']['points']) and not report['motion_sent']
+
+
+@pytest.mark.parametrize('fault', ['footprint', 'stopped', 'terminal'])
+def test_motion_prerequisites_rechecked_after_final_map_worker(generated_config,tmp_path,monkeypatch,fault):
+    from dataclasses import replace
+    from test_go2_exploration import LocalFixture
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    from multi_agent_nav.go2_exploration import ExplorationStopped
+    created=[]
+    initialize=LocalFixture.__init__
+    def initialize_and_capture(adapter):
+        initialize(adapter);created.append(adapter)
+    monkeypatch.setattr(LocalFixture,'__init__',initialize_and_capture)
+    unchanged=GeneratedCandidates.unchanged
+    checks=[0]
+    def change_during_last_check(geometry):
+        checks[0]+=1
+        if checks[0]==3:
+            adapter=created[0]
+            if fault=='footprint':
+                adapter.costmap_candidate_free=lambda *args,**kwargs:False
+                adapter.observation_candidate_free=lambda *args,**kwargs:False
+            else:
+                get_health=adapter.get_health
+                field='stopped' if fault=='stopped' else 'motion_terminal'
+                adapter.get_health=lambda:replace(get_health(),**{field:False})
+        return unchanged(geometry)
+    monkeypatch.setattr(GeneratedCandidates,'unchanged',change_during_last_check)
+    try:
+        run_generated(generated_config,tmp_path)
+    except ExplorationStopped:
+        pass
+    assert checks[0]>=3 and not created[0].calls
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_new_task_yields_until_previous_worker_finishes(generated_config,tmp_path,cancel):
+    import threading
+    import time
+    from multi_agent_nav.adapters.go2 import AsyncVision
+    from multi_agent_nav.frame_adapter import LocalFrame
+    from multi_agent_nav.go2_exploration import explore_steps
+    from test_go2_exploration import LocalFixture
+    adapter=LocalFixture();adapter.vision=AsyncVision(10.)
+    adapter.selection_evidence_dir=tmp_path/'selection'
+    adapter.client=S(choose_candidate=lambda snapshot:dict(candidate_id='P1',reason='offline'))
+    release=threading.Event();started=threading.Event()
+    def old_work():
+        started.set();assert release.wait(2.)
+        return 'old-task-result'
+    previous=adapter.vision.submit(old_work)
+    assert started.wait(1.)
+    adapter.vision.cancel()
+    assert previous.cancelled()
+    events=[]
+    steps=explore_steps(adapter,generated_config,LocalFrame(),600.,'target',events.append,
+        lambda:[],lambda:True,lambda:None,clock=lambda:0.,task_id='new-task')
+    try:
+        for _ in range(20):
+            adapter.vision.poll();next(steps)
+        assert not adapter.calls and not events
+        if cancel:
+            steps.close()
+        release.set();adapter.vision.job.result(timeout=2.)
+        adapter.vision.poll()
+        if not cancel:
+            for _ in range(300):
+                adapter.vision.poll();next(steps)
+                if any(e.get('state')=='CANDIDATE_SELECTED' for e in events):break
+                time.sleep(.001)
+            assert any(e.get('state')=='CANDIDATE_SELECTED' and e['task_id']=='new-task' for e in events)
+        else:
+            assert not adapter.calls and not events
+    finally:
+        release.set();steps.close();adapter.vision.close();adapter.vision.executor.shutdown(wait=True)

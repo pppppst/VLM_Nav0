@@ -1,6 +1,6 @@
 # Ranger PC handoff (no Ranger connection performed)
 
-> 最新行为以文末2026-10-20独立C/取消保护区章节为准；此前资源许可与顺序退出记录属于历史版本。
+> 当前公共到达修复见文末2026-10-22节；独立C/取消保护区规则保留，此前资源许可与顺序退出记录属于历史版本。
 
 
 当前私有 C 模式以本文末尾 **2026-10-20 本轮最小接入说明** 为准；前文保留为旧共享模式参考。
@@ -221,3 +221,36 @@ READY/deposited必须来自当前目标的成功导航、真实停稳、动作�
 Go2独立安装为build/go2-independent-c-20261020/install/multi_agent_nav，默认环境尚未切换。
 完整构建与离线回归统一见[runbook最新节](go2_runbook.md#2026-10-20-取消保护区与独立c执行最新)。
 本轮仅fake Ranger验证，不能称为Ranger真实接入或跨机验收；后续须在其电脑完成接口后再按现场授权验收。
+
+## 2026-10-22 双机验收前公共到达修复
+
+用户已说明双方完成迁移；本节不再用旧“Ranger未接入”描述断言当前远端状态。本轮没有访问Ranger实际代码，以下须由其本机核对。
+schema v1、五话题及SYNC_LOCAL_C/EXECUTE三种任务/PAUSE/CANCEL不变，资源许可与EXIT继续拒绝。
+当前完整检查、消息摘要、Ranger核对清单及验收顺序见[runbook本轮节](go2_runbook.md#2026-10-22-双机联动前必要检查)。
+
+仅需同步公共agent.py的本轮修复及对应测试，不覆盖Ranger自己的adapter/地图/硬件参数：
+
+- 私有模式必须有`AgentRunner(..., config=本机配置, success_radius=1.0)`启用本地执行器；缺失时拒绝EXECUTE，不能回退到网络零坐标导航。
+- 旧共享执行分支收到当前目标导航SUCCEEDED后进入内部ARRIVAL_STOP，等待真实stopped和motion_terminal，再验导航种类及本机距离≤1m；不再当场置READY/deposited。
+  Ranger若有自定义旧回调直接置标志，也必须移除相同旁路；ARRIVAL_STOP不能被自定义状态映射当作完成。
+- 正常私有核心的严格导航成功/真实停稳/动作终态/距离判据保持；双方READY屏障、独立C引用、另一方继续搜C以及当前命令终态后DONE保持。
+- 实际安装必须包含修复，不仅检查源码或消息字段。Go2旧默认安装仍缺此修复，尚未自动更新；两端上线前各查实际导入与preflight。
+
+本轮Go2源码新增覆盖35项通过（29项新文件、6项Ranger故障参数化），未启动ROS或真机联动；
+完整相关集合266通过/5项改前同样失败，失败依赖旧关闭gates假设，未通过改配置消除。真实Ranger行为及双机现场结果仍待核对。
+
+## 2026-10-22 异步启动公共语义（待Ranger核对安装）
+
+本轮没有访问或覆盖Ranger实际源码/安装。共同AgentMachine已实现PREPARING → WAITING_PEER/STANDBY → SYNCING/SYNCED；不能沿用“先等对方IDLE，本机才准备”的门槛。双方可先后启动，当前任务执行前的单端重启可重新接受SYNC_LOCAL_C、立即发布本轮身份并握手；执行后重启/失联仍严格暂停，恢复消息不恢复运动。
+
+待Ranger维护端核对：同步公共models/agent与真实peer接收回调；真实health来自本机；SYNC接受立即发布；完整保留新增run_state；本机motion_terminal/stopped判据与本地执行器配置保留；不得将SYNCED或WAITING_PEER映射成ready=true。Go2 coordinator同版本等待双方本轮SYNCED后才派工。
+schema v1及五话题不变，但旧版IDLE不能冒充新版启动握手；仅消息接口一致不足以验收。Ranger自定义adapter/地图/硬件参数不在本次覆盖范围。
+逐项待确认和离线证据见[修改说明](async_startup_changes_20261022.md)；两端实际部署、DDS调度和现场四类异步场景均未验证。
+
+## 2026-10-22 最终契约的 Go2 实施与安装答复
+
+用户提供[最终契约](ans_async_startup.md)，并确认Ranger已依其修改；本轮仅Go2本机实现与离线核对，没有连接Ranger验证其实际安装。
+Go2已补两种SYNC编码、仅SYNCING新建task、run_state/reply双字段SYNCED、提交/乱序/首条丢失保护、固定peer地图身份、干净私有报文及旧worker等待。已发ACK记录不因peer先移动丢失；phase提交后首个EXECUTE未到也执行严格失联/重启监护。暂停后显式新任务无需交替重启对端，旧PAUSED缓存不取消新握手。
+
+Go2默认安装已改为build/go2-async-contract-20261022/install，旧overlay未覆盖，原进程未热更新；27个Python模块与源码一致，三个schema摘要均匹配契约。参数/双方地图身份原已一致，未覆盖Ranger adapter、硬件、地图或本机许可。实际安装离线551通过/5同基线失败，新增86项通过，默认preflight通过；现场静止通信和运动未验收。
+详见[本轮修改说明](go2_async_contract_changes_20261022.md)，以前“reply未明确”“未构建”“Ranger接口待决定”由最终契约及本节覆盖。

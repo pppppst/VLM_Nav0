@@ -30,9 +30,10 @@ class LocalFixture(FakeAdapter):
     def read_approach_parameters(self):
         return completed(dict(xy_goal_tolerance=.25, planner_tolerance=.5))
 
-    def start_scan(self, descriptions, scan_id, *, stop_on_target=None):
+    def start_scan(self, descriptions, scan_id, *, stop_on_target=None, current_view_only=False, task_id=''):
         self.scans += 1
-        return super().start_scan(descriptions, scan_id, stop_on_target=stop_on_target)
+        return super().start_scan(descriptions, scan_id, stop_on_target=stop_on_target,
+            current_view_only=current_view_only,task_id=task_id)
 
 
 def run_case(adapter, events, stop_ok=True, resources=None, approach=False, scan_angles=None, frame=None, **execution_options):

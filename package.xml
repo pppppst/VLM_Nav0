@@ -16,6 +16,7 @@
   <depend>geometry_msgs</depend>
   <depend>message_filters</depend>
   <depend>nav_2d_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>pluginlib</depend>
   <depend>pcl_conversions</depend>
   <depend>pcl_ros</depend>
@@ -43,7 +44,6 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_amcl</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
-  <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>sensor_msgs_py</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>

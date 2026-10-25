@@ -117,6 +117,7 @@ def scan_adapter(e,results=None,error=None):
     if error:pending.set_exception(error)
     else:pending.set_result(results)
     scan=dict(reply=Future(),id='scan',targets={'A':'灭火器'},index=0,phase='INFER',
+        angles=list(a.config['scan_angles']),current_view_only=False,
         initial=0.,pending=pending,observations=[],after=0.,deadline=float('inf'),
         snapshot=S(stamp=S(sec=1,nanosec=0)),evidence=e,
         navigation=('native-nav',dict(task='task',command='command',kind='VIEWPOINT_NAV',target=[1.,2.,0.])))
@@ -158,12 +159,14 @@ def test_timeout_has_a_per_view_failure_event(tmp_path):
 
 
 @pytest.mark.parametrize('visible',[False,True])
-def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images(tmp_path,visible):
+@pytest.mark.parametrize('current_view_only',[False,True])
+def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images(tmp_path,visible,current_view_only):
     import threading,time
     from multi_agent_nav.adapters.go2 import AsyncVision
     client,calls,text=client_and_response(visible=visible);a,scan,events=scan_adapter(None,results={})
     a.scan=None;a.client=client;a.scan_evidence_dir=tmp_path/'vlm';a.scan_viewpoint_id='p1'
     a.config.update(api_timeout=2.);a.vision=AsyncVision(2.)
+    if current_view_only:a.config['scan_angles']=[math.pi/2,math.pi]
     a.last_motion=('native-nav',dict(task='task',command='command',kind='VIEWPOINT_NAV',target=[1.,2.,.7]))
     snapshot=S(stamp=S(sec=3,nanosec=123),frame_id='camera',sequence=7,
         rgb=np.full((100,160,3),60,dtype=np.uint8),captured_monotonic=time.monotonic()+1.)
@@ -175,9 +178,10 @@ def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images
         return original(**kwargs)
     client.client.chat.completions.create=create
     try:
-        reply=a.start_scan({'A':'灭火器'},'scan',stop_on_target='A' if visible else None)
+        reply=a.start_scan({'A':'灭火器'},'scan',stop_on_target='A' if visible else None,
+            current_view_only=current_view_only,task_id='initial-task')
         scan=a.scan
-        if visible:a._motion=lambda *args:pytest.fail('rotated after target result')
+        if visible or current_view_only:a._motion=lambda *args:pytest.fail('unexpected rotation')
         a.tick();a.tick()
         end=time.monotonic()+3.
         while a.scan and a.scan['phase']=='INFER' and time.monotonic()<end:a.tick();time.sleep(.001)
@@ -185,17 +189,42 @@ def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images
         directory=scan['evidence'].directory
         meta=json.loads((directory/'metadata.json').read_text())
         assert meta['viewpoint_id']=='p1' and meta['image_stamp_ns']==3_000_000_123
-        assert meta['image_sequence']==7 and meta['navigation_goal_pose']==[1.,2.,.7]
+        assert meta['image_sequence']==7
+        if current_view_only:
+            assert meta['task_id']=='initial-task' and meta['command_id']=='scan'
+            assert meta['navigation_goal_id']=='' and meta['native_action_uuid']==''
+            assert meta['navigation_goal_pose'] is None and result['task_id']=='initial-task'
+        else:assert meta['navigation_goal_pose']==[1.,2.,.7]
+        assert meta['current_view_only'] is current_view_only
         assert result['consumer_status']=='APPLIED' and client.evidence is None
         assert len(calls)==1 and all(name.startswith('cooperative-vision') for name in thread_names)
         if visible:
             assert a.scan is None and reply.result()[0].status=='DETECTED'
             a.tick()
+        elif current_view_only:
+            a.tick()
+            assert a.scan is None and reply.result()[0].status=='NOT_DETECTED'
         else:
             a.stop_motion('fixture cleanup')
             assert reply.cancelled()
         assert (directory/'response.txt').read_text()==text
     finally:a.vision.close()
+
+
+def test_initial_view_waits_for_new_frame_and_lost_stop_cancels_without_model_or_spin(tmp_path):
+    a,_,_=scan_adapter(None,results={})
+    a.scan=None
+    a.vision.submit=lambda *a:pytest.fail('model called with an old frame or while moving')
+    a._motion=lambda *a:pytest.fail('initial view started Spin')
+    a.node.vlm_input_ready=lambda now:True
+    reply=a.start_scan({'A':'target'},'initial',current_view_only=True)
+    a.node.latest_snapshot=S(captured_monotonic=a.scan['after']-.1)
+    a.tick()
+    assert not reply.done() and a.scan['phase']=='FRAME'
+    original=a.get_health
+    a.get_health=lambda:S(**dict(vars(original()),stopped=False))
+    a.tick()
+    assert reply.cancelled() and a.scan is None
 
 
 def test_canceling_pending_view_records_cancellation_after_zero_command(tmp_path):

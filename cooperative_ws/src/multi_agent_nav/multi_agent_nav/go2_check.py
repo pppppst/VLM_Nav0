@@ -150,24 +150,15 @@ def run_ros(config,args,events=None):
     report=config_report(config,args.map_yaml)
     report['mode']='local_go2_'+args.action
     latest={}; marker_pub=None; run_id=uuid.uuid4().hex; sequence=0
-    generated_display={};generated_pubs=[]
+    display=None
     def record(event):
         nonlocal latest, sequence
+        if display:display.record(event)
         if events is None:return
         sequence+=1
         entry=config['alignment']['robots']['go2']
         if 'state' in event:
             latest=dict(event) if event['state']=='SELECTED' else dict(latest,**event)
-        if event.get('state')=='CANDIDATE_GEOMETRY':
-            generated_display.clear()
-            generated_display.update(points=event['candidates'],records={},selectable={},selected=None)
-        elif event.get('state')=='CANDIDATE_REQUEST':
-            generated_display.update(selectable={p['id']:p['display_id'] for p in event['candidates']},
-                                     records=event['records'],selected=None)
-        elif event.get('state')=='CANDIDATE_SELECTED':generated_display['selected']=event['viewpoint_id']
-        elif event.get('state')=='OBSERVATION_RECORD':generated_display['records']=event['records']
-        if event.get('event')=='SESSION_END' or event.get('state') in ('STOPPING','STOP_UNCONFIRMED'):
-            generated_display['selectable']={}
         row=dict(latest,**event)
         row.update(run_id=run_id,sequence=sequence,wall_time=time.time(),
             local_map_id=entry['local_map_id'],map_version=entry['map_version'],
@@ -182,13 +173,10 @@ def run_ros(config,args,events=None):
                 adapter.motion_fault=True
         if marker_pub and 'state' in event:publish_marker()
     def publish_marker():
-        from .go2_exploration import exploration_markers,generated_exploration_markers
+        from .go2_exploration import exploration_markers
         markers=exploration_markers(latest)
         for marker in markers.markers:marker.header.stamp=node.get_clock().now().to_msg()
         marker_pub.publish(markers)
-        for publisher,markers in zip(generated_pubs,generated_exploration_markers(generated_display)):
-            for marker in markers.markers:marker.header.stamp=node.get_clock().now().to_msg()
-            publisher.publish(markers)
     try:
         node=make_observer(config['robot_go2'],read_only=not motion,
             node_name='multi_agent_go2_check_motion' if motion else 'multi_agent_go2_check_readonly')
@@ -208,9 +196,9 @@ def run_ros(config,args,events=None):
             from rclpy.qos import QoSProfile,DurabilityPolicy,ReliabilityPolicy
             marker_pub=node.create_publisher(MarkerArray,'/vlm_nav/go2_exploration/current_point',
                 QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL,reliability=ReliabilityPolicy.RELIABLE))
-            for topic in ('generated_candidates','selected_candidate'):
-                generated_pubs.append(node.create_publisher(MarkerArray,'/vlm_nav/go2_exploration/'+topic,
-                    QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL,reliability=ReliabilityPolicy.RELIABLE)))
+            from .exploration_display import ExplorationDisplay
+            display=ExplorationDisplay(node,frame)
+            adapter.display_path=lambda path:display.publish('planned_path',path)
             publish_marker()
             node.create_timer(.5,publish_marker)
         parameters=node.create_client(GetParameters,'/map_server/get_parameters')

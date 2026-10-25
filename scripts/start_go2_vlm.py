@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Go2 单机启动编排；真实输入检查、人工定位及运动确认保持原流程。"""
+"""Go2 启动编排；协同硬件准备或单机实验，保留人工定位及运动确认。"""
 import argparse
 import fcntl
 import json
@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import yaml
 
 
 def parse_report(output):
@@ -37,6 +38,8 @@ def require_inputs(report):
         failed.append('no_other_goal_owner')
     if failed:
         raise RuntimeError('现场输入检查未通过：' + ', '.join(failed))
+    if report.get('health_details', {}).get('checks', {}).get('keepout_applied') is False:
+        raise RuntimeError('现场输入检查未通过：keepout_applied')
 
 
 def parse_state(output):
@@ -52,10 +55,12 @@ def require_service_success(output):
 
 
 class Launcher:
-    def __init__(self, repo, prepare_only, target):
+    def __init__(self, repo, prepare_only, target, cooperative_hardware=False):
         self.repo = repo
-        self.config = repo / 'cooperative_ws/src/multi_agent_nav/config'
-        self.prepare_only = prepare_only
+        self.cooperative_hardware = cooperative_hardware
+        self.config = (Path(os.environ['COOP_CONFIG']) if cooperative_hardware
+                       else repo / 'cooperative_ws/src/multi_agent_nav/config')
+        self.prepare_only = prepare_only or cooperative_hardware
         self.target = target
         self.logs = None
 
@@ -98,11 +103,16 @@ class Launcher:
 
     def window(self, name, args):
         # Positional arguments preserve paths and targets without shell interpolation.
-        shell = ('source "$1/CoVLM_env.bash" || exit; shift; "$@"; status=$?; '
+        setup = 'source "$1/CoVLM_env.bash" || exit; shift; '
+        parameters = [self.repo]
+        if self.cooperative_hardware:
+            setup = 'source "$1/Cooperative_env.bash" go2 "$2" || exit; shift 2; '
+            parameters.append(self.config)
+        shell = (setup + '"$@"; status=$?; '
                  'echo "进程结束 exit=$status，请查看上方日志"; '
                  'read -r -p "按 Enter 关闭此终端……" _; exit "$status"')
         self.command(['gnome-terminal', '--window', f'--title=Go2 {name}', '--',
-                      'bash', '-c', shell, 'go2-vlm-terminal', self.repo, *args])
+                      'bash', '-c', shell, 'go2-vlm-terminal', *parameters, *args])
         print(f'已打开 Go2 {name} 终端；运行期间保持打开。', flush=True)
 
     def publishers(self, topic):
@@ -172,10 +182,24 @@ class Launcher:
         for package, output in [('vlm_nav', 'GO2_BRIDGE_OUTPUT'),
                                 ('multi_agent_nav', 'GO2_EXPLORE_OUTPUT')]:
             expected = Path(os.environ[output]) / 'install' / package
+            if self.cooperative_hardware:
+                setup = os.environ.get('COOP_SETUP_FILE') or self.repo / 'build/go2-target-plan-20261025/overlay/install/local_setup.bash'
+                paired = Path(setup).resolve().parent / package
+                if package == 'multi_agent_nav' or paired.is_dir():
+                    expected = paired
             actual = Path(self.ros('pkg', 'prefix', package).stdout.strip())
             if actual != expected:
                 raise RuntimeError(f'{package} 安装不匹配：{actual}；应为 {expected}')
-        self.command(self.check('--offline', '--require-ready'))
+        offline = self.command(self.check('--offline', '--require-ready'))
+        map_path = self.repo / 'maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml'
+        if self.cooperative_hardware:
+            map_path = Path(parse_report(offline.stdout)['map_files']['yaml_path'])
+        keepout_mask = ''
+        if self.cooperative_hardware:
+            keepout_mask = yaml.safe_load((self.config/'robot_go2.yaml').read_text()).get('keepout_mask', '')
+            if keepout_mask:
+                from vlm_nav.go2_keepout import KeepoutMask
+                KeepoutMask(keepout_mask)
         self.camera()
         counts = [self.publishers(t) for t in ['/lidar_points', '/body_imu', '/odometry']]
         if counts == [0, 0, 0]:
@@ -185,6 +209,8 @@ class Launcher:
                 raise RuntimeError('/lowstate 必须有唯一真实发布者')
             self.confirm('START', '冷启动：确认 Go2 按原流程站稳、预检期间保持静止、急停人员在场。')
             report = self.logs / 'preflight.json'
+            if self.cooperative_hardware:
+                report = Path(os.environ.get('GO2_PREFLIGHT_REPORT', '/tmp/go2_costmap_preflight.json')).resolve()
             env = dict(os.environ, GO2_PREFLIGHT_REPORT=str(report))
             subprocess.run(['bash', str(self.repo / 'scripts/run_go2_preflight.sh')], env=env, check=True)
             self.window('System', ['ros2', 'launch', 'vlm_nav', 'go2_system.launch.py',
@@ -193,29 +219,21 @@ class Launcher:
                 f'calibration_file:={self.repo}/config/go2_calibration_xt16.yaml',
                 f'spark_config_file:={self.repo}/config/spark_fast_lio_go2_xt16.yaml',
                 'target_stage:=nav2', 'localization_mode:=amcl',
-                f'map:={self.repo}/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml',
+                f'map:={map_path}',
                 'amcl_scan_topic:=/scan', 'start_bridge:=false',
-                f'costmap_overrides_file:={self.config}/nav2_go2_cooperative_costmap.yaml'])
+                f'costmap_overrides_file:={self.config}/nav2_go2_cooperative_costmap.yaml',
+                *([f'keepout_mask:={keepout_mask}'] if keepout_mask else [])])
         elif counts != [1, 1, 1]:
             raise RuntimeError(f'底层不完整或发布者重复 {counts}；请在原终端排障')
         else:
             print('复用已有底层；后续检查地图、定位和 Nav2。', flush=True)
         if '/rviz2' not in self.nodes():
             self.window('RViz', ['rviz2', '-d', self.repo / 'config/go2_exploration.rviz'])
+        else:
+            print(f'复用已有 RViz；若未显示标记，请用 File → Open Config 加载 {self.repo}/config/go2_exploration.rviz。', flush=True)
         self.confirm('READY', '在 RViz 等待地图；仅 AMCL 未初始化时，用 2D Pose Estimate 设置真实位姿。\n'
                      '已有有效定位不要重置。定位完成后继续。')
-        self.ros('topic', 'echo', '/vlm_nav/nav_ready', 'std_msgs/msg/Bool', '--once',
-                 '--filter', 'm.data', '--no-daemon', '--qos-reliability', 'reliable',
-                 '--qos-durability', 'transient_local', timeout=120)
-        for node, key, expected in [
-            ('/global_costmap/global_costmap', 'inflation_layer.inflation_radius', .45),
-            ('/local_costmap/local_costmap', 'inflation_layer.inflation_radius', .45),
-            ('/controller_server', 'general_goal_checker.xy_goal_tolerance', .25),
-            ('/planner_server', 'GridBased.tolerance', .5)]:
-            text = self.ros('param', 'get', node, key, timeout=10).stdout
-            match = re.search(r'Double value is:\s*(\S+)', text)
-            if not match or float(match[1]) != expected:
-                raise RuntimeError(f'{node} {key} 应为 {expected}，实际：{text.strip()}')
+        # SYSTEM_READY requires Sport status and endpoint readiness even while DISARMED.
         bridges = self.nodes().count('/twist_to_go2_sport_bridge')
         if bridges > 1:
             raise RuntimeError('Sport 转换节点重复，停止后续操作')
@@ -225,7 +243,27 @@ class Launcher:
             self.window('Sport', ['ros2', 'run', 'vlm_nav', 'twist_to_go2_sport_bridge',
                 '--ros-args', '--params-file', self.repo / 'config/go2_bridge.yaml', '-p', 'dry_run:=false'])
             time.sleep(2)
-        print('Sport 状态：' + self.state(), flush=True)
+        state = self.state()
+        print('Sport 状态：' + state, flush=True)
+        if self.cooperative_hardware and state != 'DISARMED':
+            raise RuntimeError('协同硬件准备要求 Sport 为 DISARMED；请从原终端核对状态')
+        self.ros('topic', 'echo', '/vlm_nav/nav_ready', 'std_msgs/msg/Bool', '--once',
+                 '--filter', 'm.data', '--no-daemon', '--qos-reliability', 'reliable',
+                 '--qos-durability', 'transient_local', timeout=120)
+        # System starts Nav2/supervisor only after AMCL is initialized.
+        if keepout_mask:
+            actual = self.ros('param', 'get', '/go2_nav_supervisor', 'keepout_mask', timeout=10).stdout.strip()
+            if actual != f'String value is: {keepout_mask}':
+                raise RuntimeError('当前 Nav2 未加载本轮 Keepout；请按原流程退出旧底层后重新准备，不自动重启')
+        for node, key, expected in [
+            ('/global_costmap/global_costmap', 'inflation_layer.inflation_radius', .45),
+            ('/local_costmap/local_costmap', 'inflation_layer.inflation_radius', .45),
+            ('/controller_server', 'general_goal_checker.xy_goal_tolerance', .25),
+            ('/planner_server', 'GridBased.tolerance', .5)]:
+            text = self.ros('param', 'get', node, key, timeout=10).stdout
+            match = re.search(r'Double value is:\s*(\S+)', text)
+            if not match or float(match[1]) != expected:
+                raise RuntimeError(f'{node} {key} 应为 {expected}，实际：{text.strip()}')
         self.inspect()
 
     def explore(self):
@@ -291,12 +329,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', default='灭火器', help='A目标描述，默认灭火器')
     parser.add_argument('--prepare-only', action='store_true', help='仅启动并检查；不 ARM、不探索')
+    parser.add_argument('--cooperative-hardware', action='store_true', help='协同环境下仅准备硬件，停在静止通信之前')
     args = parser.parse_args()
     if not args.target.strip():
         parser.error('目标描述不能为空')
     repo = Path(__file__).resolve().parents[1]
     if os.environ.get('REPO') != str(repo):
         parser.error('请通过 scripts/start_go2_vlm.sh 加载当前环境')
+    if args.cooperative_hardware and (os.getenv('COOP_SIDE') != 'go2' or not os.getenv('COOP_CONFIG')):
+        parser.error('请通过 scripts/start_go2_cooperative_hardware.sh 加载协同环境')
     if not sys.stdin.isatty() or not (os.getenv('DISPLAY') or os.getenv('WAYLAND_DISPLAY')):
         parser.error('需要控制电脑桌面的交互式 Bash 终端及 RViz 显示环境')
     if not shutil.which('gnome-terminal'):
@@ -309,15 +350,18 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             parser.error('已有一键启动入口运行')
-        app = Launcher(repo, args.prepare_only, args.target)
+        app = Launcher(repo, args.prepare_only, args.target, args.cooperative_hardware)
         root = repo / 'build/go2-field'
         root.mkdir(parents=True, exist_ok=True)
-        app.logs = Path(tempfile.mkdtemp(prefix='single-vlm.', dir=root))
+        prefix = 'cooperative-hardware.' if args.cooperative_hardware else 'single-vlm.'
+        app.logs = Path(tempfile.mkdtemp(prefix=prefix, dir=root))
         print(f'本次检查日志：{app.logs}', flush=True)
         try:
             app.start()
-            if not args.prepare_only:
+            if not app.prepare_only:
                 app.explore()
+            elif args.cooperative_hardware:
+                print('HARDWARE_READY：输入检查通过，Sport=DISARMED；按双机文档第5节当前live gates选择后续入口。', flush=True)
             return 0
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError, EOFError, KeyboardInterrupt) as error:
             print(f'停止：{error or "用户中断"}。不自动重试、重启或清理运动锁。', file=sys.stderr)

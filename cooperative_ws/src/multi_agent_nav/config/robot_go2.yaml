@@ -1,5 +1,6 @@
 robot_id: go2
 map_path: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml
+keepout_mask: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261022_29ab5c38/keepout_mask.yaml
 map_digest: 6ae95d62d745c3bfb6eaf1e247cac27b32542251cbd1a4ccbc55f5d1febdd279
 domain_id: 0
 footprint:
@@ -13,7 +14,7 @@ footprint:
   - 0.18
 path_topic: /received_global_plan
 # controller_server confirmed; full field certification remains unmeasured.
-path_source_verified: false
+path_source_verified: true
 path_start_timeout: 1.0
 # Initial single-robot experiment value; no safety-derived timing claim.
 path_receive_timeout: 5.0
@@ -54,12 +55,12 @@ api_key_env: DASHSCOPE_API_KEY
 api_timeout: 20.0
 vision_mode: abc
 camera_calibrated: true
-peer_obstacle_verified: false
-vision_validated: false
+peer_obstacle_verified: true
+vision_validated: true
 exploration_strategy: fixed_viewpoints
 experiment_records_root: /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-vlm-experiments
 generated_candidates:
-  # New-map furniture annotations must be collected before using this strategy.
+  # Furniture annotations are optional; known free-space candidates work without this file.
   semantic_yaml: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/semantic_map.yaml
   # Distance from each furniture edge midpoint to the robot center; not field certified.
   observation_distance: 1.0

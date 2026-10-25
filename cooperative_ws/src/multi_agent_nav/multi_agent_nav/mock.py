@@ -30,7 +30,9 @@ def make_machine(config,robot,simulation):
         context=replace(context,common_frame_id='',alignment_id='')
         frame=LocalFrame()
     machine=AgentMachine(context,frame,config['scene'].get('lost_timeout',3.0),
-        config[f'robot_{robot}'].get('path_start_timeout',1.0))
+        config[f'robot_{robot}'].get('path_start_timeout',1.0),
+        peer_identity=tuple(alignment['robots']['ranger' if robot=='go2' else 'go2'][key]
+            for key in ('local_map_id','map_version')), task_timeout=config['scene'].get('task_timeout',600.0))
     return machine,frame
 
 def make_coordinator(config,simulation,gates=None):
@@ -88,7 +90,7 @@ class MockMission:
             state=self.machines[robot].state()
             self.coordinator.ingest_state(state,self.now)
             peer='ranger' if robot=='go2' else 'go2'
-            if self.online[peer]:self.machines[peer].peer_received=self.now
+            if self.online[peer]:self.machines[peer].receive_peer(state,self.now)
         for command in self.coordinator.tick(self.now):
             if not self.online[command.recipient_id]:continue
             reply=self.machines[command.recipient_id].accept(command,self.now)

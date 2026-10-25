@@ -110,7 +110,8 @@ def quaternion_yaw(quaternion):
 class VLMNavigator(Node):
     def __init__(self, *, observation_only=False, parameter_overrides=None, node_name=None):
         super().__init__(node_name or ("multi_agent_go2_rgbd" if observation_only else "vlm_nav"),
-                         parameter_overrides=parameter_overrides)
+                         parameter_overrides=parameter_overrides,
+                         use_global_arguments=not observation_only)
         self.observation_only = observation_only
         defaults = {
             "enabled": False,

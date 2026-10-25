@@ -92,6 +92,15 @@ def test_inspect_accepts_disarmed_bridge_but_requires_stable_camera():
         launcher.require_inputs(report)
 
 
+def test_inspect_requires_configured_keepout_even_while_disarmed():
+    report = ready_report()
+    report['health_details'] = {'checks': {'control_armed_gate': False, 'keepout_applied': False}}
+    with pytest.raises(RuntimeError, match='keepout'):
+        launcher.require_inputs(report)
+    report['health_details']['checks']['keepout_applied'] = True
+    launcher.require_inputs(report)
+
+
 @pytest.mark.parametrize('field', ['stopped', 'localization_valid'])
 def test_inspect_rejects_moving_or_unlocalized_robot(field):
     report = ready_report()
@@ -184,9 +193,34 @@ def test_failed_inspect_prevents_arm_and_experiment(monkeypatch, tmp_path):
         app.explore()
 
 
+def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,tmp_path):
+    monkeypatch.delenv('COOP_SETUP_FILE',raising=False)
+    monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
+    monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
+    monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
+    prefix=tmp_path/'build/go2-target-plan-20261025/overlay/install'
+    for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
+    app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
+    monkeypatch.setattr(app,'check_owners',lambda:None)
+    monkeypatch.setattr(app,'ros',lambda *args,**kwargs:SimpleNamespace(stdout=str(prefix/args[2])))
+    def offline_boundary(*args,**kwargs):raise RuntimeError('reached offline configuration check')
+    monkeypatch.setattr(app,'command',offline_boundary)
+    with pytest.raises(RuntimeError,match='reached offline configuration check'):app.start()
+
+
 @pytest.mark.parametrize('reuse', [False, True])
-def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, reuse):
-    app = launcher.Launcher(ROOT, prepare_only=True, target='灭火器')
+@pytest.mark.parametrize('cooperative,bridge_state', [
+    (False, 'DISARMED'), (True, 'DISARMED'), (True, 'ARMED'), (True, 'FAULT')])
+def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, reuse,
+                                               cooperative, bridge_state):
+    monkeypatch.setenv('COOP_CONFIG', str(tmp_path / 'actual-config'))
+    monkeypatch.setenv('COOP_SETUP_FILE', '/tmp/current-cooperative/install/local_setup.bash')
+    monkeypatch.setenv('GO2_PREFLIGHT_REPORT', str(tmp_path / 'formal-report.json'))
+    mask = ROOT/'maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261022_29ab5c38/keepout_mask.yaml'
+    (tmp_path/'actual-config').mkdir()
+    (tmp_path/'actual-config/robot_go2.yaml').write_text(f'keepout_mask: {mask}\n')
+    app = launcher.Launcher(ROOT, prepare_only=True, target='灭火器',
+                           **({'cooperative_hardware': True} if cooperative else {}))
     app.logs = tmp_path
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT', '/tmp/current-bridge')
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT', '/tmp/current-explore')
@@ -203,26 +237,37 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, reuse):
         if name == 'Camera SSH':
             topics.update({'/camera/camera/color/image_raw': 1,
                            '/camera/camera/depth/image_rect_raw': 1})
+        if name == 'Sport':
+            nodes.append('/twist_to_go2_sport_bridge')
     monkeypatch.setattr(app, 'window', window)
     monkeypatch.setattr(launcher.time, 'sleep', lambda seconds: None)
+    nav_ready = False
     def command(args, **kwargs):
+        nonlocal nav_ready
         args = [str(x) for x in args]
         calls.append(args)
         if args[1:3] == ['node', 'list']:
             output = '\n'.join(nodes)
         elif args[1:3] == ['pkg', 'prefix']:
             output = {'vlm_nav': '/tmp/current-bridge/install/vlm_nav',
-                      'multi_agent_nav': '/tmp/current-explore/install/multi_agent_nav'}[args[3]]
+                      'multi_agent_nav': ('/tmp/current-cooperative/install/multi_agent_nav' if cooperative
+                                          else '/tmp/current-explore/install/multi_agent_nav')}[args[3]]
         elif args[1:3] == ['topic', 'info']:
             output = f'Publisher count: {topics.get(args[3], 0)}'
         elif args[1:3] == ['param', 'get']:
+            if args[4] == 'keepout_mask':
+                assert nav_ready, 'System starts the supervisor only after AMCL readiness'
+                return SimpleNamespace(returncode=0, stdout=f'String value is: {mask}')
             value = {'inflation_layer.inflation_radius': '.45',
                      'general_goal_checker.xy_goal_tolerance': '.25', 'GridBased.tolerance': '.5'}[args[4]]
             output = f'Double value is: {value}'
         elif args[1:3] == ['topic', 'echo']:
-            output = "'DISARMED'" if 'String' in ' '.join(args) else 'data: true'
+            if '/vlm_nav/nav_ready' in args:
+                assert '/twist_to_go2_sport_bridge' in nodes, 'NAV_READY requires Sport through SYSTEM_READY'
+                nav_ready = True
+            output = repr(bridge_state) if 'String' in ' '.join(args) else 'data: true'
         elif '--offline' in args:
-            output = '{}'
+            output = json.dumps(dict(map_files=dict(yaml_path='/tmp/current-map.yaml')))
         elif 'inspect' in args:
             output = json.dumps(ready_report())
         else:
@@ -231,7 +276,15 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, reuse):
     monkeypatch.setattr(app, 'command', command)
     preflights = []
     monkeypatch.setattr(launcher.subprocess, 'run', lambda args, **kwargs: preflights.append(args))
+    if cooperative and bridge_state != 'DISARMED':
+        with pytest.raises(RuntimeError, match='DISARMED'):
+            app.start()
+        assert not any('service' in args or '--allow-motion' in args for args in calls)
+        assert not any('inspect' in args for args in calls)
+        return
     app.start()
+    if reuse:
+        assert 'File → Open Config' in capsys.readouterr().out
     assert not any('service' in args or '--allow-motion' in args for args in calls)
     if reuse:
         assert windows == []
@@ -243,9 +296,70 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, reuse):
         system = windows[1][1]
         assert 'start_bridge:=false' in system
         assert 'target_stage:=nav2' in system
-        assert f'map:={ROOT}/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml' in system
-        assert f'costmap_overrides_file:={ROOT}/cooperative_ws/src/multi_agent_nav/config/nav2_go2_cooperative_costmap.yaml' in system
+        map_path = '/tmp/current-map.yaml' if cooperative else f'{ROOT}/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml'
+        config = tmp_path / 'actual-config' if cooperative else ROOT / 'cooperative_ws/src/multi_agent_nav/config'
+        assert f'map:={map_path}' in system
+        assert f'costmap_overrides_file:={config}/nav2_go2_cooperative_costmap.yaml' in system
+        if cooperative:
+            assert f'sensor_preflight_report:={tmp_path}/formal-report.json' in system
+            assert f'keepout_mask:={mask}' in system
         assert len(preflights) == 1
+
+
+@pytest.mark.parametrize('help_only', [False, True])
+def test_cooperative_hardware_shell_loads_only_cooperative_environment(tmp_path, help_only):
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    entry = scripts / 'start_go2_cooperative_hardware.sh'
+    entry.write_text((ROOT / 'scripts/start_go2_cooperative_hardware.sh').read_text())
+    marker = tmp_path / 'environment-loaded'
+    (tmp_path / 'Cooperative_env.bash').write_text(
+        '[[ "$1" == go2 && "$2" == "$COOP_CONFIG" ]] || return 91\n'
+        f'touch {str(marker)!r}\n')
+    (scripts / 'start_go2_vlm.py').write_text('import sys; print(sys.argv[1:])\n')
+    env = dict(os.environ, COOP_CONFIG=str(tmp_path / 'custom config'))
+    result = subprocess.run(['bash', str(entry), *(['--help'] if help_only else [])],
+                            env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert ('start_go2_cooperative_hardware.sh' if help_only else '--cooperative-hardware') in result.stdout
+    assert marker.exists() is not help_only
+
+
+def test_cooperative_hardware_windows_keep_environment_and_config(monkeypatch, tmp_path):
+    config = tmp_path / 'custom config'
+    monkeypatch.setenv('COOP_CONFIG', str(config))
+    (tmp_path / 'Cooperative_env.bash').write_text(
+        '[[ "$1" == go2 ]] || return 91\nexport CHILD_CONFIG="$2"\n')
+    app = launcher.Launcher(tmp_path, False, 'unused', cooperative_hardware=True)
+    def command(args):
+        child = args[args.index('--') + 1:]
+        result = subprocess.run([str(x) for x in child], input='\n', capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        assert str(config) in result.stdout
+    monkeypatch.setattr(app, 'command', command)
+    app.window('RViz', ['/bin/bash', '-c', 'echo "$CHILD_CONFIG"'])
+
+
+def test_cooperative_hardware_main_cannot_explore_without_prepare_flag(monkeypatch, tmp_path):
+    import builtins
+    monkeypatch.setenv('REPO', str(ROOT))
+    monkeypatch.setenv('COOP_SIDE', 'go2')
+    monkeypatch.setenv('COOP_CONFIG', str(tmp_path))
+    monkeypatch.setenv('DISPLAY', ':test')
+    monkeypatch.setattr(sys, 'argv', ['start_go2_vlm.py', '--cooperative-hardware'])
+    monkeypatch.setattr(sys, 'stdin', SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr(launcher.shutil, 'which', lambda name: '/usr/bin/gnome-terminal')
+    monkeypatch.setattr(launcher, 'open', lambda *a, **kw: builtins.open(tmp_path / 'start.lock', 'a'), raising=False)
+    monkeypatch.setattr(launcher.tempfile, 'mkdtemp', lambda **kw: str(tmp_path))
+    stages = []
+    def start(app):
+        assert app.prepare_only and app.cooperative_hardware
+        assert app.config == tmp_path
+        stages.append('hardware')
+    monkeypatch.setattr(launcher.Launcher, 'start', start)
+    monkeypatch.setattr(launcher.Launcher, 'explore', lambda app: pytest.fail('must not ARM or explore'))
+    assert launcher.main() == 0
+    assert stages == ['hardware']
 
 
 def test_interrupt_waits_for_stop_report_before_disarming(monkeypatch, tmp_path):

@@ -10,6 +10,7 @@ from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from vlm_nav.go2_nav2_config import load_nav2_parameters
+from vlm_nav.go2_keepout import KEEP_OUT_NODES, configure_keepout
 
 
 def configure_go2_navigation(context):
@@ -25,6 +26,8 @@ def configure_go2_navigation(context):
         static_map = os.path.join(share, "config", "nav2_go2_static_map.yaml")
     params = load_nav2_parameters(default_params, overrides, static_map,
         LaunchConfiguration("costmap_overrides_file", default="").perform(context))
+    keepout_mask = LaunchConfiguration("keepout_mask", default="").perform(context)
+    keepout_actions = configure_keepout(params, keepout_mask)
     lifecycle_nodes = [
         "controller_server",
         "smoother_server",
@@ -34,6 +37,8 @@ def configure_go2_navigation(context):
         "waypoint_follower",
         "velocity_smoother",
     ]
+    if keepout_actions:
+        lifecycle_nodes = [*KEEP_OUT_NODES, *lifecycle_nodes]
     # The real robot has no /clock; costmap nodes must use wall time too.
     for server in lifecycle_nodes:
         params.setdefault(server, {}).setdefault("ros__parameters", {})[
@@ -108,6 +113,7 @@ def configure_go2_navigation(context):
             remappings=common_remaps
             + [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', '/cmd_vel_bridge')],
         ),
+        *keepout_actions,
         Node(
             package="nav2_lifecycle_manager",
             executable="lifecycle_manager",
@@ -127,7 +133,8 @@ def configure_go2_navigation(context):
             name="go2_nav_supervisor",
             output="screen",
             parameters=[{"localization_mode": localization_mode,
-                         "amcl_scan_topic": LaunchConfiguration("amcl_scan_topic")}],
+                         "amcl_scan_topic": LaunchConfiguration("amcl_scan_topic"),
+                         "keepout_mask": keepout_mask}],
         ),
     ]
 
@@ -143,6 +150,7 @@ def generate_launch_description():
                 default_value=os.path.join(share, "config", "nav2_go2.yaml"),
             ),
             DeclareLaunchArgument("costmap_overrides_file", default_value=""),
+            DeclareLaunchArgument("keepout_mask", default_value=""),
             OpaqueFunction(function=configure_go2_navigation),
         ]
     )

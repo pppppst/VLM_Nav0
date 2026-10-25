@@ -73,20 +73,27 @@ def test_motion_pending_cancel_then_late_handle_is_canceled_and_identity_retaine
     result=adapter.results.pop()
     assert (result.task_id,result.command_id,result.goal_id,result.goal_kind)==('task','command',goal_id,'PICKUP_NAV')
 
-def test_observation_only_node_cannot_enable_old_autonomy(monkeypatch,tmp_path):
+@pytest.mark.parametrize('remapped', [False, True])
+@pytest.mark.parametrize('node_name', [None, 'multi_agent_go2_check_readonly'])
+def test_observation_only_node_cannot_enable_old_autonomy(monkeypatch,tmp_path,remapped,node_name):
     import rclpy
     from rclpy.parameter import Parameter
     from vlm_nav.vlm_navigator import VLMNavigator
     monkeypatch.setenv('ROS_DOMAIN_ID','31');monkeypatch.setenv('ROS_LOCALHOST_ONLY','1')
     monkeypatch.setenv('ROS_LOG_DIR',str(tmp_path))
-    rclpy.init(args=[])
-    node=VLMNavigator(observation_only=True)
+    monkeypatch.setenv('RMW_IMPLEMENTATION','rmw_fastrtps_cpp')
+    monkeypatch.delenv('CYCLONEDDS_URI',raising=False)
+    rclpy.init(args=['--ros-args','-r','__node:=multi_agent_go2_agent'] if remapped else [])
+    agent=rclpy.create_node('multi_agent_task_agent')
+    node=VLMNavigator(observation_only=True,node_name=node_name)
     try:
-        assert node.get_name()=='multi_agent_go2_rgbd'
+        assert agent.get_name()==('multi_agent_go2_agent' if remapped else 'multi_agent_task_agent')
+        assert node.get_name()==(node_name or 'multi_agent_go2_rgbd')
+        assert node.get_name()!=agent.get_name()
         assert len(list(node.timers))==1 and node.worker is None
         assert not node.set_parameters([Parameter('enabled',value=True)])[0].successful
     finally:
-        node.destroy_node();rclpy.shutdown()
+        node.destroy_node();agent.destroy_node();rclpy.shutdown()
 
 def test_delayed_odometry_cannot_confirm_physical_stop():
     adapter=Go2Adapter.__new__(Go2Adapter)

@@ -148,7 +148,60 @@ class GeneratedCandidates:
         return (mx/res-.5)*scale,(self.source['height']-.5-my/res)*scale
 
 
-def render_selection(catalog,candidates,records,robot_pose,directory):
+def render_candidate_camera(snapshot,candidates,directory):
+    """Annotate an existing RGB frame; projected map points may be occluded."""
+    from vlm_nav.geometry import realsense_intrinsics
+    fx,fy,cx,cy=snapshot.intrinsics
+    matrix=np.asarray(snapshot.transform_matrix,dtype=float)
+    if (not np.isfinite([fx,fy,cx,cy]).all() or min(fx,fy)<=0 or
+            matrix.shape!=(4,4) or not np.isfinite(matrix).all()):
+        raise ValueError('invalid candidate camera geometry')
+    if snapshot.raw_depth_snapshot is not None:
+        # Match the existing raw-depth geometry's verified distortion support.
+        realsense_intrinsics(snapshot.raw_depth_snapshot[2]['color_info'])
+    inverse=np.linalg.inv(matrix)
+    image=Image.fromarray(snapshot.rgb).convert('RGBA');width,height=image.size
+    overlay=Image.new('RGBA',image.size,(0,0,0,0));draw=ImageDraw.Draw(overlay)
+    font_path=Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
+    font=ImageFont.truetype(str(font_path),16) if font_path.exists() else ImageFont.load_default()
+    projections=[];unprojected=[]
+    for candidate in candidates:
+        x,y=candidate['pose'][:2];label=candidate['display_id']
+        # shortcut: map z=0 is an approximate display plane; use measured floor height for precise overlays.
+        point=inverse@np.array([x,y,0.,1.])
+        if not np.isfinite(point).all() or point[2]<=0:
+            unprojected.append(label);continue
+        u,v=fx*point[0]/point[2]+cx,fy*point[1]/point[2]+cy
+        if not (0<=u<width and 0<=v<height):
+            unprojected.append(label);continue
+        u,v=round(u),round(v)
+        if not (0<=u<width and 0<=v<height):
+            unprojected.append(label);continue
+        projections.append(dict(candidate_id=label,pixel=[u,v]))
+        draw.ellipse((u-7,v-7,u+7,v+7),outline=(240,140,20,190),width=2)
+        box=draw.textbbox((0,0),label,font=font)
+        w,h=box[2]+6,box[3]+4
+        left=max(0,min(u+10,width-w));top=max(0,min(v-12,height-h))
+        draw.rectangle((left,top,left+w,top+h),fill=(255,255,255,210))
+        draw.text((left+3,top+1),label,font=font,fill=(150,75,0,255))
+    annotated=Image.alpha_composite(image,overlay).convert('RGB')
+    output=Image.new('RGB',(width,height+32),'white');output.paste(annotated,(0,0))
+    ImageDraw.Draw(output).text((5,height+3),
+        'P IDs = map-plane projections\nOcclusion unchecked (map z=0)',fill='black')
+    directory=Path(directory)
+    Image.fromarray(snapshot.rgb).save(directory/'camera_rgb.png')
+    path=directory/'camera.png';output.save(path)
+    metadata=dict(image_sequence=snapshot.sequence,frame_id=snapshot.frame_id,
+        image_stamp_ns=snapshot.stamp.sec*10**9+snapshot.stamp.nanosec,
+        projection_plane_z=0.,occlusion_checked=False,intrinsics=list(snapshot.intrinsics),
+        transform_matrix=matrix.tolist(),projections=projections,unprojected_candidate_ids=unprojected)
+    if snapshot.raw_depth_snapshot is not None:
+        metadata['rgb_stamp_ns']=snapshot.raw_depth_snapshot[2]['rgb_stamp_ns']
+    (directory/'camera_projection.json').write_text(json.dumps(metadata,allow_nan=False,indent=2)+'\n')
+    return str(path)
+
+
+def render_selection(catalog,candidates,records,robot_pose,directory,*,camera_snapshot=None):
     """One overlay is composited onto both maps so every selectable marker matches."""
     scale=3;width,height=catalog.source['width']*scale,catalog.source['height']*scale
     columns=max(1,width//90)
@@ -229,6 +282,8 @@ def render_selection(catalog,candidates,records,robot_pose,directory):
     paths=[]
     for base,name in zip(bases,('occupancy.png','semantic.png')):
         path=directory/name;Image.alpha_composite(base,overlay).convert('RGB').save(path);paths.append(str(path))
+    if camera_snapshot is not None:
+        paths.append(render_candidate_camera(camera_snapshot,candidates,directory))
     return paths
 
 

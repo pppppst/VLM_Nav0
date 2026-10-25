@@ -14,6 +14,7 @@ find_package(dwb_plugins REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(nav_2d_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -49,7 +50,8 @@ ament_target_dependencies(componentwise_min_speed_generator
 )
 pluginlib_export_plugin_description_file(dwb_core componentwise_min_speed_plugins.xml)
 
-add_library(obstacle_cloud_filter_pipeline STATIC src/obstacle_cloud_filter_pipeline.cpp)
+add_library(obstacle_cloud_filter_pipeline STATIC
+  src/obstacle_cloud_filter_pipeline.cpp src/temporal_obstacle_filter.cpp)
 target_compile_features(obstacle_cloud_filter_pipeline PUBLIC cxx_std_17)
 target_include_directories(obstacle_cloud_filter_pipeline
   PUBLIC
@@ -58,6 +60,7 @@ target_include_directories(obstacle_cloud_filter_pipeline
     ${PCL_INCLUDE_DIRS}
 )
 ament_target_dependencies(obstacle_cloud_filter_pipeline
+  nav_msgs
   pcl_conversions
   sensor_msgs
 )
@@ -70,6 +73,7 @@ ament_target_dependencies(obstacle_cloud_filter
   diagnostic_msgs
   diagnostic_updater
   message_filters
+  nav_msgs
   pcl_ros
   rclcpp
   rmw
@@ -168,6 +172,11 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)
 
+  ament_add_gtest(test_temporal_obstacle_filter test/test_temporal_obstacle_filter.cpp)
+  if(TARGET test_temporal_obstacle_filter)
+    target_link_libraries(test_temporal_obstacle_filter obstacle_cloud_filter_pipeline)
+  endif()
+
   ament_add_gtest(test_obstacle_cloud_filter test/test_obstacle_cloud_filter.cpp)
   if(TARGET test_obstacle_cloud_filter)
     target_compile_features(test_obstacle_cloud_filter PUBLIC cxx_std_17)
@@ -201,6 +210,7 @@ if(BUILD_TESTING)
 
   ament_add_pytest_test(test_arm_image_recorder test/test_arm_image_recorder.py)
   ament_add_pytest_test(test_go2_costmap_rviz test/test_go2_costmap_rviz.py)
+  ament_add_pytest_test(test_go2_keepout test/test_go2_keepout.py)
   ament_add_pytest_test(test_easy_case_config test/test_easy_case_config.py)
   ament_add_pytest_test(test_exploration test/test_exploration.py)
   ament_add_pytest_test(test_geometry test/test_geometry.py)

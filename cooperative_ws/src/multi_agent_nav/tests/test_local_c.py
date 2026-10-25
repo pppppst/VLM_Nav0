@@ -5,7 +5,7 @@ import pytest
 from multi_agent_nav.config import go2_local_gates, load_config
 from multi_agent_nav.adapters.fake import completed
 from multi_agent_nav.mock import MockMission, make_machine, mock_config
-from multi_agent_nav.models import AgentContext, Command, Health, Observation, Pose2D, validate_command
+from multi_agent_nav.models import AgentContext, AgentState, Command, Health, Observation, Pose2D, validate_command
 
 
 def local_config():
@@ -15,13 +15,22 @@ def local_config():
 
 
 def scanning_agent(config=None):
-    agent, _ = make_machine(config or local_config(), 'go2', True)
+    config = config or local_config()
+    agent, _ = make_machine(config, 'go2', True)
+    agent.local_execution_enabled = True
     agent.tick(0, Health(localization_valid=True, nav_ready=True, stopped=True))
     sync = Command(task_id='task', recipient_id='go2', alignment_id=agent.context.alignment_id,
                    common_frame_id=agent.context.common_frame_id,
-                   action='SYNC' if agent.context.share_c_coordinates else 'SYNC_LOCAL_C')
+                   action='SYNC' if agent.context.share_c_coordinates else 'SYNC_LOCAL_C',
+                   phase='SEARCH_AB' if agent.context.share_c_coordinates else 'SYNCING')
     assert agent.accept(sync, 0).accepted
-    agent.peer_received = 0
+    entry = config['alignment']['robots']['ranger']
+    agent.receive_peer(AgentState(task_id='task',robot_id='ranger',local_map_id=entry['local_map_id'],
+        map_version=entry['map_version'],common_frame_id='',alignment_id='',run_state='SYNCED',reply='SYNCED',
+        localization_valid=True,nav_ready=True),0)
+    agent.tick(0,agent.health)
+    sync = replace(sync, phase='SEARCH_AB')
+    assert agent.accept(sync, 0).accepted
     scan = replace(sync, action='EXECUTE', command_id='scan', sequence=1,
                    kind='SEARCH_VIEWPOINT', target_id='C', position_valid=False)
     assert agent.accept(scan, 0).accepted
@@ -55,7 +64,8 @@ def test_early_c_stays_local_and_deposit_resolves_own_reference():
     command = local_deposit(agent, sync)
     assert agent.accept(command, 0).accepted
     effects = agent.take_effects()
-    assert effects[0].kind == 'APPROACH' and effects[0].payload[0] == Pose2D(9, 1)
+    assert effects[0].kind == 'LOCAL_EXECUTION'
+    assert agent.local_c_observations['own-C'].common_position == Pose2D(9, 1)
     assert not command.position_valid and command.object_position == Pose2D()
     assert agent.accept(command, 0).accepted
     assert not agent.take_effects()
@@ -182,6 +192,8 @@ def test_new_task_cannot_reuse_previous_local_c():
 def test_coordinator_only_accepts_current_coordinate_free_local_c(changes):
     mission = MockMission(local_config())
     assert mission.start().accepted
+    mission.run(3)
+    assert mission.coordinator.phase == 'SEARCH_AB'
     observation = Observation(task_id=mission.coordinator.task_id, robot_id='go2',
         local_map_id='synthetic_go2', map_version='1', common_frame_id='', alignment_id='',
         target_id='C', status='CACHED', observation_id='own-C')
@@ -212,7 +224,8 @@ def test_sync_requires_matching_c_policy_before_task_identity_is_established(sha
     agent, _ = make_machine(config, 'go2', True)
     agent.tick(0, Health(localization_valid=True, nav_ready=True, stopped=True))
     command = Command(task_id='new', recipient_id='go2', alignment_id=agent.context.alignment_id,
-                      common_frame_id=agent.context.common_frame_id, action=action)
+                      common_frame_id=agent.context.common_frame_id, action=action,
+                      phase='SEARCH_AB' if shared else 'SYNCING')
     mismatch = replace(command, action='SYNC' if action == 'SYNC_LOCAL_C' else 'SYNC_LOCAL_C')
     assert not agent.accept(mismatch, 0).accepted
     assert agent.context.task_id == '' and not agent.take_effects()
@@ -235,8 +248,11 @@ def test_mixed_c_policies_cannot_start_scanning_or_publish_c():
     mission.machines['ranger'].context.share_c_coordinates = True
     assert mission.start().accepted
     mission.run(50)
-    assert mission.coordinator.phase == 'PAUSED'
+    assert mission.coordinator.phase == 'SYNCING'
     assert not mission.executed and not mission.coordinator.observations
+    mission.now = mission.coordinator.task_timeout
+    mission.step()
+    assert mission.coordinator.phase == 'PAUSED'
 
 
 def test_local_c_scan_api_failure_pauses_without_deposit(monkeypatch):

@@ -12,6 +12,6 @@ robots:
     - 0.0
     - 0.0
   ranger:
-    local_map_id: ''
-    map_version: ''
+    local_map_id: lab_ranger_20261018161152
+    map_version: sha256:8b1a3f0587afd56e20431668647cf2624d83897a587090ef808424eb6049fc30
     transform: null

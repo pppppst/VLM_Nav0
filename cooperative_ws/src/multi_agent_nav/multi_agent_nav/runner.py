@@ -3,9 +3,10 @@ import time
 from .models import Effect, Observation, TARGETS
 
 class AgentRunner:
-    def __init__(self,machine,adapter,descriptions,on_observation,clock=time.monotonic,config=None,success_radius=1.0):
+    def __init__(self,machine,adapter,descriptions,on_observation,clock=time.monotonic,config=None,success_radius=1.0,on_event=None):
         self.machine,self.adapter,self.descriptions=machine,adapter,descriptions
         self.on_observation=on_observation
+        self.on_event=on_event
         self.clock=clock
         self.pending=[]
         self.waiting=[]
@@ -13,14 +14,19 @@ class AgentRunner:
         self.config=config
         self.execution=None
         self.execution_identity=None
+        self.local_path_accept=None
         self.owners=lambda:[]
         machine.local_execution_enabled=config is not None and not machine.context.share_c_coordinates
         machine.success_radius=success_radius
 
-    def local_navigation(self,goal,kind):
-        future=self.machine.begin_local_navigation(goal,kind)
-        while not future.done():yield
-        return future.result()
+    def local_navigation(self,goal,kind,path_accept=None):
+        self.local_path_accept=path_accept
+        try:
+            future=self.machine.begin_local_navigation(goal,kind)
+            while not future.done():yield
+            return future.result()
+        finally:
+            self.local_path_accept=None
 
     def local_stop(self):
         self.adapter.stop_motion('local execution stopping')
@@ -48,11 +54,13 @@ class AgentRunner:
         self.adapter.selection_evidence_dir=directory/'decisions'
         self.adapter.scan_evidence_dir=directory/'views'
         identity=(command.task_id,command.command_id)
+        if self.on_event:self.on_event(dict(state='DISPLAY_RESET',task_id=command.task_id))
         def record(event):
             if event.get('state')=='APPROACH_PLANNING':
                 from .models import Pose2D
                 self.machine.local_target=Pose2D(**event['object_pose'])
             with (directory/'events.jsonl').open('a') as stream:stream.write(json.dumps(event)+'\n')
+            if self.on_event:self.on_event(event)
         def observations(values):
             for value in values:self.machine.on_observation(value,self.clock())
         self.execution_identity=identity
@@ -62,6 +70,7 @@ class AgentRunner:
             clock=self.clock,robot_id=robot,target_id=command.target_id,success_radius=self.machine.success_radius,
             require_navigation_success=True,navigation=self.local_navigation,stopping=self.local_stop,
             on_observations=observations,task_id=command.task_id,parent_command_id=command.command_id,
+            initial_camera_check=robot=='go2' and not self.adapter.simulation and command.kind!='APPROACH_DEPOSIT',
             initial_observation=self.machine.local_c_observations.get(command.observation_id)
                 if command.kind=='APPROACH_DEPOSIT' else None)
 
@@ -96,12 +105,17 @@ class AgentRunner:
             try:
                 value=future.result()
                 if kind=='APPROACH':self.machine.on_approach(value,now)
-                elif kind=='PLAN':self.machine.on_path(value,goal,now)
+                elif kind=='PLAN':
+                    if self.local_path_accept and not self.local_path_accept(goal,value):
+                        self.machine.stop('local target replanned path rejected')
+                    else:self.machine.on_path(value,goal,now)
                 else:self.machine.scan_completed(value,now)
-            except Exception:
+            except Exception as error:
                 if kind=='SCAN':
                     self.machine.scan_completed([Observation(target_id=t,scan_id=command.command_id,
                         observation_id=f'{command.command_id}/error/{t}',status='API_ERROR',reason='scan operation failed') for t in TARGETS],now)
+                elif kind=='PLAN' and self.local_path_accept:
+                    self.machine.stop('local target path check failed: '+str(error))
                 else:self.machine.fail(f'{kind.lower()} operation failed')
         command=self.machine.command
         waiting,self.waiting=self.waiting,[]
@@ -141,6 +155,7 @@ class AgentRunner:
                     if goal_id:self.adapter.cancel_navigation(goal_id)
                 finally:
                     self.adapter.stop_motion(reason)
+                    if self.on_event:self.on_event(dict(state='STOPPING'))
             elif command and self.machine.command is command and not self.machine.paused:
                 if effect.kind=='OBSERVATION':
                     self.on_observation(effect.payload)

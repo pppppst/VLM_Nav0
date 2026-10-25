@@ -3,6 +3,9 @@
 global_costmap:
   global_costmap:
     ros__parameters:
+      # Publish on every 1 Hz update without the equal-period timing boundary.
+      update_frequency: 1.0
+      publish_frequency: 2.0
       plugins: [static_layer, obstacle_layer, inflation_layer]
       always_send_full_costmap: true
       map_topic: /map
@@ -10,10 +13,20 @@ global_costmap:
         inflation_radius: 0.45
       obstacle_layer:
         enabled: true
-        observation_sources: go2_cloud
+        observation_sources: go2_cloud go2_confirmed
         go2_cloud:
-          marking: true
+          marking: false
           clearing: true
+        go2_confirmed:
+          topic: /vlm_nav/obstacle_cloud_confirmed
+          sensor_frame: base_link
+          data_type: PointCloud2
+          marking: true
+          clearing: false
+          obstacle_min_range: 0.10
+          obstacle_max_range: 8.0
+          min_obstacle_height: -0.15
+          max_obstacle_height: 0.75
 local_costmap:
   local_costmap:
     ros__parameters:
@@ -24,7 +37,17 @@ local_costmap:
         inflation_radius: 0.45
       voxel_layer:
         enabled: true
-        observation_sources: go2_cloud
+        observation_sources: go2_cloud go2_confirmed
         go2_cloud:
-          marking: true
+          marking: false
           clearing: true
+        go2_confirmed:
+          topic: /vlm_nav/obstacle_cloud_confirmed
+          sensor_frame: base_link
+          data_type: PointCloud2
+          marking: true
+          clearing: false
+          obstacle_min_range: 0.10
+          obstacle_max_range: 8.0
+          min_obstacle_height: -0.15
+          max_obstacle_height: 0.75

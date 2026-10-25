@@ -72,7 +72,7 @@ class FakeAdapter:
             self.cancel_navigation(goal_id)
         return completed(True)
 
-    def start_scan(self, target_descriptions, scan_id, *, stop_on_target=None):
+    def start_scan(self, target_descriptions, scan_id, *, stop_on_target=None, current_view_only=False, task_id=''):
         values = []
         for target in target_descriptions:
             pose = self.detections.get(target)

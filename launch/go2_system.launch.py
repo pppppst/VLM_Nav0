@@ -306,6 +306,7 @@ def _build(context):
             "localization_mode": localization_mode,
             "amcl_scan_topic": amcl_scan_topic,
             "costmap_overrides_file": LaunchConfiguration("costmap_overrides_file"),
+            "keepout_mask": LaunchConfiguration("keepout_mask"),
         }.items(),
     )
 
@@ -370,6 +371,7 @@ def generate_launch_description():
             DeclareLaunchArgument("map", default_value=""),
             DeclareLaunchArgument("amcl_scan_topic", default_value="/scan_amcl"),
             DeclareLaunchArgument("costmap_overrides_file", default_value=""),
+            DeclareLaunchArgument("keepout_mask", default_value=""),
             DeclareLaunchArgument("bridge_dry_run", default_value="true"),
             DeclareLaunchArgument("start_bridge", default_value="true"),
             OpaqueFunction(function=_build),

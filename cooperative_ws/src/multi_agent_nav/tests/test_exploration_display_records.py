@@ -17,16 +17,19 @@ def test_generated_display_uses_native_geometry_and_clears_previous_decision():
     candidates,selected=generated_exploration_markers(display)
     assert candidates.markers[0].action==selected.markers[0].action==Marker.DELETEALL
     spheres=[m for m in candidates.markers if m.type==Marker.SPHERE and m.action==Marker.ADD]
-    assert [(m.pose.position.x,m.pose.position.y) for m in spheres]==[(2.,3.),(4.,5.)]
-    assert spheres[0].color.r>spheres[0].color.b
-    assert spheres[1].color.r==spheres[1].color.g==spheres[1].color.b
+    assert [(m.pose.position.x,m.pose.position.y) for m in spheres]==[(2.,3.)]
+    assert spheres[0].color.b>spheres[0].color.r
+    display['records']['table/edge_1']=dict(status='observed')
+    observed,_=generated_exploration_markers(display)
+    grey=next(m for m in observed.markers if m.type==Marker.SPHERE and m.action==Marker.ADD)
+    assert grey.color.r==grey.color.g==grey.color.b
     arrows=[m for m in selected.markers if m.type==Marker.ARROW and m.action==Marker.ADD]
     assert [(m.pose.position.x,m.pose.position.y) for m in arrows]==[(2.,3.)]
     for status in ('navigation_failed','observation_failed'):
         display['records']['table/edge_1']=dict(status=status)
         retried,_=generated_exploration_markers(display)
         sphere=next(m for m in retried.markers if m.type==Marker.SPHERE and m.action==Marker.ADD)
-        assert sphere.color.r>sphere.color.b  # current validated set overrides past failure
+        assert sphere.color.b>sphere.color.r  # current validated set overrides past failure
     display['selected']=None;display['selectable']={}
     _,cleared=generated_exploration_markers(display)
     assert len(cleared.markers)==1 and cleared.markers[0].action==Marker.DELETEALL

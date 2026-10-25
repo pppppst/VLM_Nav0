@@ -91,6 +91,30 @@ Visualization Manager:
       History Policy: Keep Last
       Reliability Policy: Reliable
       Value: /vlm_nav/go2_exploration/selected_candidate
+  - Class: rviz_default_plugins/MarkerArray
+    Name: Detected targets
+    Enabled: true
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /vlm_nav/go2_exploration/targets
+  - Class: rviz_default_plugins/Path
+    Name: Selected navigation path
+    Enabled: true
+    Color: 0; 220; 255
+    Alpha: 0.85
+    Line Style: Billboards
+    Line Width: 0.04
+    Buffer Length: 1
+    Pose Style: None
+    Topic:
+      Depth: 1
+      Durability Policy: Transient Local
+      History Policy: Keep Last
+      Reliability Policy: Reliable
+      Value: /vlm_nav/go2_exploration/planned_path
   - Class: rviz_default_plugins/Image
     Name: Go2 live RGB (1 Hz preview)
     Enabled: true

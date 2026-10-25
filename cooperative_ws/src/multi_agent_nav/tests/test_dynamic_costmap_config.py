@@ -29,10 +29,21 @@ def test_effective_cooperative_costmaps_keep_dynamic_layers_and_other_parameters
         assert p['plugins']==['static_layer',layer,'inflation_layer']
         assert p['always_send_full_costmap'] is True
         cloud=p[layer]['go2_cloud']
-        assert p[layer]['enabled'] and p[layer]['observation_sources']=='go2_cloud'
-        assert cloud['topic']=='/vlm_nav/obstacle_cloud' and cloud['marking'] and cloud['clearing']
+        assert p[layer]['enabled'] and p[layer]['observation_sources']=='go2_cloud go2_confirmed'
+        assert cloud['topic']=='/vlm_nav/obstacle_cloud' and not cloud['marking'] and cloud['clearing']
+        confirmed=p[layer]['go2_confirmed']
+        assert confirmed['topic']=='/vlm_nav/obstacle_cloud_confirmed'
+        assert confirmed['marking'] and not confirmed['clearing']
+        for field in ('sensor_frame','data_type','obstacle_min_range','obstacle_max_range',
+                      'min_obstacle_height','max_obstacle_height'):
+            assert confirmed[field]==cloud[field]
         for field in ['global_frame','robot_base_frame','footprint','footprint_padding','rolling_window']:
             assert p.get(field)==legacy[name][name]['ros__parameters'].get(field)
+    global_params=effective['global_costmap']['global_costmap']['ros__parameters']
+    assert global_params['update_frequency']==1.0
+    assert global_params['publish_frequency']==2.0
+    for field in ('update_frequency','publish_frequency'):
+        assert effective['local_costmap']['local_costmap']['ros__parameters'][field]==legacy['local_costmap']['local_costmap']['ros__parameters'][field]
     for data in (legacy,effective):
         data.pop('global_costmap');data.pop('local_costmap')
     assert legacy==effective  # AMCL, map_server, scan input and navigation untouched.
@@ -49,6 +60,9 @@ def test_actual_navigation_launch_applies_optional_overlay_last(monkeypatch):
     params=yaml.safe_load(Path(str(parameter_file)).read_text())
     assert params['local_costmap']['local_costmap']['ros__parameters']['plugins']==['static_layer','voxel_layer','inflation_layer']
     assert params['global_costmap']['global_costmap']['ros__parameters']['use_sim_time'] is False
+    global_params=params['global_costmap']['global_costmap']['ros__parameters']
+    assert global_params['update_frequency']==1.0
+    assert global_params['publish_frequency']==2.0
     for name in ('local_costmap','global_costmap'):
         assert params[name][name]['ros__parameters']['inflation_layer']['inflation_radius']==.45
 
@@ -109,6 +123,8 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
     maps=probe.create_publisher(OccupancyGrid,'/map',durable)
     transforms=probe.create_publisher(TFMessage,'/tf_static',durable)
     cloud=probe.create_publisher(PointCloud2,'/vlm_nav/obstacle_cloud',10)
+    confirmed=probe.create_publisher(PointCloud2,'/vlm_nav/obstacle_cloud_confirmed',10)
+    allow_marking=False
     for n in ('local_costmap','global_costmap'):
         probe.create_subscription(Costmap,prefix+'/'+n+'/costmap_raw',lambda m,n=n:latest.update({n:m}),durable)
     grid=OccupancyGrid();grid.header.frame_id='map';grid.info.resolution=.05
@@ -123,7 +139,9 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
             t.transform.rotation.w=1.;ts.append(t)
         transforms.publish(TFMessage(transforms=ts))
         # After removal, a farther return on the SAME ray proves raytrace clearing.
-        cloud.publish(point_cloud2.create_cloud(Header(stamp=stamp,frame_id='base_link'),fields,[(x,x*.125,0.)]))
+        header=Header(stamp=stamp,frame_id='base_link');points=[(x,x*.125,0.)]
+        cloud.publish(point_cloud2.create_cloud(header,fields,points))
+        confirmed.publish(point_cloud2.create_cloud(header,fields,points if allow_marking else []))
     def spin_until(predicate,x,timeout=15):
         end=time.monotonic()+timeout
         while time.monotonic()<end:
@@ -142,6 +160,11 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
         for i,command in enumerate(commands):
             log=(tmp_path/f'native_{i}.log').open('w');logs.append(log)
             processes.append(subprocess.Popen(command,env=os.environ.copy(),stdout=log,stderr=subprocess.STDOUT))
+        assert spin_until(lambda:len(latest)==2,.8)
+        end=time.monotonic()+2.5
+        assert spin_until(lambda:time.monotonic()>=end,.8,4)
+        assert all(old_obstacle_cost(m)==0 for m in latest.values()), 'Raw clearing cloud must not mark'
+        allow_marking=True
         assert spin_until(lambda:len(latest)==2 and all(old_obstacle_cost(m)>=253 for m in latest.values()),.8)
         for name in names:
             client=probe.create_client(GetParameters,name+'/get_parameters')
@@ -151,6 +174,7 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
             plugins=future.result().values[0].string_array_value
             assert ('voxel_layer' if 'local_costmap' in name else 'obstacle_layer') in plugins
             assert future.result().values[1].bool_value
+        allow_marking=False
         assert spin_until(lambda:len(latest)==2 and all(old_obstacle_cost(m)==0 for m in latest.values()),3.), {n:old_obstacle_cost(m) for n,m in latest.items()}
         for short in ('local_costmap','global_costmap'):
             publishers=probe.get_publisher_names_and_types_by_node(short,prefix+'/'+short)
@@ -178,3 +202,12 @@ def test_native_costmap_marking_and_clearing_with_synthetic_inputs_only(tmp_path
         probe.destroy_node();rclpy.shutdown()
     assert not forced, f'Forced shutdown: {forced}'
     assert [p.returncode for p in processes]==[0,0], 'Costmap host/manager must both exit normally'
+
+
+def test_go2_temporal_confirmation_enabled_without_changing_ranger():
+    go2=yaml.safe_load((ROOT/'config/robot_go2.yaml').read_text())['obstacle_cloud_filter']['ros__parameters']
+    ranger=yaml.safe_load((ROOT/'config/robot.yaml').read_text())['obstacle_cloud_filter']['ros__parameters']
+    assert go2['temporal_confirmation_enabled'] is True
+    assert go2['temporal_confirmation_period']==.8
+    assert go2['temporal_confirmation_cycles']==3
+    assert not ranger.get('temporal_confirmation_enabled',False)

@@ -6,6 +6,24 @@ ROBOTS = ('go2', 'ranger')
 TARGETS = ('A', 'B', 'C')
 PHASES = ('IDLE', 'SEARCH_AB', 'SEARCH_C', 'DEPOSIT', 'DONE', 'PAUSED', 'FAILED')
 KINDS = ('SEARCH_VIEWPOINT', 'APPROACH_PICKUP', 'WAIT', 'APPROACH_DEPOSIT', 'EXIT')
+PRETASK_READY_STATES = ('WAITING_PEER', 'STANDBY')
+SYNC_STATES = ('SYNCING', 'SYNCED')
+PRIVATE_RESOURCE_FIELDS = ('resource_id', 'token', 'permit_command_id', 'resource_status',
+                           'requested_resource', 'requested_command_id')
+
+
+def clean_private_state(state):
+    return not any((state.command_id, state.goal_id, state.sequence, state.ready, state.deposited,
+        state.exited, state.pose_valid, *(getattr(state, name) for name in PRIVATE_RESOURCE_FIELDS))) and state.common_pose == Pose2D()
+
+
+def task_sync_state(state, task_id):
+    return bool(task_id) and state.task_id == task_id and clean_private_state(state) and (
+        (state.run_state, state.reply) in (('SYNCING', ''), ('SYNCED', 'SYNCED')))
+
+
+def task_acknowledges(state, task_id):
+    return state.run_state == 'SYNCED' and task_sync_state(state, task_id)
 
 @dataclass(frozen=True)
 class Pose2D:
@@ -230,15 +248,28 @@ def validate_command(command, context):
             return CommandReply(False, f'{name} mismatch')
     if command.action not in ('EXECUTE', 'SYNC', 'SYNC_LOCAL_C', 'PAUSE', 'CANCEL'):
         return CommandReply(False, 'unknown action')
-    if command.action in ('SYNC', 'SYNC_LOCAL_C') and (
-        (command.action == 'SYNC') != context.share_c_coordinates
-    ):
-        return CommandReply(False, 'C sharing policy mismatch')
+    if command.action in ('SYNC', 'SYNC_LOCAL_C'):
+        if context.share_c_coordinates:
+            if command.action != 'SYNC':return CommandReply(False, 'C sharing policy mismatch')
+        else:
+            encoding = (command.action == 'SYNC' and command.kind == 'SYNC_LOCAL_C') or (
+                command.action == 'SYNC_LOCAL_C' and command.kind in ('WAIT', '', 'SYNC_LOCAL_C'))
+            if not encoding:return CommandReply(False, 'C sharing policy mismatch')
+            if not command.task_id or command.phase not in (*PHASES, 'SYNCING') or any((
+                command.sequence, command.command_id, command.target_id, command.viewpoint_id,
+                command.observation_id, command.parent_command_id, command.cancel_command_id,
+                command.resource_id, command.token, command.position_valid)) or (
+                command.common_goal != Pose2D() or command.object_position != Pose2D()) or (
+                command.phase == 'SYNCING' and command.ack_sequence != 0):
+                return CommandReply(False, 'invalid private task synchronization')
     if command.action == 'EXECUTE':
         if command.kind not in KINDS or command.kind=='EXIT' or command.phase not in PHASES:
             return CommandReply(False, 'unknown kind/phase')
         local_intent = not context.share_c_coordinates
         if local_intent:
+            if any((command.viewpoint_id, command.resource_id, command.token, command.parent_command_id,
+                    command.cancel_command_id)):
+                return CommandReply(False, 'private task resource/viewpoint fields must be empty')
             if command.kind not in ('APPROACH_PICKUP','SEARCH_VIEWPOINT','APPROACH_DEPOSIT','EXIT'):
                 return CommandReply(False, 'unsupported local task kind')
             if (command.kind == 'APPROACH_DEPOSIT' and not command.observation_id) or command.position_valid or (

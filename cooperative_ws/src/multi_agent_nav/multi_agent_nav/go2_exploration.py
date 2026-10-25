@@ -18,9 +18,10 @@ def exploration_gates(config, robot_id='go2', cooperative=False):
     errors=go2_local_gates(config,motion=True,vision=cooperative,robot_id=robot_id,local_coordinates=cooperative)
     robot=config[f'robot_{robot_id}']
     if cooperative or robot.get('approach_on_detection'):
-        distance = robot.get('standoff_distance')
-        if not valid_numbers([distance], 1) or distance <= 0:
-            errors.append('positive finite target standoff_distance required')
+        if not (cooperative and robot_id == 'go2'):
+            distance = robot.get('standoff_distance')
+            if not valid_numbers([distance], 1) or distance <= 0:
+                errors.append('positive finite target standoff_distance required')
         margin = robot.get('approach_distance_margin')
         if not valid_numbers([margin], 1) or margin <= 0:
             errors.append('positive finite approach_distance_margin required')
@@ -77,25 +78,20 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                   stop, before_motion, clock=time.monotonic, *, robot_id='go2',
                   target_id='A', success_radius=None, require_navigation_success=False,
                   navigation=None, stopping=None, on_observations=None,
-                  initial_observation=None, task_id=None, parent_command_id=None):
+                  initial_observation=None, task_id=None, parent_command_id=None,
+                  initial_camera_check=False):
     robot_config = config[f'robot_{robot_id}']
+    direct_target = robot_id == 'go2' and require_navigation_success
     task_id = task_id or robot_id + '_explore/' + uuid.uuid4().hex
     current = {}
     strategy = robot_config.get('exploration_strategy', 'fixed_viewpoints')
     generated = strategy == 'generated_candidates_vlm'
     semantic = strategy in ('semantic_furniture', 'generated_candidates_vlm')
-    geometry = GeneratedCandidates(config, robot_id) if generated and initial_observation is None else None
-    catalog = load_catalog(config) if semantic and not generated and initial_observation is None else None
-    points = [] if initial_observation is not None else geometry.points if generated else catalog['points'] if semantic else measured_viewpoints(config, robot_id)
-    policy = GeneratedCandidatesVLM(adapter.client) if generated else SemanticFurniture(adapter.client) if semantic else FixedViewpoints(points)
-    state = SelectionState(points)
-    if generated:state.task_id = task_id
+    geometry = catalog = policy = state = None
+    points = []
     selection_epoch = None
     history = []
     decision_id = None
-    if generated and geometry is not None:
-        record(dict(state='CANDIDATE_GEOMETRY',task_id=state.task_id,candidates=points,
-                    rotation_radius=geometry.radius,semantic_yaml=str(geometry.semantic_path) if geometry.semantic_path else None))
 
     def catalog_unchanged():
         return geometry.unchanged() if generated else load_catalog(config) == catalog
@@ -145,6 +141,21 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if not health.stopped or not health.motion_terminal:
             raise ExplorationStopped('stop prerequisites changed')
 
+    def prepare_work(function):
+        while not getattr(adapter.vision, 'available', True):
+            health_check()
+            yield
+        future = adapter.vision.submit(function)
+        try:
+            while not future.done():
+                health_check()
+                yield
+            result = future.result()
+            health_check()
+            return result
+        finally:
+            if not future.done():future.cancel()
+
     def parking_free(goal, observation=True):
         free=adapter.costmap_candidate_free(goal,global_goal=True)
         if generated and observation:free=free and adapter.observation_candidate_free(goal)
@@ -152,10 +163,10 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             raise ExplorationStopped('global goal costmap missing, stale or TF unavailable')
         return free
 
-    def navigate(goal, command_id, kind, target=None, radius=None):
+    def navigate(goal, command_id, kind, target=None, radius=None, path_accept=None):
         if navigation is not None:
             before_motion()
-            terminal = yield from navigation(goal, kind)
+            terminal = yield from navigation(goal, kind, **(dict(path_accept=path_accept) if path_accept else {}))
             yield from stopped()
             return terminal
         before_motion()
@@ -185,7 +196,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         success = contract['target_success_radius']
         selected = {}
 
-        def candidate_allowed(goal, result):
+        def candidate_allowed(goal, result, check_goal=False):
             health, _ = health_check()
             endpoint = result.path[-1] if result.reachable and result.path else None
             def distance_to(p, other=object_pose):
@@ -197,15 +208,21 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if not result.reachable:reasons.append('Nav2 planning failed: '+result.reason)
             if not math.isfinite(worst_distance) or worst_distance > success + 1e-9:
                 reasons.append('path endpoint exceeds arrival distance budget')
-            if distance_to(endpoint, health.pose) <= tolerance or distance_to(goal, health.pose) <= tolerance:
+            if not direct_target and (distance_to(endpoint, health.pose) <= tolerance or distance_to(goal, health.pose) <= tolerance):
                 reasons.append('goal or path endpoint already within Nav2 XY tolerance')
-            if worst_distance >= distance_to(health.pose):
+            if not direct_target and worst_distance >= distance_to(health.pose):
                 reasons.append('no guaranteed distance improvement')
+            if motion_path_error(replace(health,path_valid=True),result.path):
+                reasons.append('invalid planned path or footprint')
             if not reasons:
-                if not adapter.approach_candidate_free(goal) or not adapter.approach_candidate_free(endpoint):
-                    reasons.append('requested goal or path endpoint footprint rejected')
-                if motion_path_error(replace(health,path_valid=True),result.path):
-                    reasons.append('invalid planned path or footprint')
+                # The object itself need not be parkable; only Nav2's returned robot poses do.
+                checked = ([goal] if check_goal else []) + result.path if direct_target else (goal, endpoint)
+                if not all(adapter.approach_candidate_free(pose) for pose in checked):
+                    reasons.append('planned path or endpoint footprint rejected')
+            health, _ = health_check()
+            if (not check_goal and clock() >= expires or epoch != getattr(adapter, 'selection_epoch', 0)
+                    or not health.stopped or not health.motion_terminal):
+                raise ExplorationStopped('target approach cancelled or prerequisites changed')
             accepted = not reasons
             selected.clear()
             selected.update(distance_frame='map', robot_reference='base_link',
@@ -218,40 +235,51 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                  reason='; '.join(reasons))
             return accepted
 
-        future = adapter.select_approach(object_pose, [], standoff_distance=distance,
-                                         path_accept=candidate_allowed)
         expires = min(deadline, clock()+15.)
-        while not future.done():
-            health_check()
+        if direct_target:
+            goal = object_pose
+        else:
+            future = adapter.select_approach(object_pose, [], standoff_distance=distance,
+                                             path_accept=candidate_allowed)
+            while not future.done():
+                health_check()
+                if clock() >= expires:
+                    future.cancel()
+                    raise ExplorationStopped('target approach planning timeout')
+                yield
             if clock() >= expires:
-                future.cancel()
-                raise ExplorationStopped('target approach planning timeout')
-            yield
-        if clock() >= expires:
-            raise ExplorationStopped('late target approach plan')
-        approach = future.result()
-        goal = approach.goal
-        if goal is None:
-            emit('APPROACH_UNREACHABLE', reason=approach.reason or 'no safe standoff candidate')
-            return 'APPROACH_UNREACHABLE'
+                raise ExplorationStopped('late target approach plan')
+            approach = future.result()
+            goal = approach.goal
+            if goal is None:
+                emit('APPROACH_UNREACHABLE', reason=approach.reason or 'no safe standoff candidate')
+                return 'APPROACH_UNREACHABLE'
         future = adapter.compute_path(goal)
-        while not future.done():
-            health_check()
-            if clock() >= expires:
-                future.cancel()
-                raise ExplorationStopped('target approach path timeout')
-            yield
+        try:
+            while not future.done():
+                health_check()
+                if clock() >= expires:
+                    raise ExplorationStopped('target approach path timeout')
+                yield
+        finally:
+            if not future.done():future.cancel()
         result = future.result()
         health, _ = health_check()
         if (clock() >= expires or epoch != getattr(adapter, 'selection_epoch', 0)
                 or not health.stopped or not health.motion_terminal):
             raise ExplorationStopped('target approach cancelled or prerequisites changed')
         if not candidate_allowed(goal, result):
-            emit('APPROACH_UNREACHABLE', reason='standoff endpoint/footprint/path rejected')
+            emit('APPROACH_UNREACHABLE', reason='Nav2 path or endpoint rejected')
             return 'APPROACH_UNREACHABLE'
+        if direct_target:
+            goal = result.path[-1]
         current['pose'] = [goal.x, goal.y, goal.yaw]
-        emit('APPROACH_SELECTED', standoff_distance=distance, **selected)
-        terminal = yield from navigate(goal, parent_command_id or uuid.uuid4().hex, 'DEPOSIT_NAV' if target_id == 'C' else 'PICKUP_NAV', object_pose, None if require_navigation_success else radius)
+        emit('PATH_PLANNED', path=[asdict(p) for p in result.path])
+        emit('APPROACH_SELECTED', **({} if direct_target else dict(standoff_distance=distance)), **selected)
+        terminal = yield from navigate(goal, parent_command_id or uuid.uuid4().hex,
+            'DEPOSIT_NAV' if target_id == 'C' else 'PICKUP_NAV', object_pose,
+            None if require_navigation_success else radius,
+            (lambda goal, result: candidate_allowed(goal, result, check_goal=True)) if direct_target else None)
         health, _ = health_check()
         selected.update(stopped_pose=asdict(health.pose),
             stopped_distance=target_distance((health.pose.x,health.pose.y),(object_pose.x,object_pose.y)))
@@ -288,8 +316,9 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if not valid_numbers([margin],1) or margin <= 0:
                 raise ValueError('invalid distance margin')
             contract.update(live, distance_margin=margin)
-            distance = min(robot_config['standoff_distance'], success-live['xy_goal_tolerance']-margin)
-            if distance <= 0:raise ValueError('Nav2 tolerance leaves no arrival distance budget')
+            budget = success-live['xy_goal_tolerance']-margin
+            if budget <= 0:raise ValueError('Nav2 tolerance leaves no arrival distance budget')
+            distance = None if direct_target else min(robot_config['standoff_distance'], budget)
         except Exception as error:
             emit('ARRIVAL_PARAMETERS_FAILED', reason=str(error))
             raise ExplorationStopped('arrival parameters unavailable or invalid: '+str(error)) from error
@@ -299,7 +328,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if not health.stopped or not health.motion_terminal:
                 raise ExplorationStopped('arrival verification requires confirmed stop')
             measured = target_distance((health.pose.x,health.pose.y), (object_pose.x,object_pose.y))
-            if require_navigation_success and measured <= success:
+            if require_navigation_success and not direct_target and measured <= success:
                 distance=min(distance,measured-contract['xy_goal_tolerance']-contract['distance_margin']-1e-9)
                 if distance<=0:return 'APPROACH_UNREACHABLE'
             if measured <= success and not require_navigation_success:
@@ -322,11 +351,13 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 return 'TARGET_APPROACHED'
             if decision == 'FAILED':
                 break
-            # Compensate measured terminal overshoot; every new pose still needs both costmaps and a path.
-            distance -= measured-success
-            if not math.isfinite(distance) or distance <= 0:
-                break
-            emit('APPROACH_RETRY', arrival_retry=retry+1, standoff_distance=distance)
+            if not direct_target:
+                # Legacy standoff compensation; direct requests always use the observed object pose.
+                distance -= measured-success
+                if not math.isfinite(distance) or distance <= 0:
+                    break
+            emit('APPROACH_RETRY', arrival_retry=retry+1,
+                 **({} if direct_target else dict(standoff_distance=distance)))
         emit('APPROACH_DISTANCE_FAILED', measured_distance=measured, success_radius=success, stop_confirmed=True)
         return 'APPROACH_DISTANCE_FAILED'
 
@@ -335,7 +366,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if not semantic:
             return policy.next_viewpoint(None)
         epoch = getattr(adapter, 'selection_epoch', 0)
-        if not catalog_unchanged():raise ExplorationStopped('selection map assets changed')
+        if not (yield from prepare_work(catalog_unchanged)):
+            raise ExplorationStopped('selection map assets changed')
         candidates = []
         health, _ = health_check()
         ordered=sorted(points,key=lambda p:(math.hypot(p['pose'][0]-health.pose.x,p['pose'][1]-health.pose.y),p['id'])) if generated else points
@@ -386,8 +418,11 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if generated:
             for index,candidate in enumerate(candidates,1):candidate['display_id']=f'P{index}'
             health, _ = health_check()
-            snapshot.update(history=history[-12:], images=render_selection(geometry,candidates,state.records,
-                health.pose,adapter.selection_evidence_dir / decision_id))
+            camera=(adapter.selection_camera_snapshot()
+                    if robot_id=='go2' and hasattr(adapter,'selection_camera_snapshot') else None)
+            images = yield from prepare_work(lambda:render_selection(geometry,candidates,snapshot['records'],
+                health.pose,adapter.selection_evidence_dir / decision_id,camera_snapshot=camera))
+            snapshot.update(history=history[-12:], images=images)
         else:
             snapshot.update(targets=config['scene'].get('targets', {}),current_room=catalog['current_room'],
                             furniture=list(catalog['furniture'].values()),image=catalog['image'])
@@ -404,10 +439,11 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if clock() >= expires:
                 raise ExplorationStopped('late furniture selection discarded')
             point = future.result()
+            unchanged = yield from prepare_work(catalog_unchanged)
             health, _ = health_check()
             if (epoch != getattr(adapter, 'selection_epoch', 0) or
                     not state.accepts(token, point['id'], clock()) or
-                    not health.stopped or not health.motion_terminal or not catalog_unchanged()):
+                    not health.stopped or not health.motion_terminal or not unchanged):
                 raise ExplorationStopped('stale furniture selection discarded')
         except BaseException:
             future.cancel()
@@ -424,6 +460,60 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                     reason=point['selection_reason'], task_id=state.task_id))
         return point
 
+    if initial_camera_check and initial_observation is None:
+        health, _ = health_check()
+        if not health.stopped or not health.motion_terminal:
+            raise ExplorationStopped('initial camera check requires confirmed stop')
+        command_id = parent_command_id or uuid.uuid4().hex
+        descriptions = dict(config['scene'].get('targets', {}), **{target_id: target})
+        adapter.scan_viewpoint_id = 'initial_camera'
+        emit('INITIAL_CAMERA_START', task_id=task_id, command_id=command_id, target_id=target_id)
+        future = adapter.start_scan(descriptions, command_id, stop_on_target=target_id,
+                                    current_view_only=True, task_id=task_id)
+        try:
+            while not future.done():
+                health, _ = health_check()
+                if not health.stopped or not health.motion_terminal:
+                    raise ExplorationStopped('initial camera check lost confirmed stop')
+                yield
+            try:
+                scan_results = future.result()
+            except Exception as error:
+                emit('INITIAL_CAMERA_FAILED', error_type=type(error).__name__)
+                raise ExplorationStopped('initial camera inference failed') from error
+        finally:
+            if not future.done():future.cancel()
+        yield from stopped()
+        if on_observations is not None:on_observations(scan_results)
+        emit('INITIAL_CAMERA_RESULT', observations=[asdict(o) for o in scan_results], stop_confirmed=True)
+        observations = [o for o in scan_results if o.target_id == target_id]
+        if len(observations) != 1 or observations[0].view_index != 0:
+            raise ExplorationStopped('initial camera target result missing or invalid')
+        detections = [o for o in observations if o.status == 'DETECTED']
+        if detections:
+            outcome = 'TARGET_FOUND' if detections[0].navigable else 'TARGET_DETECTED_UNLOCATED'
+            emit(outcome)
+            if outcome == 'TARGET_FOUND' and robot_config.get('approach_on_detection', False):
+                initial_observation = detections[0]
+            else:return outcome
+        elif (len(scan_results) != len(descriptions)
+                or {(o.target_id,o.view_index) for o in scan_results} != {(t,0) for t in descriptions}
+                or any(o.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in scan_results)):
+            raise ExplorationStopped('initial camera scan incomplete or inference failed')
+
+    if initial_observation is None:
+        if generated:
+            geometry = yield from prepare_work(lambda:GeneratedCandidates(config, robot_id))
+        elif semantic:
+            catalog = yield from prepare_work(lambda:load_catalog(config))
+        points = geometry.points if generated else catalog['points'] if semantic else measured_viewpoints(config, robot_id)
+    policy = GeneratedCandidatesVLM(adapter.client) if generated else SemanticFurniture(adapter.client) if semantic else FixedViewpoints(points)
+    state = SelectionState(points)
+    if generated:
+        state.task_id = task_id
+        if geometry is not None:
+            record(dict(state='CANDIDATE_GEOMETRY',task_id=state.task_id,candidates=points,
+                rotation_radius=geometry.radius,semantic_yaml=str(geometry.semantic_path) if geometry.semantic_path else None))
     if initial_observation is not None:
         return (yield from approach_target(initial_observation))
 
@@ -460,6 +550,11 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             continue
         if not result.path:
             raise ExplorationStopped('planner returned empty path')
+        unchanged = (yield from prepare_work(catalog_unchanged)) if semantic else True
+        if semantic and (selection_epoch != getattr(adapter, 'selection_epoch', 0)
+                         or not unchanged
+                         or point['id'] not in state.eligible(clock())):
+            raise ExplorationStopped('selection invalidated before navigation')
         health, _ = health_check()
         error=motion_path_error(replace(health,path_valid=True),result.path)
         if error:
@@ -473,10 +568,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if semantic:update('navigation_failed')
             continue
         command_id = parent_command_id or uuid.uuid4().hex
-        if semantic and (selection_epoch != getattr(adapter, 'selection_epoch', 0)
-                         or not catalog_unchanged()
-                         or point['id'] not in state.eligible(clock())):
-            raise ExplorationStopped('selection invalidated before navigation')
+        emit('PATH_PLANNED', path=[asdict(p) for p in result.path])
         if semantic:update('executing')
         terminal = yield from navigate(goal, command_id, 'VIEWPOINT_NAV')
         emit('ARRIVED' if terminal == 'SUCCEEDED' else 'NAV_FAILED', navigation_status=terminal, stop_confirmed=True)
@@ -519,7 +611,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if not detections:raise ExplorationStopped('incomplete ABC scan or image/API/validation error')
             # A valid detection survives errors in other views/targets; the point stays unfinished.
             observations=[o for o in observations if o.status=='DETECTED']
-        emit('SCAN_RESULT', observations=[asdict(o) for o in observations], stop_confirmed=True,
+        emit('SCAN_RESULT', observations=[asdict(o) for o in scan_results], stop_confirmed=True,
              scan_complete=scan_complete)
         if not observations or any(o.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in observations):
             if semantic:
@@ -574,7 +666,7 @@ def exploration_markers(event):
             marker.scale.x = .6; marker.scale.y = .12; marker.scale.z = .12
         else:
             marker.scale.z = .2
-            marker.text = f"{event['viewpoint_id']} | {event['state']} | reachable={event.get('plan_reachable')}"
+            marker.text = f"{event.get('viewpoint_id','target')} | {event['state']} | reachable={event.get('plan_reachable')}"
         output.markers.append(marker)
     return output
 
@@ -587,26 +679,27 @@ def generated_exploration_markers(display):
     records=display.get('records',{});selectable=display.get('selectable',{})
     for index,point in enumerate(display.get('points',[])):
         pid=point['id'];x,y,yaw=point['pose']
+        if pid not in selectable:continue
         status=records.get(pid,{}).get('status','unchecked')
         available=pid in selectable and status not in ('observed','executing')
-        color=(.95,.5,.08) if available else (.4,.4,.4)
+        color=(.15,.55,1.) if available else (.4,.4,.4)
         for offset,kind in enumerate((Marker.SPHERE,Marker.TEXT_VIEW_FACING)):
             marker=Marker();marker.header.frame_id='map';marker.ns='generated_candidates'
             marker.id=index*2+offset;marker.type=kind;marker.action=Marker.ADD
             marker.pose.position.x=x;marker.pose.position.y=y;marker.pose.position.z=.1 if offset==0 else .35
             marker.pose.orientation.w=1.;marker.color.r,marker.color.g,marker.color.b=color;marker.color.a=1.
             marker.scale.x=marker.scale.y=marker.scale.z=.12 if offset==0 else .16
-            marker.text=f'{selectable.get(pid,pid)} | {point["furniture_id"]} | {status}'
+            marker.text=selectable[pid]
             candidates.markers.append(marker)
         if display.get('selected')==pid:
             for offset,kind in enumerate((Marker.ARROW,Marker.TEXT_VIEW_FACING)):
                 marker=Marker();marker.header.frame_id='map';marker.ns='vlm_selected_candidate'
                 marker.id=offset;marker.type=kind;marker.action=Marker.ADD
-                marker.pose.position.x=x;marker.pose.position.y=y;marker.pose.position.z=.2 if offset==0 else .6
+                marker.pose.position.x=x;marker.pose.position.y=y;marker.pose.position.z=.13 if offset==0 else .48
                 marker.pose.orientation.z=math.sin(yaw/2) if offset==0 else 0.
                 marker.pose.orientation.w=math.cos(yaw/2) if offset==0 else 1.
-                marker.color.g=.85;marker.color.b=.25;marker.color.a=1.
-                marker.scale.x=.6 if offset==0 else 0.;marker.scale.y=.12 if offset==0 else 0.;marker.scale.z=.12 if offset==0 else .2
-                marker.text=f'VLM selected: {selectable.get(pid,pid)} | {point["furniture_id"]}'
+                marker.color.r=1.;marker.color.g=.55;marker.color.b=.05;marker.color.a=1.
+                marker.scale.x=.4 if offset==0 else 0.;marker.scale.y=.045 if offset==0 else 0.;marker.scale.z=.045 if offset==0 else .18
+                marker.text=f'VLM {selectable[pid]}'
                 selected.markers.append(marker)
     return candidates,selected

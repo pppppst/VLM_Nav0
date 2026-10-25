@@ -1,0 +1,192 @@
+{
+  "vertex_count": 23,
+  "winding": "clockwise",
+  "self_intersections": 0,
+  "all_vertices_in_map": true,
+  "polygon_area_m2": 108.88009757245527,
+  "map_width": 472,
+  "map_height": 578,
+  "resolution": 0.05,
+  "origin": [
+    -8.09,
+    -20.8,
+    0
+  ],
+  "mask_free_cells": 42497,
+  "mask_keepout_cells": 230319,
+  "no_unknown_mask_cells": true,
+  "allowed_cells_fully_inside_polygon": true,
+  "original_inputs_unchanged": true,
+  "algorithm_checks": [
+    "rectangle",
+    "concave polygon",
+    "winding invariance",
+    "independent point-in-polygon",
+    "all four allowed-cell corners",
+    "PGM/PNG roundtrip",
+    "Nav2 trinary decode"
+  ],
+  "full_rotation_radius_m": 0.4204759208325728,
+  "previous_candidate_checks": [
+    {
+      "previous_display_id": "P1",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        5.4350000000000005,
+        -13.275,
+        0
+      ],
+      "center_inside_polygon": true,
+      "distance_to_boundary_m": 1.115371508289343,
+      "full_rotation_allowed_by_mask": true
+    },
+    {
+      "previous_display_id": "P2",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        6.4350000000000005,
+        -15.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 0.7404540227296944,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P3",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        7.4350000000000005,
+        -15.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 0.6126743867557077,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P4",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        5.4350000000000005,
+        -15.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 0.868233658703681,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P5",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        4.4350000000000005,
+        -13.275,
+        0
+      ],
+      "center_inside_polygon": true,
+      "distance_to_boundary_m": 1.001828958380233,
+      "full_rotation_allowed_by_mask": true
+    },
+    {
+      "previous_display_id": "P6",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        8.435000000000002,
+        -15.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 0.48489475078172084,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P7",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        7.4350000000000005,
+        -11.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 0.7586329673856322,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P8",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        6.4350000000000005,
+        -16.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 1.7322566062262046,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P9",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        7.4350000000000005,
+        -16.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 1.604476970252218,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P10",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        9.435000000000002,
+        -13.275,
+        0
+      ],
+      "center_inside_polygon": true,
+      "distance_to_boundary_m": 0.700057458330284,
+      "full_rotation_allowed_by_mask": true
+    },
+    {
+      "previous_display_id": "P11",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        8.435000000000002,
+        -11.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 1.0944845481019052,
+      "full_rotation_allowed_by_mask": false
+    },
+    {
+      "previous_display_id": "P12",
+      "previous_decision_id": "24be031b664344359ce76214fcc56922",
+      "pose": [
+        5.4350000000000005,
+        -16.275,
+        0
+      ],
+      "center_inside_polygon": false,
+      "distance_to_boundary_m": 1.6347564468577809,
+      "full_rotation_allowed_by_mask": false
+    }
+  ],
+  "extra_robot_margin_m": 0.0,
+  "deployed": false,
+  "ros_initialized": false,
+  "source_files_sha256": {
+    "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml": "a4d4a35ed4ba2203cb3decfb8b3a991ff57cb90294ab1c351c063eaef4ad7955",
+    "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.pgm": "0085c2d7ba8868f8d4ff76eb27aa911e2ca5324ea531f77347d0a1f1a9241520",
+    "/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-field/keepout-boundary-points/clicked_points_20261022T084824.581164Z_29ab5c38.jsonl": "a52a4fd6bf303d5a6fa2335797be4878123f5ccf187cddbbb6281091a6b9b798"
+  },
+  "artifact_files_sha256": {
+    "keepout_mask.png": "6ddc3b7dd5587609e159e90f100d81d6df2f79fa2fa2b8a85443c9f0a74ff337",
+    "boundary.yaml": "f69d927206b890067a9bb6d11b86cae2af26dcbd11c084d95f692b8e0784a8b0",
+    "keepout_mask.yaml": "b482a530756a3745fc0e8494ce4c7f7ab5b6a086e12903a7a1c6739e941d5e33",
+    "boundary_preview.png": "33ecab7d31caf4706dc89616ba3e082a99c1555a4734e1a81a0a36347e0e4db6",
+    "clicked_points.jsonl": "a52a4fd6bf303d5a6fa2335797be4878123f5ccf187cddbbb6281091a6b9b798",
+    "keepout_mask.pgm": "5566776a320e7ee056e9d4401f4e4799011d05f9a0e1b0ca0cd7892cca8340f7"
+  }
+}

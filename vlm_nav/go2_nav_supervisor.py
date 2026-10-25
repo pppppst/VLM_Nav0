@@ -18,6 +18,7 @@ from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Bool
 from tf2_ros import Buffer, TransformException, TransformListener
 from vlm_nav.go2_readiness import valid_map
+from vlm_nav.go2_keepout import KEEP_OUT_NODES, KeepoutMask
 
 
 class Go2NavSupervisor(Node):
@@ -41,6 +42,11 @@ class Go2NavSupervisor(Node):
             self.scan_topic = "/scan"
         else:
             self.NAV2_NODES = (*self.NAV2_NODES, "map_server", "amcl")
+        mask_path = self.declare_parameter("keepout_mask", "").value
+        self.keepout_mask = KeepoutMask(mask_path) if mask_path else None
+        self.keepout_applied = False
+        if self.keepout_mask:
+            self.NAV2_NODES = (*self.NAV2_NODES, *KEEP_OUT_NODES)
         self.map_valid = False
         self.amcl_pose_valid = False
         self.maximum_age = float(self.declare_parameter("maximum_data_age_s", 2.0).value)
@@ -97,6 +103,9 @@ class Go2NavSupervisor(Node):
             lambda _message: self._received("costmap"),
             latched,
         )
+        if self.keepout_mask:
+            self.create_subscription(Costmap, "/global_costmap/costmap_raw",
+                                     self._on_keepout_costmap, latched)
         self.lifecycle_clients = {
             name: self.create_client(GetState, f"/{name}/get_state")
             for name in self.NAV2_NODES
@@ -116,6 +125,13 @@ class Go2NavSupervisor(Node):
     def _on_map(self, message) -> None:
         self.map_valid = valid_map(message)
         self._received("map")
+
+    def _on_keepout_costmap(self, message) -> None:
+        stamp = message.header.stamp.sec + message.header.stamp.nanosec * 1e-9
+        age = abs(self.get_clock().now().nanoseconds * 1e-9 - stamp)
+        self.keepout_applied = age <= self.maximum_age and self.keepout_mask.applied_to(message)
+        # Transit time consumes the same freshness budget as time after receipt.
+        self.receipts["keepout_costmap"] = time.monotonic() - age
 
     def _on_amcl_pose(self, message) -> None:
         pose = message.pose.pose
@@ -198,6 +214,8 @@ class Go2NavSupervisor(Node):
         fresh_keys = ("obstacle", "scan", "map", "costmap")
         if self.localization_mode == "amcl":
             fresh_keys = ("obstacle", "scan", "costmap")
+        if self.keepout_mask:
+            fresh_keys = (*fresh_keys, "keepout_costmap")
         data_fresh = all(
             key in self.receipts and now - self.receipts[key] <= self.maximum_age
             for key in fresh_keys
@@ -224,6 +242,9 @@ class Go2NavSupervisor(Node):
                 ("costmap", "/local_costmap/costmap_raw"),
             )
         }
+        if self.keepout_mask:
+            topics["keepout_costmap"] = self._topic_status(
+                "keepout_costmap", "/global_costmap/costmap_raw", now)
         conditions = {
             "system_ready_value": self.system_ready,
             "system_ready_fresh": bool(
@@ -239,6 +260,8 @@ class Go2NavSupervisor(Node):
             self._amcl_conditions() if self.localization_mode == "amcl" else {}
         )
         conditions.update(localization_conditions)
+        if self.keepout_mask:
+            conditions["keepout_applied"] = self.keepout_applied
         for name in self.NAV2_NODES:
             conditions[f"{name}_active"] = self.lifecycle_active[name]
             conditions[f"{name}_fresh"] = bool(
@@ -252,6 +275,7 @@ class Go2NavSupervisor(Node):
             and map_tf
             and lifecycle_contract
             and all(localization_conditions.values())
+            and (self.keepout_mask is None or self.keepout_applied)
         )
         signature = (ready, failed)
         if signature != self.last_readiness_signature:
