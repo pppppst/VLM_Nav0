@@ -18,37 +18,47 @@ launcher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(launcher)
 
 
-@pytest.mark.parametrize('case', ['current', 'wrong_path', 'missing_fix'])
+@pytest.mark.parametrize('case', ['current', 'wrong_path', 'stale_code', 'wrong_prefix', 'arrival_order'])
 def test_shell_checks_imports_before_launching(tmp_path, case):
-    scripts = tmp_path / 'scripts'
-    scripts.mkdir()
-    entry = scripts / 'start_go2_vlm.sh'
-    entry.write_text((ROOT / 'scripts/start_go2_vlm.sh').read_text())
-    marker = tmp_path / 'launched'
-    (scripts / 'start_go2_vlm.py').write_text(
-        f'from pathlib import Path\nPath({str(marker)!r}).touch()\n')
-    output = tmp_path / 'current'
-    prefix = output / 'install/multi_agent_nav'
-    modules = (tmp_path / 'old' if case == 'wrong_path' else prefix) / 'python'
-    package = modules / 'multi_agent_nav'
-    (package / 'adapters').mkdir(parents=True)
-    for module in ['__init__.py', 'adapters/__init__.py', 'go2_exploration.py']:
-        (package / module).touch()
-    (package / 'adapters/go2.py').write_text(
-        'class Go2Adapter:\n    ' + ('pass' if case == 'missing_fix'
-                                   else 'def approach_candidate_free(self): pass') + '\n')
-    (tmp_path / 'CoVLM_env.bash').write_text(
-        f'export GO2_EXPLORE_OUTPUT={str(output)!r}\nexport PYTHONPATH={str(modules)!r}\n')
-    result = subprocess.run(['bash', str(entry)], cwd=tmp_path, capture_output=True, text=True)
-    if case == 'current':
-        assert result.returncode == 0, result.stderr
-        assert str(package / 'adapters/go2.py') in result.stdout
-        assert str(package / 'go2_exploration.py') in result.stdout
-        assert marker.exists()
-    else:
-        assert result.returncode != 0
-        assert not marker.exists()
-        assert '安装校验失败' in result.stderr
+    scripts = tmp_path/'scripts'; scripts.mkdir()
+    entry = scripts/'start_go2_vlm.sh'
+    entry.write_text((ROOT/'scripts/start_go2_vlm.sh').read_text())
+    marker = tmp_path/'launched'
+    script = (ROOT/'scripts/start_go2_vlm.py').read_text().replace('    sys.exit(main())',
+        f"    sys.exit(main()) if '--check-install' in sys.argv else Path({str(marker)!r}).touch()")
+    (scripts/'start_go2_vlm.py').write_text(script)
+    install = tmp_path/'current/install'; paths=[]
+    for package in ('vlm_nav','multi_agent_nav'):
+        source = tmp_path/('vlm_nav' if package=='vlm_nav' else 'cooperative_ws/src/multi_agent_nav/multi_agent_nav')
+        modules = (tmp_path/'old' if case=='wrong_path' else install/package)/'python'
+        actual = modules/package
+        source.mkdir(parents=True); actual.mkdir(parents=True);paths.append(str(modules))
+        files={'__init__.py':'', 'local_approach_execution.py':'value = 1\n'}
+        if package=='multi_agent_nav':
+            files['config.py'] = 'def load_config(directory):\n    return '+repr(dict(robot_go2=dict(
+                arrival_config_files=[str(tmp_path/'config'/f) for f in
+                    (('robot_go2.yaml','robot.yaml') if case=='arrival_order' else ('robot.yaml','robot_go2.yaml'))])))+'\n'
+            files['single_robot_approach.py']='def load_parameters(files): pass\n'
+        for name,content in files.items():
+            (source/name).write_text(content);(actual/name).write_text(content)
+        if case=='stale_code' and package=='multi_agent_nav':
+            (actual/'local_approach_execution.py').write_text('value = 0\n')
+    ament=tmp_path/'stubs/ament_index_python';ament.mkdir(parents=True)
+    (ament/'__init__.py').touch()
+    (ament/'packages.py').write_text(
+        'def get_package_prefix(name): return '+repr(str(tmp_path/'wrong' if case=='wrong_prefix' else install))+"+'/'+name\n"+
+        'def get_package_share_directory(name): return '+repr(str(install))+"+'/'+name+'/share/'+name\n")
+    (tmp_path/'config').mkdir()
+    share=install/'vlm_nav/share/vlm_nav/config';share.mkdir(parents=True)
+    for name in ('robot.yaml','robot_go2.yaml'):
+        (tmp_path/'config'/name).write_text(name);(share/name).write_text(name)
+    (tmp_path/'CoVLM_env.bash').write_text(
+        'export COOP_SETUP_FILE='+repr(str(install/'local_setup.bash'))+'\n'+
+        'export PYTHONPATH='+repr(':'.join([str(ament.parent),*paths]))+'\n')
+    result=subprocess.run(['bash',str(entry)],cwd=tmp_path,capture_output=True,text=True)
+    assert (result.returncode==0)==(case=='current'),result.stderr
+    assert marker.exists()==(case=='current')
+    if case!='current':assert '安装校验失败' in result.stderr
 
 
 def test_shell_help_does_not_load_environment(tmp_path):
@@ -198,12 +208,14 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
     monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
-    prefix=tmp_path/'build/go2-single-parity-20261025/overlay/install'
+    prefix=tmp_path/'build/go2-unified-entry-20261027/overlay/install'
     for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
     app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
     monkeypatch.setattr(app,'check_owners',lambda:None)
     monkeypatch.setattr(app,'ros',lambda *args,**kwargs:SimpleNamespace(stdout=str(prefix/args[2])))
-    def offline_boundary(*args,**kwargs):raise RuntimeError('reached offline configuration check')
+    def offline_boundary(args,**kwargs):
+        if '--check-install' in args:return SimpleNamespace(returncode=0,stdout='')
+        raise RuntimeError('reached offline configuration check')
     monkeypatch.setattr(app,'command',offline_boundary)
     with pytest.raises(RuntimeError,match='reached offline configuration check'):app.start()
 
@@ -214,6 +226,7 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
 def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, reuse,
                                                cooperative, bridge_state):
     monkeypatch.setenv('COOP_CONFIG', str(tmp_path / 'actual-config'))
+    monkeypatch.setenv('GO2_EXPLORE_CONFIG', str(tmp_path / 'actual-config'))
     monkeypatch.setenv('COOP_SETUP_FILE', '/tmp/current-cooperative/install/local_setup.bash')
     monkeypatch.setenv('GO2_PREFLIGHT_REPORT', str(tmp_path / 'formal-report.json'))
     mask = ROOT/'maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261022_29ab5c38/keepout_mask.yaml'
@@ -249,9 +262,7 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
         if args[1:3] == ['node', 'list']:
             output = '\n'.join(nodes)
         elif args[1:3] == ['pkg', 'prefix']:
-            output = {'vlm_nav': '/tmp/current-bridge/install/vlm_nav',
-                      'multi_agent_nav': ('/tmp/current-cooperative/install/multi_agent_nav' if cooperative
-                                          else '/tmp/current-explore/install/multi_agent_nav')}[args[3]]
+            output = '/tmp/current-cooperative/install/'+args[3]
         elif args[1:3] == ['topic', 'info']:
             output = f'Publisher count: {topics.get(args[3], 0)}'
         elif args[1:3] == ['param', 'get']:
@@ -266,6 +277,8 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
                 assert '/twist_to_go2_sport_bridge' in nodes, 'NAV_READY requires Sport through SYSTEM_READY'
                 nav_ready = True
             output = repr(bridge_state) if 'String' in ' '.join(args) else 'data: true'
+        elif '--check-install' in args:
+            output = '{}'
         elif '--offline' in args:
             output = json.dumps(dict(map_files=dict(yaml_path='/tmp/current-map.yaml')))
         elif 'inspect' in args:
@@ -296,8 +309,8 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
         system = windows[1][1]
         assert 'start_bridge:=false' in system
         assert 'target_stage:=nav2' in system
-        map_path = '/tmp/current-map.yaml' if cooperative else f'{ROOT}/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml'
-        config = tmp_path / 'actual-config' if cooperative else ROOT / 'cooperative_ws/src/multi_agent_nav/config'
+        map_path = '/tmp/current-map.yaml'
+        config = tmp_path / 'actual-config'
         assert f'map:={map_path}' in system
         assert f'costmap_overrides_file:={config}/nav2_go2_cooperative_costmap.yaml' in system
         if cooperative:
@@ -330,6 +343,8 @@ def test_cooperative_hardware_windows_keep_environment_and_config(monkeypatch, t
     monkeypatch.setenv('COOP_CONFIG', str(config))
     (tmp_path / 'Cooperative_env.bash').write_text(
         '[[ "$1" == go2 ]] || return 91\nexport CHILD_CONFIG="$2"\n')
+    (tmp_path/'scripts').mkdir()
+    (tmp_path/'scripts/start_go2_vlm.py').write_text('import sys; assert "--check-install" in sys.argv\n')
     app = launcher.Launcher(tmp_path, False, 'unused', cooperative_hardware=True)
     def command(args):
         child = args[args.index('--') + 1:]
@@ -417,3 +432,34 @@ def test_command_timeout_interrupts_descendant_observer(tmp_path):
                 os.kill(int(pid_file.read_text()), signal.SIGTERM)
             except ProcessLookupError:
                 pass
+
+
+def test_install_check_rejects_parent_child_selection_mismatch(monkeypatch,tmp_path):
+    assert hasattr(launcher,'check_install'), 'no paired module/source validation'
+    monkeypatch.setenv('COOP_SETUP_FILE',str(tmp_path/'old/install/local_setup.bash'))
+    with pytest.raises(RuntimeError,match='父子终端'):
+        launcher.check_install(tmp_path,tmp_path/'new/install/local_setup.bash',tmp_path/'config')
+
+
+@pytest.mark.parametrize('cooperative',[False,True])
+def test_child_reload_of_old_pair_blocks_component_start(monkeypatch,tmp_path,cooperative):
+    scripts=tmp_path/'scripts';scripts.mkdir()
+    (scripts/'start_go2_vlm.py').write_text((ROOT/'scripts/start_go2_vlm.py').read_text())
+    old=tmp_path/'old/install/local_setup.bash'
+    new=tmp_path/'new/install/local_setup.bash'
+    config=tmp_path/'config';config.mkdir()
+    monkeypatch.setenv('COOP_CONFIG',str(config))
+    monkeypatch.setenv('GO2_EXPLORE_CONFIG',str(config))
+    monkeypatch.setenv('COOP_SETUP_FILE',str(new))
+    envfile=tmp_path/('Cooperative_env.bash' if cooperative else 'CoVLM_env.bash')
+    envfile.write_text('export COOP_SETUP_FILE='+repr(str(old))+'\n')
+    app=launcher.Launcher(tmp_path,True,'target',cooperative_hardware=cooperative)
+    marker=tmp_path/'component-started'
+    def command(args):
+        child=[str(a) for a in args[args.index('--')+1:]]
+        result=subprocess.run(child,capture_output=True,text=True,input='\n')
+        assert result.returncode!=0
+        assert '父子终端安装选择不一致' in result.stderr
+    monkeypatch.setattr(app,'command',command)
+    app.window('System',['touch',marker])
+    assert not marker.exists()

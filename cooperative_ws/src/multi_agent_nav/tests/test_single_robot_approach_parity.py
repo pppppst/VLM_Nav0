@@ -1,5 +1,6 @@
 """Differential approach decisions against actual methods from the frozen Git object.
 
+The cooperative radius watchdog is intentionally removed; other decisions stay aligned.
 ROS transport is controlled here; no nodes, network, or hardware are started.
 """
 import ast
@@ -206,13 +207,12 @@ def test_stop_sequences(reference,kind):
     compare(reference,scenario)
 
 
-@pytest.mark.parametrize('kind', ['radius','timeout','distance_first','terminal_clear'])
+@pytest.mark.parametrize('kind', ['timeout','distance_first','terminal_clear'])
 def test_watchdogs_use_parameters_and_source_order(reference,kind):
     def scenario(h):
         a=h.a; a.p.max_travel_radius=7.; a.p.goal_timeout=20.
         a.navigation_tick();h.planned();h.accept()
         assert a.active_motion_origin == (0.,0.)
-        if kind=='radius':h.pose=(7.501,0.,0.)
         if kind=='timeout':h.now=30.001
         if kind=='distance_first':h.pose=(1.2,0.,0.);h.now=30.001
         if kind=='terminal_clear':
@@ -220,6 +220,28 @@ def test_watchdogs_use_parameters_and_source_order(reference,kind):
         a.last_valid_rgbd_received = a.last_camera_tf_success = a.last_robot_tf_success = h.now
         a.safety_tick()
     compare(reference,scenario)
+
+
+@pytest.mark.parametrize('finish', ['target_reached', 'timeout'])
+def test_long_approach_passes_old_radius_but_keeps_stop_and_timeout(reference,finish):
+    old,new=pair(reference)
+    for h in (old,new):
+        h.a.target_reference_position=(5.45,0.)
+        h.a.navigation_tick();h.planned(points=((0.,0.),(5.45,0.)));h.accept()
+        h.pose=(3.6,0.,0.);h.a.safety_tick()
+    assert old.a.state=='FAILED'
+    assert new.a.state=='APPROACHING'
+    assert not any(e[0] in ('cancel','stop','fail') for e in new.events)
+    if finish=='target_reached':
+        new.pose=(4.57,0.,0.)
+        new.a.safety_tick()
+        assert new.a.state=='APPROACH_STOPPING'
+        assert ('cancel',) in new.events
+    else:
+        new.now+=120.001
+        new.a.safety_tick()
+        assert new.a.state=='FAILED'
+        assert ('fail','Navigation or path-validation goal timed out') in new.events
 
 
 @pytest.mark.parametrize('simulation,share,robot,paused', [
@@ -523,3 +545,26 @@ def test_owner_guard_does_not_add_pretask_pause(live_stack):
     s.r.owners=lambda:['another_navigation_owner']
     s.tick()
     assert not s.m.paused
+
+
+@pytest.mark.parametrize('kind,value,failed', [
+    ('timeout',120.,False),('timeout',120.000001,True)])
+def test_default_watchdog_boundaries_against_frozen_source(reference,kind,value,failed):
+    def scenario(h):
+        h.a.navigation_tick();h.planned();h.accept()
+        if kind=='radius':h.pose=(-value,0.,.7)
+        else:h.now=10.+value
+        h.a.last_valid_rgbd_received=h.a.last_camera_tf_success=h.a.last_robot_tf_success=h.now
+        h.a.safety_tick()
+    h=compare(reference,scenario)
+    assert (h.a.state=='FAILED')==failed
+
+
+@pytest.mark.parametrize('linear,angular,count',[(.03,.05,3),(.030001,0.,0),(0.,.050001,0)])
+def test_planar_stop_sample_boundaries_against_frozen_source(reference,linear,angular,count):
+    def scenario(h):
+        h.pose=(1.2,0.,.7);h.a.navigation_tick()
+        for _ in range(3):h.odom(x=linear,angular_z=angular)
+        assert h.a.arrival_stationary_count==count
+        h.a.advance_approach_stop()
+    compare(reference,scenario)

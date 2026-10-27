@@ -54,12 +54,49 @@ def require_service_success(output):
         raise RuntimeError('Sport 服务未返回 success=true；停止后续操作')
 
 
+def check_install(repo, setup, config):
+    """Read-only paired prefix, imported code and parameter-source verification."""
+    if Path(os.environ.get('COOP_SETUP_FILE', '')).resolve() != setup.resolve():
+        raise RuntimeError('父子终端安装选择不一致')
+    import importlib
+    from ament_index_python.packages import get_package_prefix, get_package_share_directory
+    checked = {}
+    for package, source in (('vlm_nav', repo/'vlm_nav'),
+            ('multi_agent_nav', repo/'cooperative_ws/src/multi_agent_nav/multi_agent_nav')):
+        prefix = setup.resolve().parent/package
+        if Path(get_package_prefix(package)).resolve() != prefix:
+            raise RuntimeError(f'{package} 包前缀不匹配：应为 {prefix}')
+        for file in sorted(source.rglob('*.py')):
+            relative = file.relative_to(source).with_suffix('')
+            parts = relative.parts[:-1] if relative.name == '__init__' else relative.parts
+            name = '.'.join((package, *parts))
+            actual = Path(importlib.import_module(name).__file__).resolve()
+            if not actual.is_relative_to(prefix) or actual.read_bytes() != file.read_bytes():
+                raise RuntimeError(f'{name} 安装与源码不一致：{actual}')
+            checked[name] = str(actual)
+    share = Path(get_package_share_directory('vlm_nav'))
+    for file in (repo/'config').rglob('*'):
+        if file.is_file() and file.read_bytes() != (share/'config'/file.relative_to(repo/'config')).read_bytes():
+            raise RuntimeError(f'配置安装与源码不一致：{file}')
+    from multi_agent_nav.config import load_config
+    from multi_agent_nav.single_robot_approach import load_parameters
+    cfg = load_config(config)
+    files = cfg['robot_go2']['arrival_config_files']
+    expected = [share/'config/robot.yaml', share/'config/robot_go2.yaml']
+    if len(files) != len(expected) or any(Path(a).read_bytes()!=b.read_bytes() for a,b in zip(files,expected)):
+        raise RuntimeError('arrival_config_files 来源或合并顺序与成对安装不一致')
+    load_parameters(files)
+    print(json.dumps(dict(installed=checked, arrival_config_files=files, config_dir=str(config)), ensure_ascii=False))
+
+
 class Launcher:
     def __init__(self, repo, prepare_only, target, cooperative_hardware=False):
         self.repo = repo
         self.cooperative_hardware = cooperative_hardware
         self.config = (Path(os.environ['COOP_CONFIG']) if cooperative_hardware
-                       else repo / 'cooperative_ws/src/multi_agent_nav/config')
+                       else Path(os.environ.get('GO2_EXPLORE_CONFIG', repo / 'cooperative_ws/src/multi_agent_nav/config')))
+        self.setup = Path(os.environ.get('COOP_SETUP_FILE') or repo /
+            'build/go2-unified-entry-20261027/overlay/install/local_setup.bash')
         self.prepare_only = prepare_only or cooperative_hardware
         self.target = target
         self.logs = None
@@ -103,16 +140,17 @@ class Launcher:
 
     def window(self, name, args):
         # Positional arguments preserve paths and targets without shell interpolation.
-        setup = 'source "$1/CoVLM_env.bash" || exit; shift; '
-        parameters = [self.repo]
+        setup = 'export COOP_SETUP_FILE="$2" GO2_CONFIG="$3"; source "$1/CoVLM_env.bash" || exit; shift 3; '
+        parameters = [self.repo, self.setup, self.config]
         if self.cooperative_hardware:
-            setup = 'source "$1/Cooperative_env.bash" go2 "$2" || exit; shift 2; '
-            parameters.append(self.config)
-        shell = (setup + '"$@"; status=$?; '
+            setup = 'export COOP_SETUP_FILE="$2"; source "$1/Cooperative_env.bash" go2 "$3" || exit; shift 3; '
+        shell = (setup + '"$1" "$2" --check-install --expected-setup "$3" --config-dir "$4" || exit; shift 4; '
+                 '"$@"; status=$?; '
                  'echo "进程结束 exit=$status，请查看上方日志"; '
                  'read -r -p "按 Enter 关闭此终端……" _; exit "$status"')
         self.command(['gnome-terminal', '--window', f'--title=Go2 {name}', '--',
-                      'bash', '-c', shell, 'go2-vlm-terminal', *parameters, *args])
+                      'bash', '-c', shell, 'go2-vlm-terminal', *parameters, '/home/isee-pst/venv/co-nav-real/bin/python',
+                      self.repo/'scripts/start_go2_vlm.py', self.setup, self.config, *args])
         print(f'已打开 Go2 {name} 终端；运行期间保持打开。', flush=True)
 
     def publishers(self, topic):
@@ -179,23 +217,17 @@ class Launcher:
 
     def start(self):
         self.check_owners()
-        for package, output in [('vlm_nav', 'GO2_BRIDGE_OUTPUT'),
-                                ('multi_agent_nav', 'GO2_EXPLORE_OUTPUT')]:
-            expected = Path(os.environ[output]) / 'install' / package
-            if self.cooperative_hardware:
-                setup = os.environ.get('COOP_SETUP_FILE') or self.repo / 'build/go2-single-parity-20261025/overlay/install/local_setup.bash'
-                paired = Path(setup).resolve().parent / package
-                if package == 'multi_agent_nav' or paired.is_dir():
-                    expected = paired
-            actual = Path(self.ros('pkg', 'prefix', package).stdout.strip())
+        self.command(['/home/isee-pst/venv/co-nav-real/bin/python', self.repo/'scripts/start_go2_vlm.py',
+                      '--check-install', '--expected-setup', self.setup, '--config-dir', self.config])
+        for package in ('vlm_nav', 'multi_agent_nav'):
+            expected = self.setup.resolve().parent/package
+            actual = Path(self.ros('pkg', 'prefix', package).stdout.strip()).resolve()
             if actual != expected:
                 raise RuntimeError(f'{package} 安装不匹配：{actual}；应为 {expected}')
         offline = self.command(self.check('--offline', '--require-ready'))
-        map_path = self.repo / 'maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml'
-        if self.cooperative_hardware:
-            map_path = Path(parse_report(offline.stdout)['map_files']['yaml_path'])
+        map_path = Path(parse_report(offline.stdout)['map_files']['yaml_path'])
         keepout_mask = ''
-        if self.cooperative_hardware:
+        if (self.config/'robot_go2.yaml').is_file():
             keepout_mask = yaml.safe_load((self.config/'robot_go2.yaml').read_text()).get('keepout_mask', '')
             if keepout_mask:
                 from vlm_nav.go2_keepout import KeepoutMask
@@ -238,7 +270,7 @@ class Launcher:
         if bridges > 1:
             raise RuntimeError('Sport 转换节点重复，停止后续操作')
         if bridges:
-            self.confirm('CURRENT', '复用已有 Sport 转换：确认它来自当前 manual-takeover 安装；无法确认则退出并在原终端处理。')
+            self.confirm('CURRENT', '复用已有 Sport 转换：确认它来自当前成对安装；无法确认则退出并在原终端处理。')
         else:
             self.window('Sport', ['ros2', 'run', 'vlm_nav', 'twist_to_go2_sport_bridge',
                 '--ros-args', '--params-file', self.repo / 'config/go2_bridge.yaml', '-p', 'dry_run:=false'])
@@ -330,7 +362,19 @@ def main():
     parser.add_argument('--target', default='灭火器', help='A目标描述，默认灭火器')
     parser.add_argument('--prepare-only', action='store_true', help='仅启动并检查；不 ARM、不探索')
     parser.add_argument('--cooperative-hardware', action='store_true', help='协同环境下仅准备硬件，停在静止通信之前')
+    parser.add_argument('--check-install', action='store_true', help='只读安装一致性检查；不初始化 ROS')
+    parser.add_argument('--expected-setup', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--config-dir', type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.check_install:
+        repo = Path(__file__).resolve().parents[1]
+        try:
+            check_install(repo, args.expected_setup or Path(os.environ['COOP_SETUP_FILE']),
+                args.config_dir or Path(os.environ.get('GO2_EXPLORE_CONFIG', repo/'cooperative_ws/src/multi_agent_nav/config')))
+            return 0
+        except Exception as error:
+            print(f'安装校验失败，未启动实验：{error}', file=sys.stderr)
+            return 1
     if not args.target.strip():
         parser.error('目标描述不能为空')
     repo = Path(__file__).resolve().parents[1]

@@ -54,7 +54,7 @@ def parser():
     p.add_argument('--output-dir',help='new motion evidence directory; generated strategy defaults to the managed experiment root')
     p.add_argument('--target',help='single exploration target description; defaults to scene.targets.A')
     p.add_argument('--search-hint', help='location clue for furniture selection only; not visual detection evidence')
-    p.add_argument('--approach-target', action='store_true', help='after grounded detection, approach using existing standoff planner')
+    p.add_argument('--approach-target', action='store_true', help='after grounded detection, use the shared Go2 local approach executor')
     p.add_argument('--strategy', choices=('fixed_viewpoints', 'semantic_furniture', 'generated_candidates_vlm'),
                    help='Go2 internal exploration strategy; default fixed_viewpoints')
     p.add_argument('--goal',nargs=3,type=float,metavar=('X','Y','YAW'),help='measured local Go2 map pose; inspect only probes costmap footprint; approach treats X/Y as object position')
@@ -135,6 +135,50 @@ def require_ros_environment():
     if uri.scheme!='file' or uri.netloc or not uri.path or Path(unquote(uri.path)).read_bytes()!=expected_xml.read_bytes():
         raise ValueError('use the documented Go2-only CycloneDDS XML')
 
+def standalone_explore_steps(adapter, config, frame, deadline, target, record, owners,
+                             stop, before_motion, clock=time.monotonic):
+    from .go2_exploration import explore_steps, ExplorationStopped
+    from .local_approach_execution import LocalApproachExecution, local_target_accepted
+    from .single_robot_approach import load_parameters
+    task_id='go2_explore/'+uuid.uuid4().hex
+    command_id=uuid.uuid4().hex
+    active=True
+    adapter.single_robot_mode=True
+    def check():
+        health=adapter.get_health()
+        if not active or clock()>=deadline:
+            raise ExplorationStopped('exploration deadline reached or task ended')
+        if owners() or not health.nav_ready or not health.localization_valid or adapter.costmap_transform() is None:
+            raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost')
+        error=motion_path_error(replace(health,path_valid=True),[health.pose])
+        if error:raise ExplorationStopped(error)
+        return health
+    def motion_ready(task,command):
+        try:health=check()
+        except ExplorationStopped:return False
+        scan=getattr(adapter,'scan',None)
+        owned=task==task_id or (not task and scan and command==scan['id'])
+        return bool(owned and health.stopped and health.motion_terminal)
+    adapter.motion_guard=motion_ready
+    def approaching(pose,kind,record):
+        check()
+        parameters=load_parameters(config['robot_go2'].get('arrival_config_files'))
+        execution=LocalApproachExecution(adapter,pose,task_id,command_id,kind,parameters,record,clock)
+        before_motion()
+        outcome=yield from execution.run(check)
+        if outcome=='TARGET_APPROACHED':
+            while not local_target_accepted(check(),pose,1.0):yield
+            execution.accepted()
+        return outcome
+    try:
+        return (yield from explore_steps(adapter,config,frame,deadline,target,record,owners,
+            stop,before_motion,clock=clock,task_id=task_id,parent_command_id=command_id,
+            initial_camera_check=True,require_navigation_success=True,success_radius=1.0,
+            approaching=approaching))
+    finally:
+        active=False
+
+
 def run_ros(config,args,events=None):
     require_ros_environment()
     import rclpy
@@ -151,7 +195,7 @@ def run_ros(config,args,events=None):
     report['mode']='local_go2_'+args.action
     latest={}; marker_pub=None; run_id=uuid.uuid4().hex; sequence=0
     display=None
-    def record(event):
+    def write_record(event):
         nonlocal latest, sequence
         if display:display.record(event)
         if events is None:return
@@ -166,12 +210,20 @@ def run_ros(config,args,events=None):
         try:
             events.write(json.dumps(row,ensure_ascii=False,allow_nan=False)+'\n')
             events.flush();os.fsync(events.fileno())
-        except OSError:
-            report['evidence_write_failed']=True
-            if adapter:
-                adapter.evidence_write_failed=True
-                adapter.motion_fault=True
+        except OSError as error:
+            if adapter and getattr(adapter,'single_robot_mode',False):
+                node.get_logger().warning('Task diagnostic write failed: '+str(error))
+            else:
+                report['evidence_write_failed']=True
+                if adapter:
+                    adapter.evidence_write_failed=True
+                    adapter.motion_fault=True
         if marker_pub and 'state' in event:publish_marker()
+    def record(event):
+        try:write_record(event)
+        except Exception as error:
+            if not adapter or not getattr(adapter,'single_robot_mode',False):raise
+            node.get_logger().warning('Task diagnostic write failed: '+str(error))
     def publish_marker():
         from .go2_exploration import exploration_markers
         markers=exploration_markers(latest)
@@ -185,6 +237,7 @@ def run_ros(config,args,events=None):
             config['alignment']['alignment_id'],entry['transform'])
         adapter=Go2Adapter(node,config['robot_go2'],frame,read_only=not motion,
             global_goal_checks=args.action in ('explore','approach'))
+        adapter.single_robot_mode=args.action=='explore'
         adapter.record_event=record
         if args.action=='explore':
             adapter.scan_evidence_dir=Path(args.output_dir)/'vlm'
@@ -205,7 +258,7 @@ def run_ros(config,args,events=None):
         active_map=parameters.call_async(GetParameters.Request(names=['yaml_filename']))
         def spin():
             executor.spin_once(timeout_sec=.05)
-            if started:adapter.tick()
+            if started or args.action=='explore':adapter.tick()
             elif getattr(adapter, 'vision', None) is not None:adapter.vision.poll()
         deadline=time.monotonic()+args.timeout
         # Initial data collection is passive, even for an explicit future motion action.
@@ -298,18 +351,27 @@ def run_ros(config,args,events=None):
             report['rejected']=gates;record({'state':'REJECTED','reasons':gates,'motion_sent':False});return 1
         if args.action=='explore':
             from .adapters.go2 import ABCClient
-            from .go2_exploration import explore,exploration_gates
+            from .go2_exploration import exploration_gates
             extra=exploration_gates(config)
             if extra:
                 report['rejected']=extra;record({'state':'REJECTED','reasons':extra,'motion_sent':False});return 1
-            adapter.client=ABCClient(dict(config['robot_go2'],vision_mode='abc' if
-                config['robot_go2'].get('exploration_strategy')=='generated_candidates_vlm' else 'single'))
+            adapter.client=ABCClient(config['robot_go2'])
             def before_motion():
                 nonlocal started
                 started=True;report['motion_sent']=True
-            report['result']=explore(adapter,spin,config,frame,deadline,args.target,record,
+            started=True  # Initial observation also owns cancellation and final stop confirmation.
+            steps=standalone_explore_steps(adapter,config,frame,deadline,args.target,record,
                 lambda:other_owners(node),lambda:stop_owned(adapter,spin,config['robot_go2'].get('cancel_timeout',5.),record),
                 before_motion,clock=time.monotonic)
+            try:
+                while True:
+                    try:next(steps)
+                    except StopIteration as finished:
+                        report['result']=finished.value
+                        break
+                    spin()
+            finally:
+                steps.close()
             return 0 if not args.approach_target or report['result']=='TARGET_APPROACHED' else 1
         if args.action=='scan':
             from .adapters.go2 import ABCClient

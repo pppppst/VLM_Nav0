@@ -1,0 +1,77 @@
+frame_id: map
+units: meters
+session: 20261025T121903.172648Z_7be2a662
+point_indices:
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+- 10
+- 11
+- 12
+- 13
+- 14
+- 15
+- 16
+- 17
+- 18
+- 19
+closed: true
+winding: clockwise
+polygon:
+- - 9.798497200012207
+  - -14.882204055786133
+- - 4.4326701164245605
+  - -14.15150260925293
+- - 2.325669527053833
+  - -13.898569107055664
+- - 1.6795228719711304
+  - -13.870465278625488
+- - -0.6241294741630554
+  - -13.786153793334961
+- - 0.4996025860309601
+  - -3.5844759941101074
+- - -6.4675421714782715
+  - -2.8537776470184326
+- - -5.989955902099609
+  - 3.413370370864868
+- - -1.495023488998413
+  - 3.0199167728424072
+- - 1.2019370794296265
+  - 2.7388789653778076
+- - 3.505589246749878
+  - 2.5983598232269287
+- - 2.5223228931427
+  - -6.844516277313232
+- - 2.3537633419036865
+  - -7.968668460845947
+- - 2.0166428089141846
+  - -11.509747505187988
+- - 7.213910102844238
+  - -12.043718338012695
+- - 7.045349597930908
+  - -12.858728408813477
+- - 8.730950355529785
+  - -13.0835599899292
+- - 8.899510383605957
+  - -12.324756622314453
+- - 10.978415489196777
+  - -12.63389778137207
+source_files_sha256:
+  /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml: a4d4a35ed4ba2203cb3decfb8b3a991ff57cb90294ab1c351c063eaef4ad7955
+  /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.pgm: 0085c2d7ba8868f8d4ff76eb27aa911e2ca5324ea531f77347d0a1f1a9241520
+  ? /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-field/keepout-boundary-points/clicked_points_20261025T121903.172648Z_7be2a662.jsonl
+  : ba27808a63a3bd78ed73d6a9aa5dcb569e7fd401fed5d8389f76785ea7af8f17
+source_map: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml
+mask_semantics:
+  inside: no additional restriction
+  outside: keepout
+rasterization: Inside centers with boundary distance > half cell diagonal; boundary-straddling
+  cells forbidden.
+additional_robot_margin_m: 0.0
+deployed: false

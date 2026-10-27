@@ -336,6 +336,7 @@ class AgentMachine:
 
     def complete_local_execution(self,identity,outcome):
         from vlm_nav.arrival import target_distance
+        from .local_approach_execution import local_target_accepted
         if self.paused or not self.command or identity!=(self.command.task_id,self.command.command_id):return
         if self.single_robot_mode and identity[0]!=self.context.task_id:return
         state=self._state
@@ -345,8 +346,7 @@ class AgentMachine:
             distance=target_distance((self.health.pose.x,self.health.pose.y),
                 (self.local_target.x,self.local_target.y) if self.local_target else None)
             if self.single_robot_mode and outcome=='TARGET_APPROACHED' and self.local_approach_succeeded:
-                if not (self.health.nav_ready and self.health.localization_valid and self.health.stopped
-                        and self.health.motion_terminal and distance<=self.success_radius):
+                if not local_target_accepted(self.health,self.local_target,self.success_radius):
                     return False
             success=(outcome=='TARGET_APPROACHED' and self.local_approach_succeeded
                 and self.health.localization_valid and self.health.stopped and self.health.motion_terminal

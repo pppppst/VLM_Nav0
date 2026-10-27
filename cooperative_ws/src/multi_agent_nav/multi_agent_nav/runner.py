@@ -16,6 +16,7 @@ class AgentRunner:
         self.execution_identity=None
         self.approach=None
         self.local_completion=None
+        self.local_approach_result=None
         self.adapter.single_robot_mode=machine.single_robot_mode
         self.local_path_accept=None
         self.owners=lambda:[]
@@ -23,7 +24,8 @@ class AgentRunner:
         machine.success_radius=success_radius
 
     def local_approach(self, target, kind, record):
-        from .single_robot_approach import SingleRobotApproach, load_parameters, SUCCEEDED, FAILED
+        from .single_robot_approach import load_parameters
+        from .local_approach_execution import LocalApproachExecution
         identity=self.execution_identity
         command=self.machine.command
         if not command or identity!=(command.task_id,command.command_id):
@@ -31,29 +33,22 @@ class AgentRunner:
         self.machine.local_approach_succeeded=False
         self.machine.local_target=target
         parameters=load_parameters(self.config['robot_go2'].get('arrival_config_files'))
-        approach=SingleRobotApproach(self.adapter,target,*identity,kind,parameters,record,self.clock)
-        self.approach=self.adapter.approach=approach
+        execution=LocalApproachExecution(self.adapter,target,*identity,kind,parameters,record,self.clock)
+        self.approach=execution.approach
         self.machine._state.run_state='LOCAL_EXECUTION'
-        try:
-            while approach.state not in (SUCCEEDED,FAILED):
-                command=self.machine.command
-                if self.machine.paused or not command or identity!=(command.task_id,command.command_id):
-                    raise RuntimeError('approach interrupted')
-                approach.tick()
-                self.machine._state.goal_id=approach.goal_id if self.adapter.motions else ''
-                yield
+        def check():
             command=self.machine.command
             if self.machine.paused or not command or identity!=(command.task_id,command.command_id):
-                raise RuntimeError('late approach completion')
-            if approach.state==FAILED:return 'APPROACH_FAILED: '+approach.reason
-            self.machine.local_approach_succeeded=True
-            approach.emit('TARGET_APPROACHED',
-                measured_distance=approach.target_reference_distance(approach.robot_pose()),
-                arrival_retry=approach.arrival_retry_count)
-            return 'TARGET_APPROACHED'
+                raise RuntimeError('approach interrupted')
+        def on_tick():
+            self.machine._state.goal_id=execution.approach.goal_id if self.adapter.motions else ''
+        try:
+            outcome=yield from execution.run(check,on_tick)
+            self.machine.local_approach_succeeded=outcome=='TARGET_APPROACHED'
+            if self.machine.local_approach_succeeded:self.local_approach_result=execution
+            return outcome
         finally:
-            if approach.state!=SUCCEEDED:approach.close()
-            self.approach=self.adapter.approach=None
+            self.approach=None
 
     def local_navigation(self,goal,kind,path_accept=None):
         self.local_path_accept=path_accept
@@ -184,6 +179,13 @@ class AgentRunner:
         if self.local_completion is not None:
             identity,outcome=self.local_completion
             if self.machine.complete_local_execution(identity,outcome) is not False:
+                command=self.machine.command
+                if (self.local_approach_result is not None and not self.machine.paused and command
+                        and identity==(command.task_id,command.command_id)
+                        and identity[0]==self.machine.context.task_id
+                        and self.machine.state().reply=='SUCCEEDED'):
+                    self.local_approach_result.accepted()
+                self.local_approach_result=None
                 self.local_completion=None
                 self.execution_identity=None
                 if self.machine.single_robot_mode:self.adapter.record_event=None
@@ -192,6 +194,7 @@ class AgentRunner:
         command=self.machine.command
         for effect in effects:
             if effect.kind=='STOP':
+                self.local_approach_result=None
                 self.local_completion=None
                 goal_id,reason=effect.payload
                 execution,self.execution=self.execution,None

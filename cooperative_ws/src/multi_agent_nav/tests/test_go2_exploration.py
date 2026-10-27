@@ -48,7 +48,7 @@ def run_case(adapter, events, stop_ok=True, resources=None, approach=False, scan
         adapter.stop_motion('fixture cleanup')
         adapter.advance(now[0] + 1)
         return stop_ok
-    config = {'scene': {'viewpoints': {'go2': [
+    config = {'scene': {'targets': dict(A='scene target'), 'viewpoints': {'go2': [
         {'id': 'p1', 'pose': [1., 0., 0.]},
         {'id': 'p2', 'pose': [2., 0., 0.]},
         {'id': 'p3', 'pose': [3., 0., 0.]}]},
@@ -246,7 +246,7 @@ def test_marker_coordinates_and_label_follow_latest_selection():
 
 
 @pytest.mark.parametrize('global_ready',[True,False])
-def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready):
+def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready,initial_status=None):
     from types import SimpleNamespace as S
     import rclpy
     import rclpy.executors
@@ -282,10 +282,16 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
         def costmap_transform(self,global_goal=False):
             return None if global_goal and not global_ready else super().costmap_transform(global_goal)
         def tick(self):
+            self.vision.poll()
             if self.active:
                 self.record_event({'event':'PATH_RECEIVED','path_header_stamp_ns':100,
                     'receive_interval_s':.05,'plan_stamp_changed':False})
             self.advance(now[0])
+        def start_scan(self,descriptions,scan_id,**kwargs):
+            if initial_status=='unlocated':
+                from multi_agent_nav.models import Observation
+                return completed([Observation(target_id='A',status='DETECTED',position_valid=False)])
+            return super().start_scan(descriptions,scan_id,**kwargs)
         def close(self,stop=False):pass
     monkeypatch.setenv('ROS_DOMAIN_ID','0');monkeypatch.setenv('GO2_NET_IFACE','enp4s0')
     monkeypatch.setenv('RMW_IMPLEMENTATION','rmw_cyclonedds_cpp')
@@ -305,6 +311,10 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
         assert check.run_ros(config,args,events)==(0 if global_ready else 1)
     rows=[json.loads(line) for line in (output/'events.jsonl').read_text().splitlines()]
     report=json.loads((output/'result.json').read_text())
+    if initial_status=='unlocated':
+        assert report['result']=='TARGET_DETECTED_UNLOCATED'
+        assert report['stop_confirmed'] and not report.get('motion_sent',False)
+        return
     assert report['goal_costmap_valid']==global_ready
     assert report['goal_costmap_topic']==config['robot_go2']['goal_costmap_topic']
     assert destroyed[0]
@@ -498,3 +508,7 @@ def test_arrival_distances_transform_common_object_to_local_map_once():
     assert row['object_pose']['x']==pytest.approx(5.) and row['object_pose']['y']==pytest.approx(2.)
     assert row['requested_distance']==pytest.approx(.5)
     assert row['stopped_distance']==pytest.approx(.5)
+
+
+def test_initial_camera_early_return_still_confirms_stop(monkeypatch,tmp_path):
+    test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,True,'unlocated')

@@ -3961,3 +3961,478 @@ bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/start_go2_cooperative.sh
 ```
 
 证据 `build/go2-single-parity-20261025/evidence/install-update/` 保存改前快照、构建/安装/测试退出码、安装对比与默认预检失败报告。未修改本轮前的导航源码/参数，未初始化现场ROS、SSH/Ranger/bridge、录包、真实模型请求、ARM/start/运动、停止/重启现场组件、提交或推送。真实接近、动态障碍及双机避碰效果仍未验收，运行中旧进程不会热更新。
+
+
+### 2026-10-25 取消接近半径保护后的安装更新
+
+用户授权构建安装并更新环境。新成对安装为 `build/go2-no-radius-20261025/overlay/install/local_setup.bash`，包含取消协同接近3.5米半径终止的修改；120秒动作超时、到目标停止及原生终态/停稳验收保留。Go2默认环境、硬件入口安装预期、两份既有测试路径夹具和正式启动文档已统一新路径；显式 `COOP_SETUP_FILE` 仍优先。旧安装、用户已有文档内容和现场进程保留。
+
+#### 本轮实际构建与检查
+
+在仓库根目录的Bash终端执行；仅构建，不启动ROS节点，命令结束后无需保持运行。以下路径已存在，复现时须换新输出目录，不能删除或覆盖本次证据：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-manual-takeover-20261015/install/local_setup.bash"
+source "$PWD/build/go2-single-parity-20261025/overlay/install/local_setup.bash"
+export GO2_NO_RADIUS_OUTPUT="$PWD/build/go2-no-radius-20261025/overlay"
+test ! -e "$GO2_NO_RADIUS_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_NO_RADIUS_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_NO_RADIUS_OUTPUT/build" --install-base "$GO2_NO_RADIUS_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建退出0，两包成功，23.4秒。保留已有PCL_ROOT/CMP0074、根包未使用COOPERATIVE_RUNTIME_PYTHON及复用go2-coop消息包告警。失败时先检查构建日志，不继续切换安装。
+
+构建成功后，从 `/tmp` 加载新安装检查，防止源码遮盖安装；最后source必须为新输出：
+
+```bash
+export GO2_NO_RADIUS_REPO=/home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source "$GO2_NO_RADIUS_REPO/build/go2-coop/install/local_setup.bash"
+source "$GO2_NO_RADIUS_REPO/build/go2-no-radius-20261025/overlay/install/local_setup.bash"
+cd /tmp
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1
+/home/isee-pst/venv/co-nav-real/bin/python \
+  "$GO2_NO_RADIUS_REPO/build/go2-no-radius-20261025/evidence/check_install.py"
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest --noconftest -q -p no:cacheprovider \
+  "$GO2_NO_RADIUS_REPO/cooperative_ws/src/multi_agent_nav/tests/test_single_robot_approach_parity.py" \
+  "$GO2_NO_RADIUS_REPO/cooperative_ws/src/multi_agent_nav/tests/test_runner.py" \
+  "$GO2_NO_RADIUS_REPO/cooperative_ws/src/multi_agent_nav/tests/test_target_nav2_endpoint.py" \
+  "$GO2_NO_RADIUS_REPO/test/test_arrival_contract.py" \
+  "$GO2_NO_RADIUS_REPO/test/test_cooperative_environment.py" \
+  "$GO2_NO_RADIUS_REPO/test/test_start_go2_vlm.py" \
+  "$GO2_NO_RADIUS_REPO/test/test_start_go2_cooperative_task.py"
+ctest --test-dir "$GO2_NO_RADIUS_REPO/build/go2-no-radius-20261025/overlay/build/vlm_nav" \
+  --output-on-failure -R '^test_(temporal_obstacle_filter|obstacle_cloud_filter)$'
+```
+
+安装核对通过：两包prefix/实际导入均为新输出，54个Python文件、根包config、协同scene/robot_go2及入口/正式文档副本与源码一致。各检查退出0才继续。路径变更前两份入口/环境基线41项通过；新安装上述7文件235项通过，11条第三方弃用告警，本轮未新增用例。两个CTest条目对应14个C++用例全部通过。未跑全库或此前18文件扩大回归，不把历史4项旧失败写为已修复。
+
+完成文档记录后仅对本轮新输出执行 `cmake --install "$GO2_NO_RADIUS_OUTPUT/build/vlm_nav"` 同步share文档，再核对安装一致性；没有重建旧overlay。证据在 `build/go2-no-radius-20261025/evidence/`，包含改前快照、构建/测试/预检日志及退出码、安装核对结果。
+
+#### 用户后续环境切换
+
+本轮默认 `env -u COOP_SETUP_FILE bash scripts/cooperative.sh go2 preflight` 退出0，14个安装模块matches_source=true、live_gates为空、API环境齐全、motion_sent=false。该离线结果不替代实时输入/双机握手或运动验收。
+
+在Go2控制电脑用于启动的交互式Bash终端执行（任意目录），更新旧export并做离线预检；执行结束无需保持独立后台进程：
+
+```bash
+export COOP_SETUP_FILE=/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-no-radius-20261025/overlay/install/local_setup.bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/cooperative.sh go2 preflight
+```
+
+仅当退出0、所有安装核对true、live_gates为空且API环境齐全，才继续原启动流程；失败先处理报告。已有任务须先按原流程暂停、确认停稳和原生动作终态并正常退出，不能叠加运行。之后在同一终端使用原入口：
+
+```bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/start_go2_cooperative.sh
+```
+
+该入口会自动ARM并启动一次真实任务，主终端及弹出的组件窗口保持运行。本轮未代为执行，不重启/停止既有进程、SSH/Ranger/bridge、订阅传感器、录包或运动；运行中的旧进程不会热更新，新版真机效果待验证。
+
+
+### 2026-10-25 已确认19点掩膜切换
+
+当前源码robot_go2.yaml的keepout_mask已切至 `maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261025_7be2a662/keepout_mask.yaml`；19点按1→19→1闭合，圈内不额外限制、圈外禁行，旧图保留。用户已确认预览。默认安装仍使用上一节go2-no-radius-20261025，正式协同入口显式读取源码配置，无需因本次路径修改重建。安装share的配置/文档仍是构建时快照；如使用自定义COOP_CONFIG，须自行同步并核对预检实际config_dir，不能用默认入口通过代替自定义入口通过。
+
+本轮在仓库根目录Bash执行 `env -u COOP_SETUP_FILE -u COOP_CONFIG bash scripts/cooperative.sh go2 preflight`，退出0，新mask路径正确、472×578、14个模块安装一致、live_gates为空、API环境齐全、motion_sent=false。证据 `build/go2-field/keepout-switch.20261025_7be2a662/`。源配置除keepout_mask外不变，新掩膜摘要与生成报告一致，git diff --check通过；未运行现场节点或运动，未重新构建/全量测试。
+
+本次仅切换配置。旧mask server、costmap、supervisor及任务进程不会热更新；必须先沿用正式退出流程、确认停稳和原生动作终态，再正常退出并重新启动硬件/导航及任务流程。只运行任务层restart不足以应用新掩膜。完整入口会在NAV_READY后核对supervisor的keepout_mask，新旧不一致时须处理旧组件，不能绕过检查。上一轮P3中心(3.435,-14.275)已在新掩膜外；新候选需按本轮边界重新筛选。
+
+### 2026-10-25 死胡同选点提示安装更新
+
+用户要求构建安装新增的“避免低信息死胡同”选点提示。新成对安装为 `build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash`，同时包含已取消的协同接近3.5米半径终止，以及用户确认的19点7be2a662掩膜配置。默认环境、硬件入口安装预期、两份测试路径夹具和正式启动说明统一新路径；显式 `COOP_SETUP_FILE` 仍优先。保留旧安装和已有未提交工作，不改现场进程。
+#### 本轮实际构建与检查
+
+在仓库根目录的Bash终端执行；仅构建，不启动ROS节点，命令结束后无需保持运行。以下路径已存在，复现时须换新输出目录，不能删除或覆盖本次证据：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+source "$PWD/build/go2-manual-takeover-20261015/install/local_setup.bash"
+source "$PWD/build/go2-no-radius-20261025/overlay/install/local_setup.bash"
+export GO2_DEADEND_OUTPUT="$PWD/build/go2-deadend-prompt-20261025/overlay"
+test ! -e "$GO2_DEADEND_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_DEADEND_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_DEADEND_OUTPUT/build" --install-base "$GO2_DEADEND_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建退出0，两包成功，23.4秒。保留已有PCL_ROOT/CMP0074、根包未使用COOPERATIVE_RUNTIME_PYTHON及复用go2-coop消息包告警。失败时先检查构建日志，不继续切换安装。
+
+构建成功后，从 `/tmp` 加载新安装检查，防止源码遮盖安装；最后source必须为新输出：
+
+```bash
+export GO2_DEADEND_REPO=/home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source "$GO2_DEADEND_REPO/build/go2-coop/install/local_setup.bash"
+source "$GO2_DEADEND_REPO/build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash"
+cd /tmp
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1
+/home/isee-pst/venv/co-nav-real/bin/python \
+  "$GO2_DEADEND_REPO/build/go2-deadend-prompt-20261025/evidence/check_install.py"
+/home/isee-pst/venv/co-nav-real/bin/python -m pytest --noconftest -q -p no:cacheprovider \
+  "$GO2_DEADEND_REPO/cooperative_ws/src/multi_agent_nav/tests/test_generated_candidates.py" \
+  "$GO2_DEADEND_REPO/cooperative_ws/src/multi_agent_nav/tests/test_candidate_camera.py" \
+  "$GO2_DEADEND_REPO/cooperative_ws/src/multi_agent_nav/tests/test_single_robot_approach_parity.py" \
+  "$GO2_DEADEND_REPO/test/test_cooperative_environment.py" \
+  "$GO2_DEADEND_REPO/test/test_start_go2_vlm.py" \
+  "$GO2_DEADEND_REPO/test/test_start_go2_cooperative_task.py"
+ctest --test-dir "$GO2_DEADEND_REPO/build/go2-deadend-prompt-20261025/overlay/build/vlm_nav" \
+  --output-on-failure -R '^test_(temporal_obstacle_filter|obstacle_cloud_filter)$'
+```
+
+安装核对通过：两包prefix/实际导入均为新输出，54个Python文件、根包config、协同scene/robot_go2及入口/正式文档副本与源码一致；另明确断言安装adapter含新提示、安装配置指向7be2a662掩膜。各检查退出0才继续。路径变更前两份入口/环境基线41项通过；新安装上述6文件235项通过（13.17秒），11条第三方弃用告警，本轮未新增用例。两个CTest条目对应14个C++用例全部通过。未跑全库或此前18文件扩大回归，不把历史4项旧失败写为已修复。
+
+完成文档记录后仅对本轮新输出执行 `cmake --install "$GO2_DEADEND_OUTPUT/build/vlm_nav"` 同步share文档，再核对安装一致性；没有重建旧overlay。证据在 `build/go2-deadend-prompt-20261025/evidence/`，包含改前快照、构建/测试/预检日志及退出码、安装核对结果。
+
+#### 用户后续环境切换
+
+本轮默认 `env -u COOP_SETUP_FILE -u COOP_CONFIG bash scripts/cooperative.sh go2 preflight` 退出0，14个安装模块matches_source=true、live_gates为空、API环境齐全、motion_sent=false。预检config_dir为源码配置目录，keepout为7be2a662（472×578）。该离线结果不替代实时输入/双机握手或运动验收。
+
+在Go2控制电脑用于启动的交互式Bash终端执行（任意目录），更新旧export并做离线预检；执行结束无需保持独立后台进程：
+
+```bash
+export COOP_SETUP_FILE=/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/cooperative.sh go2 preflight
+```
+
+仅当退出0、所有安装核对true、live_gates为空且API环境齐全，才继续原启动流程；失败先处理报告。已有任务须先按原流程暂停、确认停稳和原生动作终态并正常退出，不能叠加运行。之后在同一终端使用原入口：
+
+```bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/start_go2_cooperative.sh
+```
+
+该入口会自动ARM并启动一次真实任务，主终端及弹出的组件窗口保持运行。本轮未代为执行，不重启/停止既有进程、SSH/Ranger/bridge、订阅传感器、录包或运动；运行中的旧进程不会热更新，未请求真实VLM，新提示的模型选点效果与新版真机效果待验证。
+
+### 2026-10-25 持续旋转的下一轮定向记录
+
+现有task782a日志已证明第二段导航持续旋转、未进入扫描，但没有同步速度指令、DWB评分及融合代价图，尚不能确定持续选择旋转的根因。以下为用户在下一次实验执行的记录命令，本轮未代为录包或启动实验。沿用原退出流程结束旧任务并确认停稳/DISARM后使用；不叠加启动硬件。
+
+终端A：Go2控制电脑新Bash终端，先加载与主入口一致的Domain0/enp4s0环境。来源文件只加载环境；若报错须先处理，不能继续录包。成功应打印Go2 DDS interface: enp4s0。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export COOP_SETUP_FILE="$PWD/build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash"
+source Cooperative_env.bash go2 "$PWD/cooperative_ws/src/multi_agent_nav/config"
+```
+
+在同一终端A启动记录，必须先于完整实验入口，并保持运行。mktemp创建独立目录，不覆盖旧记录；bag子目录由rosbag创建。使用现有QoS文件保留/map和/tf_static的Transient Local兼容性，其余话题随发布者发现自适应QoS。没有--no-discovery，也不强行订阅尚无发布者的话题，允许后续节点启动后自动发现。
+
+```bash
+GO2_SPIN_RECORD_DIR="$(mktemp -d "$PWD/build/go2-field/spin-record.XXXXXXXX")"
+cp config/go2_nav2_rosbag_qos.yaml "$GO2_SPIN_RECORD_DIR/qos.yaml"
+printf '本次记录目录：%s\n' "$GO2_SPIN_RECORD_DIR"
+ros2 bag record --storage sqlite3 --output "$GO2_SPIN_RECORD_DIR/bag" \
+  --include-hidden-topics --max-bag-size 1073741824 \
+  --qos-profile-overrides-path "$GO2_SPIN_RECORD_DIR/qos.yaml" \
+  /cmd_vel_nav /cmd_vel_bridge /api/sport/request /api/sport/response \
+  /odometry /odom /sportmodestate /tf /tf_static /amcl_pose \
+  /map /plan /received_global_plan /transformed_global_plan /local_plan /evaluation \
+  /local_costmap/costmap_raw /global_costmap/costmap_raw \
+  /local_costmap/published_footprint /global_costmap/published_footprint \
+  /navigate_to_pose/_action/status /navigate_to_pose/_action/feedback \
+  /follow_path/_action/status /follow_path/_action/feedback \
+  /spin/_action/status /spin/_action/feedback \
+  /multi_agent/go2/state /multi_agent/ranger/state /multi_agent/coordinator/status \
+  /vlm_nav/go2_bridge_state /vlm_nav/control_armed /vlm_nav/nav_ready \
+  /rosout /parameter_events
+```
+
+看到Opened database和Listening for topics（或Subscribed to topic）且无错误、进程持续运行后，才进入终端B。启动硬件前没有传感器话题属于正常情况，不以话题存在代替已录到消息。/odom是用于排查控制器默认里程计输入的额外候选，可能没有发布者；/odometry、/tf与导航阶段/evaluation才是本次关键证据。每1GiB分卷不是总空间上限。
+
+终端B：Go2图形桌面的另一个交互式Bash终端，任意目录，显式选择相同安装后使用用户原入口。该入口会准备硬件、自动ARM和启动一次真实任务；终端A与各组件窗口保持运行。
+
+```bash
+export COOP_SETUP_FILE=/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash
+bash /home/isee-pst/unitree_ros2/VLM_Nav/scripts/start_go2_cooperative.sh
+```
+
+复现后沿用正式暂停、停稳/原生终态、DISARM和退出流程，保留取消与停止过程的记录；结束后在终端A按Ctrl+C，等待写盘并返回提示符，不能直接关窗或kill -9。随后仍在终端A执行：
+
+```bash
+ros2 bag info "$GO2_SPIN_RECORD_DIR/bag"
+printf '交付此目录：%s\n' "$GO2_SPIN_RECORD_DIR"
+```
+
+应生成bag/metadata.yaml和db3，且/cmd_vel_nav、/cmd_vel_bridge、/odometry、/tf、/evaluation、两张costmap_raw在本次导航中有非零消息数。若/evaluation为0，不能声称记录了评分，需保留recorder输出并报告；不临时改控制参数掩盖缺失。/spin无消息在本次没有扫描/恢复Spin时是正常情况。现有实验events/views/decisions和ROS文本日志仍在原目录，不清理。无需重建安装。
+
+Humble DWB官方实现默认publish_evaluation=true，发布话题为evaluation，并在有订阅者时发布评分，参见[官方publisher.cpp](https://github.com/ros-navigation/navigation2/blob/humble/nav2_dwb_controller/dwb_core/src/publisher.cpp)。本机已核对dwb_core 1.1.20、配置未关闭该开关、controller无额外命名空间，最终以bag实收消息为准；短路评分保持原配置，某些被提前淘汰的轨迹不会拥有所有critic的完整评分。此记录只覆盖控制/定位/高层状态与融合栅格，不记录完整点云、RGB或深度；增加录制与/evaluation发布有一定CPU/磁盘开销，现场开销未实测。
+
+## 2026-10-25 Go2 独立入口对齐（隔离构建）
+
+本节是本轮独立入口的实际交付，覆盖前文独立入口使用10月18日安装的说明。
+源码与新安装位于 `/home/isee-pst/.codex/worktrees/a897/VLM_Nav`；原仓库及旧安装未覆盖。
+起始/结束 HEAD 都是 `1acae1d56e4e43dac29514f2244d439b760520bf`，修改尚未提交。
+实现与固定SHA来源逐项对应见 [本轮来源表](../superpowers/plans/2026-10-25-go2-standalone-parity-sources.md)。
+
+独立 go2_check 先对当前画面观察，找到有效目标就使用协同本地相同的 SingleRobotApproach。
+未检测/不确定按现有探索分支，缺深度返回不可定位，错误/不完整结果不当作“未发现”。
+内层接近成功后还须健康、停稳、动作终态和≤1m外层验收，通过才记录 TARGET_APPROACHED。
+没有 coordinator/Ranger/bridge 依赖，也没有C阶段；协同 peer、双READY门槛保留。
+原 standoff 等接近分支在独立入口不可达，探索策略/选点/扫描/硬件与算法YAML均未修改。
+真实 path_valid 保留，仅注入共享接近的限定路径沿用原协同本地路径接收监护选择。
+
+### 安装与参数来源
+
+- 新成对安装：`build/go2-standalone-parity-20261025/overlay/install/local_setup.bash`，含 vlm_nav、multi_agent_nav。
+- 本 worktree 的 CoVLM_env 与 Cooperative_env Go2 默认选择均指向该安装，显式 `COOP_SETUP_FILE` 优先。
+  这改变了本 worktree 的正式双机入口默认安装，但不改变网络、任务或启动流程；原工作区脚本未同步。
+- 基础消息 underlay 仍为 `/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop/install`，可用已有
+  `GO2_COOP_OUTPUT` 明确覆盖。移除10月18日及其他旧功能overlay叠加，新成对安装最后加载。
+- 独立配置默认为本 worktree `cooperative_ws/src/multi_agent_nav/config`，可用 `GO2_CONFIG` 指定；
+  协同仍使用 `COOP_CONFIG`。默认两端本机执行读取相同配置；明确不同覆盖时以实际目录为准。
+- arrival_config_files 仍按未修改YAML指向原仓库 `config/robot.yaml` → `config/robot_go2.yaml`。
+  本轮逐字节核对其与worktree及新安装一致，合并顺序和冻结值也验证；没有改写原配置路径或参数。
+- 硬件启动的地图来自同一次离线配置报告；costmap覆盖与Keepout来自实际受检配置目录。
+  父终端与每个新子终端均验证成对前缀、实际模块内容和接近参数来源，旧安装不能静默混入。
+- 独立 launcher 总实验时限仍为300s；协同保留scene总任务时限600s。执行器自身120s监护保持不变。
+  差分测试统一注入610s截止时间，这不改变产品总时限。
+
+### 本轮构建与安装核对
+
+以下为已经执行的完整构建命令。执行目录为本worktree，Bash终端；只编译，不启动ROS节点。
+复现时必须换一个从未使用的输出目录；本轮目录已经存在，不要覆盖其他历史输出。
+成功判据为colcon退出0、两包成功；失败先处理构建日志，不继续启动。
+
+```bash
+cd /home/isee-pst/.codex/worktrees/a897/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-single-parity-20261025/overlay/install/local_setup.bash
+export GO2_STANDALONE_OUTPUT="$PWD/build/go2-standalone-parity-20261025/overlay"
+test ! -e "$GO2_STANDALONE_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_STANDALONE_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_STANDALONE_OUTPUT/build" --install-base "$GO2_STANDALONE_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+本次两包成功，23.1秒，退出0。保留已有PCL/CMP0074、根包未使用COOPERATIVE_RUNTIME_PYTHON、
+复用已有multi_agent_task_msgs underlay的告警。后续源码/文档通过仅本次输出的cmake install同步。
+
+安装核对从仓库外执行，无ROS初始化，不要求接硬件；在新的Bash终端按顺序执行，完成即退出即可：
+
+```bash
+export GO2_STANDALONE_REPO=/home/isee-pst/.codex/worktrees/a897/VLM_Nav
+export COOP_SETUP_FILE="$GO2_STANDALONE_REPO/build/go2-standalone-parity-20261025/overlay/install/local_setup.bash"
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop/install/local_setup.bash
+source "$COOP_SETUP_FILE"
+cd /tmp
+/home/isee-pst/venv/co-nav-real/bin/python "$GO2_STANDALONE_REPO/scripts/start_go2_vlm.py" \
+  --check-install --expected-setup "$COOP_SETUP_FILE" \
+  --config-dir "$GO2_STANDALONE_REPO/cooperative_ws/src/multi_agent_nav/config"
+```
+
+实际退出0：55个Python模块位于新前缀且与源码一致，根config及arrival合并来源一致。
+若退出非0，不启动；修正环境/源码与安装差异，再重复此只读检查。`--help`不加载硬件环境，
+`--check-install`不初始化ROS；`--prepare-only`会准备现场硬件，但不ARM、不探索，不是只读检查。
+
+### 基线与最终测试
+
+证据保存在本worktree `build/go2-standalone-parity-20261025/evidence/`，包含脚本、完整日志、退出码和JUnit。
+原18文件基线553通过/4失败；扩大5文件在未修改原源码上137通过/2失败。
+最终24文件从/tmp加载新安装，不添加源码PYTHONPATH：742通过、同6项旧失败，11条第三方弃用告警，
+20.40秒，pytest退出1；新增52项全部通过，未deselect。差分两文件单独99通过、退出0。
+
+沿用上一段环境，Bash、`/tmp`执行以下命令，不需保持后台进程。第一步用本轮保存的精确清单跑完整相关回归；
+第二步为新构建的纯C++过滤器回归，无ROS节点。pytest的六项已知失败不证明新增问题，也不能当全绿。
+
+```bash
+bash "$GO2_STANDALONE_REPO/build/go2-standalone-parity-20261025/evidence/test-installed.sh"
+ctest --test-dir "$GO2_STANDALONE_REPO/build/go2-standalone-parity-20261025/overlay/build/vlm_nav" \
+  --output-on-failure -R '^test_(temporal_obstacle_filter|obstacle_cloud_filter)$'
+```
+
+脚本实际命令为设置上述underlay和新pair后，使用
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONDONTWRITEBYTECODE=1 /home/isee-pst/venv/co-nav-real/bin/python -m pytest --noconftest -q -p no:cacheprovider`
+执行 `evidence/tests.txt` 的24个绝对路径，并生成 `evidence/final-installed.xml`。
+清单涵盖附件五文件、entry/environment、全部检索到的go2_check关联测试和本地任务/双机回归。
+CTest退出0，两个条目对应14个C++用例（原空间6、时间8），不把条目数当用例数。
+
+保留的完整失败名：
+
+1. `test_local_tasks.py::test_live_local_gates_require_local_assets_but_not_remote_alignment`：旧vision_validated预期。
+2. `test_local_tasks.py::test_malformed_local_geometry_is_reported_as_gate_failure[resources]`：旧共享资源几何预期。
+3. `test_local_tasks.py::test_malformed_local_geometry_is_reported_as_gate_failure[exit_points]`：旧退出点预期。
+4. `test_independent_c.py::test_no_gate_requires_resource_geometry_or_stopping_envelope_margin`：旧vision_validated预期。
+5. `test_field_preparation.py::test_live_gates_reject_incomplete_scene_and_unverified_costmap`：仍预期当前配置报vision_validated错误。
+6. `test_field_preparation.py::test_offline_single_robot_config_does_not_require_cooperative_certification`：仍预期当前配置报path_source_verified错误。
+
+Python/Bash语法、git diff --check、改动文档的本地链接及受保护文件检查另存evidence。
+SingleRobotApproach、原单机vlm_nav、arrival.py、所有YAML/地图/传感器/C++、coordinator、消息、Ranger均无diff。
+
+### 用户后续独立启动（命令仅交付，本轮未代执行）
+
+先按原流程结束旧上层任务并确认停车/DISARM，恢复本机enp4s0有线环境；相机、雷达/IMU、FAST-LIO、
+AMCL/Nav2须由原流程复用或启动，入口会检查真实输入、定位、地图、Keepout及动作门槛。
+不需要Ranger、coordinator或跨机bridge。已有组件不得叠加启动；不能用话题存在代替新鲜数据。
+
+在Go2图形桌面的交互式Bash主终端，按顺序执行：
+
+```bash
+cd /home/isee-pst/.codex/worktrees/a897/VLM_Nav
+export COOP_SETUP_FILE="$PWD/build/go2-standalone-parity-20261025/overlay/install/local_setup.bash"
+export GO2_CONFIG="$PWD/cooperative_ws/src/multi_agent_nav/config"
+source ./CoVLM_env.bash
+```
+
+目的为固定本轮安装及实际配置。source必须退出0；网络/文件缺失则先处理报错，不继续。
+随后在同一终端先执行上面的 `--check-install` 命令，退出0后才能启动：
+
+```bash
+bash scripts/start_go2_vlm.sh --target '灭火器'
+```
+
+把目标文字换成此次实际目标。保持主终端和弹出的组件窗口运行，按入口原有人工定位、准备及ARM确认操作。
+`--prepare-only`可先准备硬件，仍会有现场启动副作用，不作本轮离线验证。
+成功判据为最终输出 `TARGET_APPROACHED；停车已确认，Sport 已 DISARMED。`；单独VLM检测或Nav2终态不算成功。
+Ctrl+C走取消/停车流程；仅在动作终态、停车及DISARM已确认后按原顺序退出本次Sport、RViz、System、Camera SSH窗口。
+若STOP_UNCONFIRMED或DISARM未确认，按原现场安全流程处理，不重启入口或清除锁来绕过。
+
+本轮未启动现场ROS、Domain31节点、SSH/Ranger/bridge、真实VLM、ARM、录包、运动或停止旧组件。
+离线一致性验证不能证明真机接近成功、动态障碍消失或双机避碰已验收。
+
+
+## 2026-10-27 单机与协同同步安装
+
+用户要求将协同后续更改与单机对齐更改同步。已将 a897 worktree 与原仓库限定文件三方合并并同步回
+`/home/isee-pst/unitree_ros2/VLM_Nav`；原分支 `go2-cooperative-task-layer`、HEAD `1acae1d56e4e43dac29514f2244d439b760520bf` 保持，未提交。
+两边原有未提交内容已保留，修改前快照在 `build/go2-unified-20261027/evidence/snapshots/`，旧安装和地图产物未覆盖。
+
+两个正式入口现在共用 `explore_steps → LocalApproachExecution → SingleRobotApproach`（真实 Go2、本地独立地图模式）。
+保留协同侧后续取消接近 3.5m 半径终止、避免低信息死胡同提示、已确认的19点 `7be2a662` Keepout；
+保留单机对齐的取消/迟到保护、外层停稳验收与安装核对。动作超时120秒、单机总时限300秒、协同600秒及双READY语义保留。
+FAST-LIO、AMCL、TF、Nav2启动和底层参数未改。同步不解决已观察到的 DWB 持续旋转根因，也不证明新提示能避免所有死胡同。
+
+共同的新成对安装为：
+`/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-unified-20261027/overlay/install/local_setup.bash`。
+交付和后续启动使用原仓库目录；a897 仅保留同份源码与前期证据，本轮未在 a897 另建同名安装。
+`COOP_SETUP_FILE` 显式覆盖仍优先，旧终端中的旧 export 不会因默认路径更新而消失。
+
+以下为本轮已执行的构建记录，两个包22.9秒完成，退出0。输出已存在，勿原地覆盖；下次重建须选择新的独立输出目录并同步验证/启动路径。
+在原仓库 Bash 中先加载依赖，再构建根包及协同包，未最后加载旧功能 overlay：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_UNIFIED_OUTPUT="$PWD/build/go2-unified-20261027/overlay"
+test ! -e "$GO2_UNIFIED_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_UNIFIED_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_UNIFIED_OUTPUT/build" --install-base "$GO2_UNIFIED_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+构建沿用既有 PCL/CMP0074、未使用CMake参数与消息包复用underlay警告，无新依赖。
+离线验证脚本、精确环境及日志在同目录 `evidence/build.sh`、`test-installed.sh`、`check-install.sh`；
+安装测试在 `/tmp` 执行，不加入源码PYTHONPATH。同步前24文件742通过/6项旧失败；合并后源码与安装均743通过/相同6项旧失败，
+安装回归20.07秒、退出1、11条第三方警告。原有半径终止断言按已确认行为更新，移入原仓库已有长距离/超时测试，
+本轮新增两个入口的长距离后到达验收用例，均通过；针对性150通过。六项旧失败名称沿用上方单机对齐节，未deselect或销账。
+两个纯算法CTest条目对应14个C++用例全部通过；未运行会初始化ROS的其他CTest项目。
+源码审查未发现阻塞问题。新安装实际导入55个模块、包prefix、参数来源/顺序与源码一致；未跑全库或现场预检。
+
+下一次启动：在Go2控制电脑图形桌面的交互式Bash主终端执行，目录及环境如下。先按既有退出流程暂停旧任务，确认实体停稳、
+原生动作终态和DISARM，再正常退出旧任务组件；旧安装的Sport及加载旧掩膜的System也须按原顺序正常退出，不能叠加启动。
+本轮没有代用户执行这些现场动作。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export COOP_SETUP_FILE="$PWD/build/go2-unified-20261027/overlay/install/local_setup.bash"
+export GO2_CONFIG="$PWD/cooperative_ws/src/multi_agent_nav/config"
+export COOP_CONFIG="$GO2_CONFIG"
+```
+
+先核对安装（不初始化ROS）。以下脚本退出0，并输出本原仓库的配置目录及新安装模块路径，才进入下一步；失败先解决版本/参数报告：
+
+```bash
+bash build/go2-unified-20261027/evidence/check-install.sh
+```
+
+同一主终端二选一，不连续执行两个入口。单机目标替换为现场实际目标；保留原入口的人工确认：
+
+```bash
+bash scripts/start_go2_vlm.sh --target '灭火器'
+```
+
+或协同完整入口（会自动ARM并发起一次真实任务，需要Ranger按原流程准备，不远程代操作）：
+
+```bash
+bash scripts/start_go2_cooperative.sh
+```
+
+启动后组件窗口保持运行，已有有效AMCL定位不要重置。检查失败留在原窗口排障，不叠加重跑。
+安装核对通过不替代输入健康、Keepout实际应用、现场预检或运动验收；旧进程不会热更新。
+
+
+## 2026-10-27 三个入口命令统一与重新构建
+
+用户要求同步正式文档的协同完整启动、restart和单机命令并构建。当前正式源码位于
+`/home/isee-pst/unitree_ros2/VLM_Nav`，新共同安装为 `build/go2-unified-entry-20261027/overlay/install/local_setup.bash`。
+保留前一版go2-unified-20261027安装；本轮仅统一默认安装路径、测试夹具和文档，探索/接近/硬件逻辑均未改。
+两个环境入口和Launcher默认一致；显式COOP_SETUP_FILE覆盖仍优先，旧终端须更新。
+
+[正式启动文档](../双机协同启动与验收.md)第一节三种入口现均使用原仓库及其源码配置，命令块可单独复制，按场景选择，不连续运行。
+修正文档中先运行完整启动再预检、随后又重复启动的顺序；完整入口自己先预检。
+restart不再依赖前一个终端的export；单机不再使用a897旧安装。第6.1节及其他Go2分步命令同步新安装。
+
+本轮构建已完成，以下是执行记录，输出已存在，不能原地覆盖；下次重建另选新目录。
+在原仓库Bash中加载依赖，根包与协同包成对构建：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop/install/local_setup.bash
+export GO2_UNIFIED_OUTPUT="$PWD/build/go2-unified-entry-20261027/overlay"
+test ! -e "$GO2_UNIFIED_OUTPUT" || exit 1
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_UNIFIED_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_UNIFIED_OUTPUT/build" --install-base "$GO2_UNIFIED_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+两包22.7秒完成、退出0，保留既有PCL/CMP0074、未使用CMake参数与消息包复用underlay警告。
+同步前、同步后源码及从/tmp加载新安装的入口/环境/restart三文件均132项通过、11条第三方弃用警告；本轮无新增行为或测试。
+新安装核对55个实际导入模块、包prefix、参数来源及顺序通过。未重跑全库、现场或C++算法测试；上一轮743通过/6项旧失败不是本轮全库通过证明。
+构建/安装核对/测试的精确环境和日志保存在 `build/go2-unified-entry-20261027/evidence/`；旧快照在before目录。
+
+下一次使用在Go2控制电脑图形桌面的交互式Bash，任意目录可复制正式文档第一节对应命令，组件窗口保持运行。
+切换版本前按第8节暂停旧任务，确认实体停稳、原生动作终态、DISARM后正常退出旧任务组件；首次版本切换须核对并处理旧安装组件，不能把restart当升级底层的操作。
+只有硬件配置和安装已匹配且协调器仍可响应pause时，才用restart保留健康底层。完整协同入口会自动ARM/start，单机和restart保留原人工确认。
+协同须观察当前任务双SYNCED及最终验收；单机最终TARGET_APPROACHED才算到达成功。任何阶段失败均查看原窗口，不叠加启动。
+本轮未执行任何现场启动、pause/restart、ARM、SSH、桥接、录包或运动；已运行进程不会热更新。

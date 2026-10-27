@@ -7,26 +7,17 @@ fi
 
 _covlm_load_environment() {
   export REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-  export GO2_COOP_OUTPUT="$REPO/build/go2-coop"
-  export GO2_EXPLORE_OUTPUT="$REPO/build/go2-approach-coverage-20261018"
-  export GO2_GENERATED_OUTPUT="$REPO/build/go2-generated-candidates-20261013"
-  export GO2_RGBD_OUTPUT="$REPO/build/go2-rgbd-pair-health-20261013"
-  export GO2_BRIDGE_OUTPUT="$REPO/build/go2-manual-takeover-20261015"
-  export GO2_CAMERA_OUTPUT="$REPO/build/go2-camera-tf"
-  export GO2_FILTER_OUTPUT="$REPO/build/go2-intensity-default-20261012"
-  export GO2_EXPLORE_CONFIG="$REPO/cooperative_ws/src/multi_agent_nav/config"
+  export GO2_COOP_OUTPUT="${GO2_COOP_OUTPUT:-/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop}"
+  export COOP_SETUP_FILE="${COOP_SETUP_FILE:-$REPO/build/go2-unified-entry-20261027/overlay/install/local_setup.bash}"
+  [[ "$COOP_SETUP_FILE" == /* ]] || { echo 'COOP_SETUP_FILE 必须是绝对路径' >&2; return 1; }
+  export GO2_EXPLORE_CONFIG="${GO2_CONFIG:-$REPO/cooperative_ws/src/multi_agent_nav/config}"
   local setup
   local setups=(
     /opt/ros/humble/setup.bash
     /home/isee-pst/Documents/liang/hesai_xt16_ws/install/setup.bash
     /home/isee-pst/unitree_ros2/go2_ws/install/setup.bash
     "$GO2_COOP_OUTPUT/install/local_setup.bash"
-    "$GO2_CAMERA_OUTPUT/install/local_setup.bash"
-    "$GO2_FILTER_OUTPUT/install/local_setup.bash"
-    "$GO2_GENERATED_OUTPUT/install/local_setup.bash"
-    "$GO2_EXPLORE_OUTPUT/install/local_setup.bash"
-    "$GO2_RGBD_OUTPUT/install/local_setup.bash"
-    "$GO2_BRIDGE_OUTPUT/install/local_setup.bash"
+    "$COOP_SETUP_FILE"
     "$REPO/scripts/go2_network_env.sh"
   )
   for setup in "${setups[@]}"; do
@@ -40,8 +31,8 @@ _covlm_load_environment() {
   for setup in "${setups[@]}"; do
     source "$setup" || return 1
   done
-  export VLM_NAV_EXTRA_SETUP_FILES="$GO2_CAMERA_OUTPUT/install/local_setup.bash:$GO2_FILTER_OUTPUT/install/local_setup.bash:$GO2_GENERATED_OUTPUT/install/local_setup.bash:$GO2_EXPLORE_OUTPUT/install/local_setup.bash:$GO2_RGBD_OUTPUT/install/local_setup.bash:$GO2_BRIDGE_OUTPUT/install/local_setup.bash"
-  export ROS_LOG_DIR="$GO2_EXPLORE_OUTPUT/ros-logs"
+  export VLM_NAV_EXTRA_SETUP_FILES="$GO2_COOP_OUTPUT/install/local_setup.bash:$COOP_SETUP_FILE"
+  export ROS_LOG_DIR="$REPO/build/go2-unified-entry-20261027/ros-logs"
   mkdir -p "$ROS_LOG_DIR" || return 1
   cd "$REPO" || return 1
 }

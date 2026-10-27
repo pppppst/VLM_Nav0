@@ -1,6 +1,6 @@
 robot_id: go2
 map_path: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml
-keepout_mask: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261022_29ab5c38/keepout_mask.yaml
+keepout_mask: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261025_7be2a662/keepout_mask.yaml
 map_digest: 6ae95d62d745c3bfb6eaf1e247cac27b32542251cbd1a4ccbc55f5d1febdd279
 domain_id: 0
 footprint:

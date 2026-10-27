@@ -3385,3 +3385,155 @@ Sport日志19:08:11初始DISARMED、19:09:19 ARM accepted、19:11:50.808920发St
 默认完整离线preflight退出1：基础环境检查报enp4s0无192.168.123.x地址，只读核实该网卡DOWN/无地址，尚未进入installed/live_gates/API报告。独立安装核对通过不能当作完整preflight通过。未更改网络或绕过检查；用户恢复原有线环境后先按runbook显式export新安装并执行preflight，通过后再使用原完整入口，旧任务仍按原流程退出，不能叠加运行。
 
 本轮未启动完整协同入口、SSH/Ranger/bridge、真实VLM、ARM/start/录包/运动，未重启/停止运行中组件或自动提交。旧进程不会热更新；实际接近、动态障碍与双机避碰仍未现场验收。
+
+### 2026-10-25 取消 Go2 协同接近的 3.5 米半径终止（仅源码）
+
+用户明确要求取消此前报错对应的3.5m半径保护。本轮任务2045f339c60749448a3093b879cfd42b的events.jsonl记录接近路径起点(3.31000017,-14.34999990)、目标(-0.06992071,-10.07189194)，直线距离5.4522m；失败原因为Robot exceeded active rolling-path radius，当时距目标1.8518m。规划允许直接导航远目标，但运行中仍限制离该段起点超过max_travel_radius+0.50，导致本次接近中途取消；这不证明目标投影或实际定位正确。
+
+仅删除single_robot_approach.py中上述半径失败分支，适用于真实Go2私有目标接近；120秒动作超时、到目标停止、取消终态、停稳样本与外层健康/身份/双READY条件保留。原单机vlm_nav/vlm_navigator.py及共享配置未修改，参数基线校验与原字段生命周期保留。此处是对冻结单机迁移的明确行为差异，覆盖前述保留半径保护的当前要求；历史实施记录不改写。
+
+验证：改前test_single_robot_approach_parity.py基线57项通过；将旧半径相等性用例替换为2项新回归，先在旧源码得到2项预期失败。删除分支后，接近差分、runner、target_nav2_endpoint和arrival_contract四文件110项全部通过（原保留108项、新增2项）；验证越过原半径仍继续接近、进入目标停止范围仍取消，以及超时仍失败。环境为source /opt/ros/humble/setup.bash及build/go2-coop/install/local_setup.bash，源码根目录与cooperative_ws/src/multi_agent_nav置于PYTHONPATH前部，使用/home/isee-pst/venv/co-nav-real/bin/python、PYTEST_DISABLE_PLUGIN_AUTOLOAD=1和pytest --noconftest -q -p no:cacheprovider。未初始化ROS节点或运行全库测试。
+
+未构建、安装、切换默认环境、重启任务或现场验证；默认build/go2-single-parity-20261025/overlay/install仍含旧保护，与当前源码不一致，后续须按runbook在新输出目录构建更新，不能跳过安装一致性检查。运行中进程仍执行旧逻辑。未改用户已有的docs/双机协同启动与验收.md未提交内容，未自动提交。取消后远距离接近不再由这一固定半径终止，实际导航与避障效果待现场验证。
+
+
+### 2026-10-25 取消接近半径保护后的构建安装与环境更新
+
+用户明确授权构建安装并更新环境。新成对安装为build/go2-no-radius-20261025/overlay/install/local_setup.bash，两包构建退出0、23.4秒；包含取消Go2协同接近3.5米半径终止的修改，其余接近保护保留。Cooperative_env默认、硬件入口安装预期、两份既有测试路径夹具与正式启动文档已同步；显式COOP_SETUP_FILE仍优先。旧安装、现场进程、用户原有未提交文档内容均保留，未自动提交。
+
+验证：路径变更前两份基线41项通过；从/tmp加载新安装后7文件235项通过，11条第三方弃用告警，本轮未新增用例；两个CTest条目对应14个C++用例全部通过。安装两包prefix/导入均位于新输出，54个Python文件、配置和入口/正式文档副本与源码一致。默认离线preflight退出0、14项matches_source=true、live_gates=[]、api_environment_complete=true、motion_sent=false。未跑全库或旧18文件回归，历史4项既有失败未据此销账。
+
+完整构建/检查命令、环境与后续用户切换步骤见[runbook](go2_runbook.md#2026-10-25-取消接近半径保护后的安装更新)，证据build/go2-no-radius-20261025/evidence/。本轮未初始化ROS节点、SSH/Ranger/bridge、真实模型请求、录包、ARM/start/运动或重启/停止任务。旧终端须更新显式COOP_SETUP_FILE，旧进程不会热更新；新的长距离接近及避障效果未现场验证。
+
+
+### 2026-10-25 人工19顶点新掩膜草稿（已生成，未应用）
+
+用户提供build/go2-field/keepout-boundary-points/clicked_points_20261025T121903.172648Z_7be2a662.jsonl，19点均有效；按此前录点流程使用全部编号1→19→1，原始XY不移动、不重排，原始XYZ和时间戳完整保留。复用既有离线算法生成到maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261025_7be2a662/，包含boundary.yaml、clicked_points.jsonl、keepout_mask.pgm/png/yaml、boundary_preview.png、validation.json。旧掩膜及原地图保留。
+
+顺时针、无自交、全部在地图内；连续多边形面积103.24200813012945m²。保持472×578、分辨率0.05m、origin=[-8.09,-20.8,0]。白色40300格不额外限制、黑色232516格禁行，无未知掩膜格；沿用半格对角线保守栅格化，无额外机身缓冲，不清除原地图墙体或动态障碍。矩形/凹多边形自检、顺逆序一致、独立点内判定、允许格四角、PGM/PNG回读与Nav2三值解码均通过；源文件及产物SHA256复核、实际KeepoutMask加载通过。二维预览正常，matplotlib仅报告不使用的Axes3D导入告警。
+
+上一轮2045任务P3坐标(3.435,-14.275)中心落在新掩膜禁行格；新掩膜应用后该点应被筛除，不为保留旧候选调整人工边界。预览需用户核对，几何检查不替代现场可达性验证。证据生成脚本及consumer-check.json位于build/go2-field/keepout-mask-build.20261025_7be2a662/，该脚本是本轮一次性证据，不是长期入口。
+
+当前robot_go2.yaml仍指向旧keepout_boundary_20261022_29ab5c38，未修改配置、安装、地图阈值或现场组件，未初始化ROS、订阅传感器、SSH、ARM/start/运动。此次仅产出可核对的新掩膜，尚未应用。
+
+
+### 2026-10-25 用户确认19点掩膜并切换源码配置
+
+用户明确确认7be2a662预览并要求切换。已仅将cooperative_ws/src/multi_agent_nav/config/robot_go2.yaml的keepout_mask从旧keepout_boundary_20261022_29ab5c38改为maps/lab_rescan_20261018_155656_0pa6gm/keepout_boundary_20261025_7be2a662/keepout_mask.yaml；解析前后逐项核对，其余配置完全不变。正式启动说明的当前掩膜标识同步为19点，保留用户已有未提交内容。旧掩膜和原地图完整保留。
+
+已复核新产物SHA256，默认入口（清除COOP_SETUP_FILE/COOP_CONFIG覆盖）离线preflight退出0，报告config_dir为源码cooperative_ws/src/multi_agent_nav/config，keepout为7be2a662、472×578；14个安装模块matches_source=true、live_gates=[]、API环境齐全、motion_sent=false。证据build/go2-field/keepout-switch.20261025_7be2a662/含改前配置/说明、change.json及预检日志/退出码，git diff --check通过。仅配置修改，不构建或跑全量测试。
+
+正式协同入口显式读取源码配置，故无需重建代码；默认overlay仍为go2-no-radius-20261025，已验证安装share中的旧配置/文档快照未覆盖。直接使用安装share配置或其他COOP_CONFIG副本的入口不会自动取得本次新路径，须核对实际config_dir。新掩膜validation.json与预览中的未部署标记保留为生成时历史状态，本节仅确认配置选择，不声明运行期costmap已应用。
+
+未重启/停止硬件、Nav2、supervisor或agent，未初始化ROS节点、连接Ranger/SSH/bridge、ARM/start/录包/运动。运行中旧mask server/costmap不热更新，仅重开任务层不足以替换掩膜；下次须按原退出流程确认停稳和原生终态后正常退出，并重新启动加载新掩膜的硬件/导航及任务流程。现有入口在NAV_READY后核对supervisor掩膜路径，旧路径复用应被拒绝，不跳过该检查。真实范围应用及可达性仍待现场验证。
+
+
+### 2026-10-25 task 3d38：Ranger定位失效触发暂停，Go2另有持续碰撞拒绝
+
+用户要求分析当前实验暂停原因。最新任务3d38acc1d1b14826a8cb93ae21b8486b，入口build/go2-field/cooperative-task.noqzjd99/start.log受理成功，预检为go2-no-radius安装及新19点7be2a662掩膜。离线读取时任务仍在更新，随后20:36:30.435 Nav2收到客户端取消；events末尾STOP_COMMAND_SENT明确为peer localization/navigation invalid，最终VIEWPOINT_NAV原生CANCELED。
+
+为区分导航不动和任务暂停，只执行一次4秒本机Domain0/enp4s0高层状态订阅；有效消息窗口20:36:44.899—20:36:48.522，Go2/Ranger各40条、协调器8条，均当前任务。协调器PAUSED原因为ranger: localization invalid；Go2 PAUSED/peer localization/navigation invalid；Ranger PAUSED/local health invalid: localization_valid。两端所有受采样状态localization_valid/nav_ready/stopped均true，goal_id为空，说明采样时健康字段已恢复，但暂停锁存。结合本地coordinator/agent的定位门槛与暂停首因保留逻辑，直接触发链为Ranger定位健康失效→Go2停止/协调器暂停；恢复字段不自动续跑。没有Ranger本机故障瞬间TF/定位日志，不确定失效具体子项，不将其归为Wi-Fi或AMCL漂移。
+
+独立的Go2执行问题：起点1帧和两个到达点的各8帧扫描共17次识别均APPLIED、无API错误，A均NOT_DETECTED；未进入APPROACH，故不是已取消的3.5米接近保护。20:32:38.896首次DWB ObstacleFootprint/Trajectory Hits Obstacle，此后控制器patience exceeded、后退和恢复Spin也预测碰撞退出。任务记录7次观察点NAV_FAILED/ABORTED，随后下一点被对端健康暂停取消；多次Nav2起始位姿约(4.72,-12.73)。事件中的PATH_RECEIVE_TIMEOUT为记录项，本地单机迁移模式不据此暂停。碰撞格来源尚不能从日志区分新掩膜、静态墙体、动态障碍或定位误差，不能仅因刚换掩膜就归因掩膜过窄；更换目标也未解除当前局部堵塞。
+
+证据build/go2-field/task-3d38-analysis-20261025/含status.json、analysis.json及本轮事件/入口/Nav2日志快照与SHA256；已离线断言核对状态原因、计数、识别结果、7次失败和最终取消。未修改生产代码/配置、SSH到Ranger、请求真实模型、订阅图像/点云、清图、重启/恢复任务、ARM/start/录包或发送运动指令；临时高层订阅已销毁，未跑构建/全量测试。stopped报告不认证实体停稳或DISARM。后续应分别核对Ranger首次定位门槛失效及Go2失败位置的实际costmap/footprint，不把两条故障链混为一个根因。
+
+
+### 2026-10-25 选点提示补充避免低信息死胡同（仅源码）
+
+用户要求新增“避免拐进死胡同”并优化表述。仅在adapters/go2.py的choose_candidate系统提示中增加：“优先选择通向连通区域、便于继续探索的观察点；避免仅能进入封闭尽端、到达后必须原路折返且预计新增信息有限的死胡同。”沿用候选白名单、原JSON输出和原导航检查，不增加新筛选算法或运动参数。该提示不是可达性/避障保证。
+
+加载Humble与go2-coop消息underlay，以源码根目录和cooperative_ws/src/multi_agent_nav作为PYTHONPATH前缀，co-nav-real Python执行test_generated_candidates.py和test_candidate_camera.py，既有52项全部通过，未新增用例；git diff --check通过。未构建安装、请求真实模型、重启任务或运行真机；默认go2-no-radius-20261025安装中的adapter尚为旧提示，与当前源码不一致，下次启动前需新目录构建更新，不跳过一致性检查。实际模型选点偏好待验证。
+
+
+### 2026-10-25 死胡同选点提示构建安装完成
+
+用户要求构建安装。新成对安装为build/go2-deadend-prompt-20261025/overlay/install/local_setup.bash，vlm_nav与multi_agent_nav两包构建成功（23.4秒）；包含避免低信息死胡同的选点提示、此前取消协同接近3.5米半径终止及已确认的19点7be2a662掩膜配置。Cooperative_env默认、硬件入口安装预期、两份既有测试路径夹具与正式启动文档同步；显式COOP_SETUP_FILE仍优先，旧终端须更新export。旧安装与用户未提交工作保留，未自动提交。
+
+验证：改前入口/环境基线41项通过；从/tmp加载新安装后候选/相机、接近与入口共6文件235项通过（13.17秒、11条第三方弃用告警），本轮未新增用例；两个CTest条目对应14个C++用例全部通过。两包实际prefix/导入均为新输出，54个Python文件、配置、入口及正式文档副本与源码一致，明确核对安装adapter含新增提示及安装配置的新掩膜。默认离线preflight退出0，14项安装一致、live_gates=[]、api_environment_complete=true、motion_sent=false，读取源码配置和7be2a662掩膜。未跑全库，历史4项旧失败未据此销账。
+
+完整命令、环境与后续切换顺序见[runbook](go2_runbook.md#2026-10-25-死胡同选点提示安装更新)，证据build/go2-deadend-prompt-20261025/evidence/。未启动现场ROS、SSH/Ranger/bridge、真实VLM、录包、ARM/start/运动或重启/停止组件；旧进程不会热更新，新提示不构成可达性保证，真实选点与避障效果待验证。
+
+
+### 2026-10-25 task 782a：离开首个观察点后持续旋转，未进入目标扫描
+
+用户要求只诊断仍在实验中的旋转/未识别，并随后确认旋转发生在对端失效之前、失效后已停止。最新任务782a6716d8954035a009966836f4e4ad，入口cooperative-task.gkl8in0m使用go2-deadend-prompt安装和7be2a662掩膜。仅离线读取现有日志与FAST-LIO诊断文件，未订阅ROS、请求模型、暂停、重启或发送运动。
+
+已确认：起点唯一一次目标识别返回APPLIED、A/B/C均NOT_DETECTED，API延迟6.87秒；其后两次请求为观察点选择，不能计作目标识别。首个P10=(0.435,-10.275)导航20:59:33成功，实际停靠(0.611639,-10.414852)、误差0.2253m，随即SCAN_SPACE_BLOCKED，跳过扫描。第二个P12=(4.435,-13.275)在20:59:40开始VIEWPOINT_NAV，至21:01:28因peer localization/navigation invalid取消，持续108.47秒，未到达。全程无SCANNING、无SCAN_SPIN；behavior_server仅初始化、无恢复Spin执行记录，不能把实体旋转归为45度视觉扫描或恢复动作。
+
+从现有/tmp/spark_fast_lio_timeseries.jsonl按frame与SPARK_DIAG_FRAME日志时间关联，第二段1084个里程计样本净航向变化约-5.17圈；21:00:20—40与21:00:40—21:01:00各净转约一圈、净平移仅0.0490/0.0471m，支持用户反馈的近原地连续旋转。21:01:30—21:02:00净航向仅0.0104圈，与用户确认停止一致。该结果为LIO估计、非外部真值。
+
+持续旋转发生于DWB导航控制阶段：controller有10次ObstacleFootprint/Trajectory Hits Obstacle，报No valid trajectories out of 3，但为间歇拒绝，未产生导航失败终态。任务只有导航成功且停稳/空间检查通过才启动扫描，因此第二段一直未提交目标识别，不是VLM迟迟不返回或扫描跳过等待。配置中非零线速度下限/上限均0.40、非零角速度下限/上限均0.50，自定义生成器限制低速候选，是需核查的控制约束，尚不能据此定为唯一根因。SimpleProgressChecker门槛0.10m/15秒；LIO代理计算后68秒13次超过0.10m、最长间隔7.90秒，提示转动伴随小位移可能刷新进展计时，但缺完整map/TF轨迹，不能声称精确复现Nav2判据。
+
+离线原静态地图及新keepout在计划点/实际停靠点的0.42048m旋转圆盘均自由；不能据此排除融合costmap中的膨胀、动态障碍或TF差异，也不能直接归因新掩膜。缺该时段cmd_vel、DWB候选评分及融合costmap历史，尚未区分持续转向选择的确切触发原因。下一步应核对控制命令/里程计与局部代价图、轨迹评分，而非调整VLM等待时间或移除空间检查。
+
+证据build/go2-field/task-782a-rotation-20261025/含events、入口/Nav2/Sport桥/LIO日志、LIO序列和生成参数快照、SHA256及analysis.json。事件数量/终态/扫描缺失和里程计窗口断言通过；无生产代码或参数修改、无构建/全库测试、无现场操作或提交。
+
+### 2026-10-25 下一轮持续旋转记录命令已准备（未执行）
+
+用户要求若当前证据不足，给出start_go2_cooperative.sh之前的记录命令。已核对现有record_go2_nav2_manual.sh缺evaluation/原始costmap与协同状态，本轮不修改该手动入口、不新增脚本或控制参数；在[runbook](go2_runbook.md#2026-10-25-持续旋转的下一轮定向记录)提供终端A先录、终端B原入口启动、正式停止/DISARM后结束录包并检查消息数的顺序。使用当前成对安装、Domain0/enp4s0、现有TF静态/map QoS覆盖、显式话题白名单和1GiB分卷；包括速度链、Sport、里程计、TF、DWB evaluation/路径、raw costmap、动作状态/反馈和协同状态，不记录完整点云或图像。
+
+已读本机ros2bag参数实现及--help（未初始化ROS），核对Humble DWB官方默认evaluation发布、实际版本1.1.20与本机命名空间/速度重映射。命令语法、QoS解析和白名单静态核对通过；没有启动录包、参数服务或现场实验，现场消息是否完整与录制开销仍须本轮bag验证。源码及默认安装未变，无需构建。
+
+### 2026-10-25 Go2 独立入口对齐（本worktree源码与隔离安装）
+
+用户附件 `/home/isee-pst/Downloads/2026-10-25-go2-standalone-parity.md` 已实施。
+当前交付目录 `/home/isee-pst/.codex/worktrees/a897/VLM_Nav`，已有隔离detached worktree，起始干净；
+起始/结束HEAD均为 `1acae1d56e4e43dac29514f2244d439b760520bf`，未提交、合并或同步原仓库。
+原仓库 `go2-cooperative-task-layer` 和旧安装保持；运行中组件不会热更新。
+
+共享LocalApproachExecution仅提取原runner生命周期，复用未改动的SingleRobotApproach；共用原本地外层验收。
+独立入口先观察当前画面，描述以--target为准，有效目标直接接近；否则沿用原探索/错误分支。
+接通初始扫描轮询、odom关联、唯一结果消费者、取消迟到防护和提前返回后的停车确认。
+外层未停稳只等待，验收后才输出TARGET_APPROACHED；独立结束不依赖peer、不进入C。
+真实协同的身份、失联、双READY保持；限定模式沿用原路径接收监护选择，真实path_valid仍记录。
+独立任务/动作诊断异常仅告警，VLM证据故障门槛不变。
+
+新成对安装为本目录 `build/go2-standalone-parity-20261025/overlay/install/local_setup.bash`。
+两包构建23.1秒、退出0；本worktree独立/协同Go2默认均切到该pair，保留COOP_SETUP_FILE覆盖，父子窗口核对实际前缀/模块。
+不再加载10月18日功能overlay；消息underlay仍复用原仓库go2-coop。默认配置使用本worktree协同config，
+arrival YAML中的原仓库robot.yaml→robot_go2.yaml未改，已核对与新安装逐字节一致及合并顺序。
+独立总时限300s、协同总时限600s和执行器120s监护分别保留。
+
+验证：改前18文件553通过/4失败；扩大5文件原源码137通过/2失败；新安装从/tmp执行24文件742通过/同6项旧失败、
+11条第三方告警、退出1，新增52项全部通过，不排除旧失败。两类差分99项通过；新构建14个C++用例通过；
+55个Python模块、根config与arrival来源安装核对通过。完整命令、六项失败名、实际安装和用户按序启动步骤见
+[runbook本轮章节](go2_runbook.md#2026-10-25-go2-独立入口对齐隔离构建)，
+[来源表](../superpowers/plans/2026-10-25-go2-standalone-parity-sources.md)记录固定SHA映射与任务复选框。
+证据 `build/go2-standalone-parity-20261025/evidence/` 须保留。
+
+未做全库/现场/Domain31节点测试、SSH、跨机桥接、录包、真实模型调用、ARM/运动、停止旧组件或自动提交。
+真机接近、动态障碍消除与双机避碰仍待现场验证；不把本轮离线一致性当现场验收。
+
+
+### 2026-10-27 单机与协同源码同步及共同安装
+
+用户要求同步两侧更改。已以同一HEAD为基线，将a897单机对齐和原仓库后续协同修改三方合并，21个限定文件同步回原仓库
+`/home/isee-pst/unitree_ros2/VLM_Nav`。保留双方未提交内容/历史文档；原分支go2-cooperative-task-layer及HEAD不变，未提交或推送。
+原仓库build/go2-unified-20261027/evidence/snapshots保留两边修改前快照；旧安装、地图、日志和bag未清理。
+
+单机和真实Go2本地协同共用探索及接近执行器；同时继承已确认的无3.5m接近半径终止、死胡同提示、19点7be2a662掩膜。
+保留超时、取消、停稳/原生终态及外层验收，单机300秒/协同600秒及协同双READY差异保留。
+FAST-LIO/AMCL/TF/Nav2和底层标定未改，未宣称持续旋转或现场障碍问题修复。
+
+共同安装为原仓库build/go2-unified-20261027/overlay/install/local_setup.bash；两包22.9秒构建通过。
+原仓库两个入口默认均为该pair；旧COOP_SETUP_FILE显式覆盖仍优先，启动前须更新。
+a897只保留同份源码及前期证据，本轮未在a897构建同名pair，后续使用原仓库正式入口。
+
+同步前24文件742通过/6旧失败；合并后源码及新安装743通过/相同6旧失败，安装20.07秒、退出1。
+本轮新增两个入口长距离后到达验收测试均通过；更新既有半径预期并合入原仓库已有长距离/超时测试，不能将净增用例数当新增数。
+针对性150通过，14个C++算法用例通过；55个实际导入模块、包prefix及参数来源/顺序核对通过。只读审查无阻塞问题。
+完整环境/构建/证据/下一次启动步骤见[runbook同步安装节](go2_runbook.md#2026-10-27-单机与协同同步安装)。
+未初始化ROS、启动现场预检、SSH/Ranger/bridge、录包、真实模型、ARM/运动或停止/重启已有组件；旧进程不热更新。
+
+
+### 2026-10-27 正式文档三入口命令同步与新构建
+
+用户指出正式文档完整启动/restart/单机命令仍混用。已保留用户新增三个入口的意图，统一为原仓库路径与配置，每块可独立复制；
+移除先完整启动再预检并再次启动的重复顺序，明确按场景选择。单机旧a897路径移除，restart显式指定安装/配置，第6.1节与其他Go2命令同步。
+默认环境、Launcher及对应测试夹具统一新 `build/go2-unified-entry-20261027/overlay/install/local_setup.bash`；原go2-unified-20261027保留。
+源码同步回原仓库，分支/HEAD与用户未提交工作保留；未修改探索/接近、FAST-LIO、AMCL、TF、Nav2或恢复逻辑。
+
+两包22.7秒构建退出0；修改前、修改后源码和新安装的入口/环境/restart三文件均132项通过，无新增用例；55个实际导入模块及参数来源核对通过。
+完整命令、环境与切换条件见[runbook本节](go2_runbook.md#2026-10-27-三个入口命令统一与重新构建)，证据在原仓库build/go2-unified-entry-20261027/evidence。
+未重跑全库或C++算法测试，既有6项失败没有销账；未执行文档中的现场命令、重启组件、SSH/桥接/录包/ARM/运动或提交。旧进程不热更新。

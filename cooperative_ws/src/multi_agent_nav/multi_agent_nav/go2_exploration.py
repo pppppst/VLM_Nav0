@@ -591,7 +591,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         before_motion()
         emit('SCANNING')
         adapter.scan_viewpoint_id=point['id']
-        descriptions = dict(config['scene']['targets'], **{target_id: target}) if generated or navigation is not None else {target_id: target}
+        descriptions = dict(config['scene']['targets'], **{target_id: target}) if generated or navigation is not None or approaching is not None else {target_id: target}
         future = adapter.start_scan(descriptions, command_id, stop_on_target=target_id)
         while not future.done():
             health_check()

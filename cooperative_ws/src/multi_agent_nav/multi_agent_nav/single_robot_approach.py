@@ -1,5 +1,5 @@
 """Approach branches extracted from VLMNavigator at
-32eab6244ec4b483807f8ed68e8667f5495874bb; transport and cooperative identity only.
+32eab6244ec4b483807f8ed68e8667f5495874bb; cooperative approach omits the radius watchdog.
 """
 import math
 import time
@@ -159,20 +159,6 @@ class SingleRobotApproach:
         if self.state == APPROACH_STOPPING:
             self.advance_approach_stop(now, pose)
             return
-        if (
-            getattr(self, "active_motion_origin", None) is not None
-            and (self.goal_handle is not None or self.goal_pending)
-        ):
-            distance = math.hypot(
-                pose[0] - self.active_motion_origin[0],
-                pose[1] - self.active_motion_origin[1],
-            )
-            # The command endpoint lies on or inside the rolling circle.
-            # Allow normal Nav2 goal tolerance/local-controller settling, but
-            # retain a hard watchdog for a genuinely runaway command.
-            if distance > float(self.p.max_travel_radius) + 0.50:
-                self.fail_safe("Robot exceeded active rolling-path radius")
-                return
         if (
             (self.goal_handle is not None or self.goal_pending or self.plan_pending)
             and now - self.goal_started > float(self.p.goal_timeout)

@@ -1,0 +1,45 @@
+{
+  "vertex_count": 19,
+  "winding": "clockwise",
+  "self_intersections": 0,
+  "all_vertices_in_map": true,
+  "polygon_area_m2": 103.24200813012945,
+  "map_width": 472,
+  "map_height": 578,
+  "resolution": 0.05,
+  "origin": [
+    -8.09,
+    -20.8,
+    0
+  ],
+  "mask_free_cells": 40300,
+  "mask_keepout_cells": 232516,
+  "no_unknown_mask_cells": true,
+  "allowed_cells_fully_inside_polygon": true,
+  "original_inputs_unchanged": true,
+  "algorithm_checks": [
+    "rectangle",
+    "concave polygon",
+    "winding invariance",
+    "independent point-in-polygon",
+    "all four allowed-cell corners",
+    "PGM/PNG roundtrip",
+    "Nav2 trinary decode"
+  ],
+  "extra_robot_margin_m": 0.0,
+  "deployed": false,
+  "ros_initialized": false,
+  "source_files_sha256": {
+    "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.yaml": "a4d4a35ed4ba2203cb3decfb8b3a991ff57cb90294ab1c351c063eaef4ad7955",
+    "/home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/lab.pgm": "0085c2d7ba8868f8d4ff76eb27aa911e2ca5324ea531f77347d0a1f1a9241520",
+    "/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-field/keepout-boundary-points/clicked_points_20261025T121903.172648Z_7be2a662.jsonl": "ba27808a63a3bd78ed73d6a9aa5dcb569e7fd401fed5d8389f76785ea7af8f17"
+  },
+  "artifact_files_sha256": {
+    "keepout_mask.png": "894b6cfb58fea2a51d98f525d221ca09823d2ab8ae23715e0c14093a77430e9a",
+    "boundary.yaml": "348495a0c1bbc3f8e23ae8ad4d7e069e20a61bd6720971bccd63feb83ec52aac",
+    "keepout_mask.yaml": "b482a530756a3745fc0e8494ce4c7f7ab5b6a086e12903a7a1c6739e941d5e33",
+    "boundary_preview.png": "6c9c70934e8c42729b1888673da4f822579ac88ad645a93c40da37f1e9bc56b0",
+    "clicked_points.jsonl": "ba27808a63a3bd78ed73d6a9aa5dcb569e7fd401fed5d8389f76785ea7af8f17",
+    "keepout_mask.pgm": "4d6e037d6244e8627da944857e164fbe794383939f6bf2c980d36143ece3f139"
+  }
+}
