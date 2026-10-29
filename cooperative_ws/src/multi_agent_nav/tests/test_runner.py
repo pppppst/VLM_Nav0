@@ -143,7 +143,8 @@ def test_timeout_stops_scan_before_next_spin_and_discards_late_vlm(execution, du
     inference = Future()
     inference.set_running_or_notify_cancel()
     spins, scanning = [], [False]
-    def scan(*args):
+    def scan(*args,task_id=''):
+        assert task_id=='t'
         scanning[0] = True
         return inference
     adapter.start_scan = scan

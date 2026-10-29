@@ -1,6 +1,6 @@
 # Go2 控制电脑会话交接（2026-10-08）
 
-> 最新行为以文末2026-10-20独立C/取消保护区章节为准；此前资源许可与顺序退出记录属于历史版本。
+> 最新修改及安装见文末2026-10-29到点局部旋转空间检查章节；任务模式仍为独立C。此前资源许可与顺序退出记录属于历史版本。
 
 
 最新实施范围见本文末尾 **2026-10-20 空地候选及家具可选**；本轮私有C要求覆盖前文共享位置/共同C/跨地图对齐的任务要求，历史证据不改写。
@@ -3537,3 +3537,673 @@ a897只保留同份源码及前期证据，本轮未在a897构建同名pair，�
 两包22.7秒构建退出0；修改前、修改后源码和新安装的入口/环境/restart三文件均132项通过，无新增用例；55个实际导入模块及参数来源核对通过。
 完整命令、环境与切换条件见[runbook本节](go2_runbook.md#2026-10-27-三个入口命令统一与重新构建)，证据在原仓库build/go2-unified-entry-20261027/evidence。
 未重跑全库或C++算法测试，既有6项失败没有销账；未执行文档中的现场命令、重启组件、SSH/桥接/录包/ARM/运动或提交。旧进程不热更新。
+
+### 2026-10-27 VLM真实请求延迟抽样
+
+用户要求测试VLM延迟。本轮使用已有API环境、qwen3-vl-plus及正式ABCClient，api_timeout=20秒、max_retries=0、trust_env=False。
+源码vlm_client.py与adapters/go2.py逐字节匹配go2-unified-entry-20261027安装；未修改生产代码或配置。
+复用历史e6a403任务640×480图像（A/B=灭火器、C=椅子），分别调用infer与infer_abc；复用782a任务决策538e1335的占据图、语义图和标注RGB调用当前choose_candidate。
+选点三图与历史request.json实际提交字节一致；本轮不采集新图像。三类按轮交替执行，每类复用一个客户端及相同输入，各3次，无预热剔除。
+
+| 调用 | 三次耗时（秒） | 平均（秒） | 中位数（秒） | 成功 |
+| --- | --- | --- | --- | --- |
+| 单目标识别 | 5.400 / 3.686 / 3.260 | 4.116 | 3.686 | 3/3 |
+| ABC三目标识别 | 9.006 / 7.681 / 9.631 | 8.773 | 9.006 | 3/3 |
+| 三图观察点选点 | 7.168 / 4.930 / 4.310 | 5.469 | 4.930 | 3/3 |
+
+计时使用perf_counter包围正式客户端调用，包含输入编码、网络、完整响应生成及本地结果校验；不包含相机采集、ROS排队或证据落盘，不是首字延迟或纯模型计算时间。
+成功指请求和结构校验成功，不代表识别正确或导航安全。全部低于配置20秒超时，但未设置独立性能验收阈值；固定输入小样本不能推出长期P95/P99或现场闭环延迟。
+证据[results.json](../../build/vlm-latency-20261027/results.json)保存逐次结果、统计、时间及输入/源码SHA256；同目录probe.py仅为本轮一次性测量脚本，不是长期入口。
+独立复算均值、9条成功断言、输入/源码摘要及安装一致性检查通过。未构建或跑全库测试，未初始化ROS、订阅传感器、SSH/Ranger/bridge、录包、ARM/start/运动或重启组件。
+
+### 2026-10-27 Go2 五项最小可靠性修改与新成对安装
+
+按用户附件 `/home/isee-pst/Downloads/Go2_minimal_reliability_codex_plan.md` 在控制电脑原仓库实施。
+起止分支 `go2-cooperative-task-layer`、HEAD `f6c75f27b20a17a2acc49e2ab3c56e1aa5bbf8f1`，未提交/推送。
+保留开始时本交接文档中未提交的VLM延迟抽样记录；快照在本轮evidence，旧日志、bag及安装未清理。
+
+五项行为：生命周期查询超时后失效并取消当前Future、下周期重查，迟到回调受身份隔离；
+动态costmap中心拒绝253/254/255、矩形机身及完整旋转圆盘仅拒绝254/255，原几何/覆盖不足分类保留；
+Go2内外接近共用adapter新鲜里程计停稳结果，平面≤0.03m/s、yaw≤0.05rad/s、连续新样本0.5秒，
+odom_max_age仍0.5秒，不再以3条样本或纯等待宣布停稳；停稳且动作终态、其余条件健康时可等待暂失RGB-D/图像时刻相机TF，
+nav_ready真实失败字段不改，任务/扫描/规划原超时、取消和协同上层暂停保留；主目标检测但无可靠位置同朝向最多额外2帧，
+默认target_depth_retries=2，必须更新RGB-D重新识别，attempt独立记录且每目标每方向仍一条代表结果，
+补帧用尽无位置保留DETECTED证据并继续原方向/候选点。有效位置仍固定坐标接近。
+
+停止和扫描退出语义是本轮有意改变，不再宣称与10月6日冻结版完全一致。
+DWB/速度、底层定位/传感器、地图/Keepout/膨胀/机身、Ranger和协同协议无修改。
+只读审查找出的待决规划恢复、等待期120秒规划超时、等待期API错误处理均已补red/green回归并复核；
+不增加恢复状态机或额外距离/重试预算。正常成功模型响应仍用自身采集时同步深度/TF，恢复先确认当前感知健康，
+不因模型消费时帧龄增加无条件重识别，也不把旧像素用于新深度。
+
+新pair `build/go2-minimal-reliability-20261027/overlay/install/local_setup.bash`，vlm_nav与multi_agent_nav两包23.0秒构建退出0；
+55个实际导入模块、两包prefix、根配置/arrival来源和8个协同配置文件核对一致。
+默认环境脚本/Launcher仍选择旧go2-unified-entry-20261027，本轮未自动部署或切换进程；
+使用新版本须显式COOP_SETUP_FILE，正式启动文档命令已明确新pair。旧安装与当前源码不一致，不能绕过安装检查。
+
+基线26文件765通过/6旧失败，补核旧安装scan evidence29通过。最终源码及新安装30文件均870通过/相同6旧失败，
+全部876项执行、pytest退出1，11条第三方弃用警告；新增76项全部通过。原规划/取消/终态/距离及协同暂停断言保留，
+旧253边缘拒绝预期改为新语义，未删除相关覆盖来换取通过。两个CTest对应14个C++用例全部通过。
+六项既有失败名、完整构建/测试环境、逐项行为与用户后续顺序见[runbook本轮章节](go2_runbook.md#2026-10-27-五项最小可靠性修改)。
+证据 `build/go2-minimal-reliability-20261027/evidence/` 包含附件、开始时交接快照、逐项失败/通过、审查修复、JUnit、安装核对。
+
+未执行全库、真实VLM/现场验收、SSH/Ranger/bridge、录包、ARM/reset_fault、运动或停止/重启现场组件。
+已有隔离ROS单元测试不等于现场连通或实体停车验收；旧进程不热更新。下次先按原流程停稳/原生终态/DISARM和正常退出，
+再按runbook在新终端显式选新pair、只读安装核对成功后走原单机人工确认入口；不据此保证真机不再出错。
+
+
+### 2026-10-27 默认切换至五项可靠性版本
+
+用户后续明确要求切换默认版本并更新正式文档第一节。CoVLM_env.bash、Cooperative_env.bash及start_go2_vlm.py
+现默认选择build/go2-minimal-reliability-20261027/overlay/install/local_setup.bash，覆盖前节“默认仍为旧安装”的状态。
+单机ROS_LOG_DIR同步本版目录，旧日志/安装保留；显式COOP_SETUP_FILE仍优先，旧终端请用正式文档第一节的完整命令覆盖旧值。
+三个命令块（完整协同/restart/单机）已核对新pair和源码配置，默认说明同步；历史实施记录保留。
+
+新路径夹具先复现3失败/45通过，修改后入口/环境/restart132通过、11条第三方弃用警告。
+仅安装脚本/文档副本同步，不重新编译算法；55模块及参数来源只读核对继续通过。未重跑全库/五项行为全套，历史六项失败仍保留。
+真实默认环境source因本机enp4s0没有192.168.123.x地址而被原预检拒绝；未改网络或绕过门槛。
+需恢复原有Go2有线连接/地址后再按正式流程启动；离线默认选版测试不代表现场可启动。
+未初始化ROS、SSH/桥接/录包/ARM/运动，未停止或重启运行组件，未提交/推送。
+详见[runbook后续切换记录](go2_runbook.md#同日后续切换默认版本及第一节命令)，证据在本版evidence/default-switch/。
+
+### 2026-10-27 选点reason最多20字符、构建更新及真实复测
+
+用户要求压缩reason并构建复测，明确确认最多20个字符。当前任务观察点/家具选点提示新增中文短语、含标点最多20字符；
+两解析器在原有字段/类型/白名单校验后`strip()[:20]`，超长不拒绝合法选点，原始response.txt沿用脱敏后完整保留，
+解析结果和下游reason受限。ABC识别无reason，其提示/字段/max_tokens及旧单机frontier接口未改；不降低输出token上限以免截坏JSON。
+本轮保留开始时已有五项可靠性源码、测试和文档修改，未调整导航行为；修改前diff/限定文件快照已保存。
+
+新pair为build/go2-reason20-20261027/overlay/install/local_setup.bash；vlm_nav/multi_agent_nav两包22.8秒构建退出0。
+CoVLM_env、Cooperative_env、Launcher默认及正式文档各入口已切换新pair；显式COOP_SETUP_FILE仍优先，旧进程不热更新。
+旧安装保留。源码基线7文件223通过；新增12项边界测试并增强原始/解析证据断言，先复现7失败，最终源码及新安装各235通过，
+11条第三方弃用警告。55模块、两包prefix、根配置/arrival来源核对通过；未重跑全库或C++测试，前节六项旧失败未销账。
+
+从/tmp加载新安装，以同一qwen3-vl-plus、20秒超时、无重试及上一轮固定历史图像复测各3次，9次请求全部成功并通过格式校验。
+单目标均值3.536秒（3.073–4.374）；ABC均值7.547秒（7.168–7.987）；三图选点均值2.695秒（2.356–3.185），
+上轮选点5.469秒，本轮样本均值低50.7%。三次选点原始reason为17/15/15字符，均P12且无需截断；超长截断由离线回归验证。
+第三次选点命中5504 cached_tokens，前两次为0；网络/服务和缓存未控制，不能据小样本保证加速幅度或归因全部改善。
+本轮保存usage，ABC固定输入文本2286 tokens、图像302 tokens，输出262 tokens；与纯字符数口径不同。
+
+证据build/go2-reason20-20261027/evidence/保存源码/安装测试、构建、安装核对、probe.py/results.json及输入/源码SHA256。
+原图/选点三图与上一轮摘要一致；9条成功、reason上限、统计独立复算、输入/源码摘要检查通过。
+完整构建记录和更新说明见[runbook](go2_runbook.md#2026-10-27-选点reason限制20字符)。文档完成后同步新安装中的文档副本。
+未初始化ROS节点、采集新图、SSH/Ranger/bridge、录包、ARM/start/运动、停止/重启组件或提交；家具真实请求和现场闭环未测试。
+
+
+### 2026-10-27 随机6张历史上传RGB的VLM复测
+
+用户要求随机选6张以前上传过的图片再次测试。本轮按ABC三目标识别执行：从build/go2-vlm-experiments的真实views证据中，
+仅纳入request.json图像字节与input.jpg一致、api_returned=true且有完整ABC描述的记录，按JPEG SHA256去重得63张。
+无放回随机选6张、来自5次任务；随机种子14316737157508612738，候选池/抽样顺序/图片路径及摘要均保存在results.json，可复现抽样。
+每张保留原记录的ABC目标描述：2张灭火器/水杯/篮子，4张灭火器/灭火器/椅子。每张仅请求一次、不预热、不重试。
+
+从/tmp加载go2-reason20-20261027安装，实际ABCClient文件与源码一致；模型qwen3-vl-plus、20秒超时、max_retries=0，
+同一个客户端顺序调用infer_abc。历史JPEG解码后按正式客户端重新编码；来源JPEG摘要与实际提交JPEG摘要分别记录，未宣称二者字节相同。
+计时包含编码、网络、完整生成及格式校验，排除磁盘读图、相机采集/ROS和证据落盘；未运行三图选点，ABC无reason字段。
+
+按抽样顺序延迟8.160、7.465、6.859、6.960、6.551、6.773秒；6/6成功，均值7.128秒、中位数6.910秒，最小6.551、最大8.160秒。
+六次API报告cached_tokens均0；成功仅指请求与结构校验，不代表识别准确率。固定6张小样本不推导P95/P99或现场闭环表现。
+证据[results.json](../../build/vlm-random6-20261027/results.json)包含原始脱敏响应、解析结果、token用量、逐张耗时和来源；
+同目录probe.py为一次性测量脚本。抽样复现、六张不同图像、来源摘要、6条成功及均值/中位数独立复算检查通过。
+本轮无生产代码/配置修改，无构建或全库回归；未初始化ROS、采集新图、SSH/Ranger/bridge、录包、ARM/start/运动或重启组件。
+
+### 2026-10-27 暂时取消选点附带RGB，更新默认安装
+
+用户明确只取消观察点选点第三张RGB，保留占据图、语义图及目标识别所需RGB。
+正式探索选点不再调用selection_camera_snapshot，不传camera_snapshot给render_selection，故不产出本轮相机投影图/元数据；
+choose_candidate仅读取/发送images前两项，并删除RGB相关提示和图例。即使旧snapshot仍带第三张相机路径（含文件不存在），也不会读取上传。
+目标识别RGB、感知健康/停稳/导航门槛、候选白名单及reason≤20字符保持。投影辅助函数/测试及历史证据保留，未增加配置开关。
+
+已保留开始时全部未提交修改与旧安装；新pair为build/go2-map-only-20261027/overlay/install/local_setup.bash。
+两包23.1秒构建退出0，默认环境、Launcher和正式文档均切换；显式COOP_SETUP_FILE仍优先，旧终端/旧进程不自动更新。
+源码基线9文件276通过；更新原有两项行为测试，增加第三图缺失场景，先复现3失败，最终源码及新安装各277通过，11条第三方弃用告警。
+测试核对只上传两图的实际字节、旧第三路径不读取、探索阶段不取相机/不生成相机证据；原识别/扫描证据与入口回归保留。
+其中有原有Domain31本地ROS替身测试，不是现场节点或真机验收。55模块、包prefix、根配置/arrival来源安装核对通过；
+AST复核ABCClient除choose_candidate外全部方法未变，目标识别接口保持。未跑全库/C++测试，六项历史失败未销账。
+
+证据build/go2-map-only-20261027/evidence/保存修改前快照、基线/red/green、构建和安装回归/核对；
+完整环境及更新步骤见[runbook](go2_runbook.md#2026-10-27-选点暂时取消相机rgb)，最终文档同步新安装副本。
+未请求真实VLM、采集新图、连接现场ROS/SSH/Ranger/bridge、录包、ARM/start/运动、停止/重启组件或提交。
+当前两图选点真实延迟及效果待测；目标识别仍需图像，不能据取消选点RGB跳过相机健康门槛。
+
+
+### 2026-10-27 两图选点真实延迟复测
+
+用户要求再次测试延迟。本轮从/tmp加载go2-map-only-20261027新安装，复核ABCClient和基础VLM客户端与源码一致，
+对此前782a任务538e1335决策相同的occupancy.png/semantic.png、目标/候选/历史记录顺序请求6次，使用同一个客户端、不剔除预热。
+模型qwen3-vl-plus、20秒超时、max_retries=0、enable_thinking=false、选点max_tokens=512及reason≤20字符保持。
+逐次在实际调用前断言仅2张上传图片，提交字节SHA256与两张原地图及前轮证据一致；不上传相机RGB。
+
+6/6成功，依次2.570、2.469、2.134、2.765、2.049、2.252秒；均值2.373秒，中位数2.360秒，最小2.049、最大2.765秒。
+均选择P12，原始reason均“通道交汇处，视野开阔，新增信息量大”（17字符），无需截断。
+本轮输入5546 tokens（图像5020、文本526），输出26 tokens；此前三图输入5949 tokens。
+cached_tokens前两次0、后四次5120。相较此前三图3样本均值2.695秒，本轮均值低11.94%；
+小样本、跨时间请求和缓存未控制，不能将全部差异归因去掉RGB或保证长期加速幅度。
+计时包含读取/编码图片、网络、完整生成及校验，不含地图渲染、ROS排队和证据落盘。
+
+证据[results.json](../../build/vlm-map-only-latency-20261027/results.json)保存实际上传图像摘要、逐次返回/usage、安装路径/摘要和统计；
+historical_context仅用于记录之前三图请求的原始上下文，不是本轮实际上传图像列表；本轮images/image_count明确为两张地图。
+同目录probe.py为本轮一次性测量脚本。6条成功、两图数量/提交字节、reason上限、均值/中位数独立复算及原图摘要检查通过。
+未更改生产代码/配置、构建或跑全库；未重测ABC识别、初始化ROS节点、采集新图、SSH/Ranger/bridge、录包、ARM/start/运动或重启组件。
+
+
+### 2026-10-27 新安装三目标识别6张同图复测
+
+用户要求也测试三目标识别。本轮从/tmp加载go2-map-only-20261027新安装的ABCClient及基础VLM客户端，均与源码逐字节一致；
+沿用vlm-random6-20261027抽取的相同6张图、顺序及各自ABC描述，每张一次，同一客户端顺序请求、不剔除预热。
+模型qwen3-vl-plus、enable_thinking=false、20秒超时、max_retries=0、ABC max_tokens=1200；每次实际上传1张RGB，取消选点RGB不影响此接口。
+输入历史JPEG解码再由正式客户端编码；本轮实际提交JPEG摘要、提示字符数和目标描述均与上次逐项一致。
+
+6/6成功且通过格式校验，依次7.874、6.942、6.858、6.043、7.282、6.536秒；均值6.922秒、中位数6.900秒，最小6.043、最大7.874秒。
+API报告cached_tokens六次均0；相同图上次均值7.128秒，本轮约低2.9%，小样本/跨时间服务波动下不解释为识别代码优化效果。
+每张请求输入2588或2590 tokens，输出234或262 tokens。耗时包含编码、网络、完整生成及校验，排除读图、相机采集/ROS及证据落盘。
+
+证据[results.json](../../build/vlm-abc-retest-20261027/results.json)保存逐次脱敏原始响应、解析ABC、usage、图片/安装来源和统计，
+同目录probe.py为一次性脚本，verification.json记录输入一致性、六条成功、原图/上传JPEG摘要及均值/中位数独立复算检查通过。
+本轮无生产代码/配置修改、构建或全库回归；未初始化ROS节点、采集新图、SSH/Ranger/bridge、录包、ARM/start/运动或重启组件。
+成功仅指请求及格式校验，未人工标注核验识别准确率或验收现场闭环。
+
+### 2026-10-27 仅VLM请求子目录改为递增序号
+
+用户明确“只改views/decisions内的请求子目录”。新请求改为<原实验目录>/views/0001、0002…和decisions/0001、0002…，
+两个父目录独立计数，已有最大数字名称后续号；排他mkdir处理并发占号，数字文件/符号链接不会被覆盖或跟随。
+历史UUID目录不重命名/清理。顶层runner/go2_check命名及原managed保留策略与本轮开始时完全相同；任务/命令/扫描/决策ID仍保留在原元数据/事件。
+
+共享分配函数放在已有experiment_records.py；ScanEvidence.begin仍在原视觉worker创建目录，不搬到ROS回调，
+未分配目录的取消记录evidence_dir=null。render_selection返回序号目录中的两图，snapshot.evidence_directory指向该目录，
+不再用decision_id拼文件路径；家具选点复用分配函数。旧诊断入口vlm/selection请求使用同一子目录规则，显式输出路径不变。
+两图选点、reason≤20字符、识别RGB、任务身份、感知/导航门槛及原证据写入异常处理保持。
+
+新pair为build/go2-numbered-results-20261027/overlay/install/local_setup.bash，两包23.2秒构建退出0；
+默认环境、Launcher及正式文档已切换，显式COOP_SETUP_FILE仍优先，旧进程不会热更新。旧安装及所有开始时用户修改保留。
+基线14文件411通过/3旧失败；最终15文件源码及新安装各416通过/相同3旧失败，新增5项编号用例全部通过，11条第三方弃用警告。
+3项均为test_local_tasks.py的local_assets、malformed resources和malformed exit_points旧门槛预期，完整名字及环境见
+[runbook](go2_runbook.md#2026-10-27-vlm结果目录序号命名)。未跑全库/C++测试，其他历史失败未销账。
+55模块、prefix和参数来源安装核对通过；顶层命名文件/测试逐字节与本轮基线一致，原experiment_bundle及保留函数AST一致。
+
+证据build/go2-numbered-results-20261027/evidence/包含修改前快照、红/绿日志、构建/安装回归、安装核对和增量diff。
+用户确认只改子目录之前曾在工作区尝试顶层编号，已在构建前撤回，未部署或触碰真实结果目录。
+本轮包含原有Domain31本地ROS替身单测，未请求真实VLM、采集新图、迁移旧目录、连接现场ROS/SSH/Ranger/bridge、录包、ARM/start/运动或重启组件；未提交。
+最终文档同步新安装副本，真实下次请求采用新命名需按原流程使用新安装启动。
+
+### 2026-10-28 Go2按2m有效视距排除重复探索候选
+
+用户报告当前Go2相机有效视距可达2m，要求修改探索点选择减少区域重复；本轮按“完整扫描后排除2m内无遮挡候选中心”实现，
+不是两次视场圆盘完全不相交。保留原约1m候选网格和家具观察距离，不用4m稀疏网格，以免漏掉转角/窄区域。
+robot_go2.yaml的generated_candidates新增coverage_range=2.0；未配置默认0（关闭），Ranger不启用。
+
+仅generated_candidates_vlm、ABC各方向结果齐全且无API/验证错误时计算覆盖；扫描方向在圆周上的最大间隙须≤45度，
+当前正式8方向满足。以导航成功后、扫描前的实际停靠map位姿为圆心，检查候选中心≤2m，并按静态地图全部非自由格
+（含unknown）及家具多边形检查视线遮挡；贴栅格边界亦保守检查。计算复用视觉worker，避免在ROS回调执行逐格几何。
+覆盖点单独记为covered、记录covered_by及scan_pose，不伪造该点的扫描结果；后续候选白名单、图像灰色标记、RViz和耗尽判定同步识别该状态。
+提前发现目标的未完整扫描、失败扫描和非环扫不扩展覆盖；原目标接近/安全门槛保持。
+
+验证：补齐ROS Python underlay后的三文件修改前基线134通过；未加载underlay的首次运行127通过/7个缺ROS模块的环境失败，
+补环境后全部消失。新增首批8项先失败后通过，贴未知格边界用例另先复现失败后修复。
+最终六文件197通过，其中新增13项，见[runbook](go2_runbook.md#2026-10-28-go2探索候选按2m视距去重)；git diff --check通过。
+证据build/go2-coverage-20261028/evidence/保留两个核心模块的修改前快照及red.log/green.log。
+保留全部用户原有未提交修改，无提交、构建、安装切换、VLM请求或现场验证；默认安装仍为go2-numbered-results-20261027，
+本轮源码需后续构建后才能在已安装入口生效。
+
+限制：这是以机器人中心和静态平面视线近似相机覆盖，45度方向间距沿用正式扫描配置，未重新实测相机水平视角/外参/动态遮挡。
+视场仍可部分重叠，不能作为逐像素可见性或无漏搜保证；本轮不宣称现场探索验收通过。
+
+### 2026-10-28 2m探索去重双包构建及默认环境切换
+
+用户追加授权构建、切换环境并视需要更新第一节命令。实际文档为docs/双机协同启动与验收.md；本轮更新其第一节及
+其他分步命令的安装路径，CoVLM_env/Cooperative_env/Launcher默认同步为build/go2-coverage-20261028/overlay/install/local_setup.bash。
+旧安装和用户已有改动保留，显式COOP_SETUP_FILE仍优先，旧进程不会热更新。
+
+两包24.7秒构建退出0，消息接口复用build/go2-coop/install/multi_agent_task_msgs。源码及新安装各245通过，
+其中探索相关197项（含上轮新增13项）及环境/Launcher48项；安装回归在/tmp运行，不添加源码PYTHONPATH。
+55个模块及prefix/根配置/arrival来源核对通过，安装协同配置与源码逐字节一致、coverage_range=2.0。
+新安装直接--offline报告518个静态候选，go2_local_gates/live_gates/single_robot_experiment_gates均为空、motion_sent=false。
+
+正式默认preflight因当前enp4s0无192.168.123.x地址在环境加载阶段退出1，不能报告完整预检或环境source通过；
+未修改网络或绕过门槛。安装路径选择已切换，但现场完整启动须先恢复真实网络条件，旧任务仍按原流程停稳/DISARM/退出。
+完整构建环境、检查与限制见[runbook](go2_runbook.md#2026-10-28-2m探索去重构建与环境切换)，证据仍在build/go2-coverage-20261028/evidence/。
+文档第一节Bash语法、安装路径及git diff --check通过，最终文档同步到新安装share。
+未跑全库/C++测试、请求模型、采新图、SSH/Ranger/bridge、录包、ARM/start/运动、重启组件或提交。
+
+### 2026-10-28 完整入口inspect反复失败：定位断流与当前百兆链路
+
+用户报告完整入口先等待NAV_READY 120秒超时，随后两次multi_agent_go2_check检查失败。本轮只读日志/源码及本机网卡计数，
+未启动ROS检查订阅、SSH、bridge、录包、ARM/start/运动、网络重配或进程重启；未改生产代码和安全门槛。
+第一次21:08启动的AMCL持续提示Please set the initial pose，属于初始位姿未设置；后续轮次已完成定位并短暂NAV_READY=true，不能混为同一根因。
+
+21:16轮用户贴出的检查报告：odom_age_s=9.919（门槛0.5s），定位与local costmap变换均ExtrapolationException；
+costmap消息本身仅约0.384秒，active_map_matches/keepout_applied/depth_units_verified=true。
+RGB最后时间21:16:19.264、depth仍到21:16:28.318，RGB-D不新鲜；stopped=false是无新鲜里程计不能证实停稳，不证明实体移动。
+DISARMED为准备阶段正常状态；execution path missing为未下发任务时的通用reason，不是此次inspect退出条件。
+
+最新目录cooperative-task._mvfc4gt（21:21:42）仅preflight.log；现有Launcher.inspect在command非零异常后尚未写inspect.log，
+所以失败JSON仅原终端有，不能假称读取到了这次完整报告。
+最新检查器python_63986于21:23:29产生图像TF等待日志；supervisor 21:23:23.697就绪，21:23:30.697起
+system_ready_value失败，随后obstacle/scan/odom_to_base_link/map_to_odom不新鲜，21:23:40.197恢复。
+转换器21:23:31.999→21:23:36.997期间received 546→596、published一直518、incomplete 28→78：该5秒50帧全部缺点拒收。
+上一轮21:16:20→25同样received 396→446、published固定383、incomplete13→63。
+已核对外部转换器源码：incomplete计数对应TooFewPoints（输入点数低于min_points），不是凭计数推定某个具体丢包位置。
+
+本轮ethtool和/sys/class/net/enp4s0/speed双重核实当前100Mb/s full，地址192.168.123.222/24；本端及对端均advertise 1000baseT/Full。
+现有相机入口配置640×480×15，按此前确认RGB8/Z16原始载荷估算合计184.32Mb/s（不含协议/雷达），超过当前百兆接收能力。
+两次检查器开始接收图像即缺点、结束后恢复与带宽瓶颈相符，是当前首要原因线索；失败当刻的链路重协商历史不可读，
+不能宣布已证明是某根网线或交换机损坏，也不能排除机载USB等并发故障。
+被动8.008秒采样当前RX38.04/TX87.13Mb/s、本机网卡errors/dropped零新增；采样发生在失败之后，不是失败期间流量，
+也不排除上游拥塞丢包。journalctl当前权限不可见系统内核记录，未提权。
+
+证据build/go2-field/nav-ready-diagnosis-20261028/保存两轮关键日志及link-evidence.json/ethtool.txt。
+待现场按原流程停稳/DISARM后检查线缆/接头/中间设备，恢复1000Mb/s再做输入验收；不强制速率或放宽门槛，不盲目重复完整任务。
+本轮未构建/跑代码测试；文档git diff --check通过。当前真实数据链路仍未验收。
+
+### 2026-10-28 最新10292c任务DEPOSIT与peer暂停分析（只读）
+
+用户报告双方已完成A/B、Ranger C输出TARGET_APPROACHED，Go2仍找C时显示DEPOSIT，最终协调器
+PAUSED reason=go2: agent paused: peer paused: peer heartbeat timeout。
+已核对最新start.log：build/go2-field/cooperative-task.hpshhawu，accepted=true，task_id=10292c45743a45b08cb598c830ff7be0。
+本机agent/agent_node/coordinator/planner/runner五模块与go2-coverage-20261028安装逐字节一致。
+
+阶段语义：share_c_coordinates=false；双方ready且命令完成后SEARCH_AB→SEARCH_C，只要任一机器人已有本地有效C观察，
+协调器即可进入DEPOSIT。该阶段内尚无本地C的机器人仍执行SEARCH_VIEWPOINT(C)，已有本地C的执行APPROACH_DEPOSIT；
+仅双方deposited且stopped、无未完成命令才DONE。所以DEPOSIT不表示Go2已到C，也不证明阶段跳转错误。
+
+Go2第1命令events.jsonl第551行TARGET_APPROACHED，实测目标距离0.6811667m，A完成有本机证据。
+第2命令目标椅子：第一处8方向C全NOT_DETECTED；第二处7个NOT_DETECTED、1个DETECTED，
+该C confidence=.85但position_valid=false、reason=insufficient_valid_depth_samples:0/1；第722行TARGET_DETECTED_UNLOCATED后继续选第三点。
+不能把DETECTED当作C已可靠定位；本机没有C的TARGET_APPROACHED记录。
+第1457行STOP_COMMAND_SENT reason='peer paused: peer heartbeat timeout'，monotonic=36271.995289582；
+第1459行原生导航CANCELED，36272.018077664。最后路径header约21:54:23.553，属于Go2第三点VIEWPOINT_NAV取消，非C接近失败。
+取消前12秒259条执行事件，最大相邻记录间隔0.0903s：未见Go2执行循环长停顿，但这不能证明跨机心跳成功送达。
+
+按本机receive_peer代码，“peer paused:”是对端同任务STOPPING/PAUSED reason的转发；本机直接心跳超时文案为
+'peer heartbeat lost for current task'。因此现有证据支持Ranger先报告peer heartbeat timeout，Go2接收后停车，协调器传播全局PAUSED。
+具体是Go2发布、Go2 bridge、Wi-Fi Domain40、Ranger bridge、Ranger回调/消息校验哪一环，暂无Ranger端原始记录/历史心跳证据，不能定唯一根因。
+Ranger TARGET_APPROACHED仅用户报告，尚未核对其协同deposited=true；完成C后仍须保持agent/bridge及心跳，待双方完成。
+已向用户索取Ranger TARGET_APPROACHED至超时的原始日志及agent/bridge是否持续运行，未擅自SSH远端或启动订阅采样。
+
+当前本机enp4s0 speed=1000、wlo1=192.168.137.128（本次只读时值），不可将此前百兆传感器异常套用于这次高层心跳。
+证据摘要build/go2-field/peer-pause-10292c-20261028/key-events.json保留对应事件及原行号。
+未修改生产代码/门槛，无构建或测试重跑，无重启、录包、SSH、bridge/ARM/start/运动；git diff --check通过。
+
+
+### 2026-10-29 完成状态保留、2.5m去重及新安装
+
+用户确认要求：全局完成且本机动作终止后，保留完成结果，后续健康异常独立显示；Go2视野假设更新为2.5m。
+开始分支go2-cooperative-task-layer，HEAD f6c75f27b20a17a2acc49e2ab3c56e1aa5bbf8f1；保留所有原有未提交修改。
+
+已确认代码缺陷：旧独立C agent在全局DONE后仍保留committed/executing及task_started监护。
+离线MockMission约1.6秒DONE；健康心跳持续到任务启动602秒，Go2因task timeout变PAUSED，Ranger跟随暂停，协调器仍DONE。
+DONE后失联同样可复现。用户旧实验证据不足以断言那一次就是600秒超时；只能确认代码机制及其与现象相符。
+修改前证据build/go2-coverage-20261029/evidence/done-result.json、check_done.py、completion-red.log（初始14失败/1通过）。
+
+agent增加同任务完成锁定：有效SYNC(DONE)+本机ready/deposited、IDLE/SUCCEEDED、停稳/动作终态、无活动目标或本地运动，
+清除已结束执行上下文。后续健康字段保持实时，reason前缀post-completion health，只诊断不改成功。
+新任务仍需新task_id和健康SYNCING握手；迟到结果/旧命令不复活任务。仅一方完成仍执行原监护。
+显式stop仍派发adapter停车，runner不将完成展示改成STOPPING；agent退出等待停稳/终态；协调器DONE后暂停/退出保留DONE。
+默认2Hz状态发布定时器不变。协议消息未改；Ranger实际独立实现尚需同步修复，未SSH/远端部署。
+Go2 coverage_range从2.0改2.5，只覆盖完整成功环扫后2.5m内无遮挡候选中心；墙后、失败和不完整扫描保留。
+
+新默认pair build/go2-completed-20261029/overlay/install/local_setup.bash，根vlm_nav与multi_agent_nav构建24.1秒成功；
+默认env、Launcher及正式启动文档第一节和分步命令均切换，旧overlay保留。旧终端显式覆盖和旧进程不会热更新。
+完整构建记录及行为说明见[runbook](go2_runbook.md#2026-10-29-完成状态保留与25m去重安装)。
+新增18项完成测试+4项边界参数用例通过；源码503通过/5失败另Launcher84通过，安装对应587通过/5失败。
+5失败在未修改任务模块的隔离基线同样复现，为现有live_gates与旧断言不一致；详情runbook，未顺手修改配置或断言。
+55安装模块字节/prefix/arrival一致；安装配置2.5；offline三类gates=[]、motion_sent=false。
+默认环境实际source被enp4s0无192.168.123.x地址阻止，退出1；只确认默认安装已切换，完整现场环境未通过。
+证据build/go2-completed-20261029/evidence/；未改网络、启动现场/真机运动/真实VLM/录包/SSH/bridge或自动提交。
+下一步为Ranger同等完成状态修复，以及有现场授权、网络恢复后两端实机完成后长时间状态验证；离线通过不能替代现场验收。
+
+### 2026-10-29 信箱联合复核昨日10292c心跳暂停
+
+按用户指定会话01a18280-d8ef-7fc1-9ad6-f0d23b6713fa追溯，实验task_id为
+10292c45743a45b08cb598c830ff7be0，信箱任务继续使用link-check-20261029。
+Ranger通过信箱在其本机核对原始日志；Go2读取本地原始事件、当时start.log及保留的
+build/go2-coverage-20261028旧安装，并独立重算Ranger传回的67条时间戳摘录。
+
+Ranger证据目录（远端路径，不是Go2本地文件）：
+/home/isee601/ws/VLM_Nav/build/ranger-local/acceptance-20261015_161341/cooperative-startup-20261028_211058-Zj2NEQ。
+state.log:265090消息stamp=1793195663.3753123（北京时间21:54:23.375312），
+reason实际位于265115，为peer heartbeat timeout；本机deposited=true、健康字段true。
+peer.log:168862消息stamp=1793195665.2837443，Go2 reason为peer paused: peer heartbeat timeout。
+21:54:15～28，peer.log有67条同任务Go2消息，最大发送stamp间隔1.499368668秒；
+Ranger报告state.log有56条，最大间隔0.501472235秒。两机stamp差不能当作网络延迟。
+本机events.jsonl:1457/1459确认收到peer暂停后停车并CANCELED，与历史分析一致。
+
+关键限制：peer.log来自独立ros2 topic echo，没有本机到达时间，也不是agent回调记录。
+Ranger源码以本机time.monotonic()更新/检查peer_received，3秒阈值，不直接使用消息stamp；
+C完成不清空该值。Ranger报告离线输入67条原消息均通过当前内容过滤并刷新计时，
+3.000秒不超时、3.001秒超时断言通过；Go2没有在本机重跑Ranger测试。
+Ranger agent与observer共用SingleThreadedExecutor，agent QoS为RELIABLE/VOLATILE/depth10；
+echo未显式指定QoS，昨日实际端点QoS/进程环境未保存。preflight匹配及mtime支持版本追溯，
+但Ranger没有昨日源码哈希快照。Go2对应bridge日志0字节，agent日志没有故障窗接收记录。
+
+结论：已确认Ranger判定当前任务peer心跳过期后暂停，Go2收到暂停后跟停；尚未证实
+双向同时断流，无法从现有日志唯一定位到传输延迟、DDS订阅路径或回调处理。
+当时Go2未完成C、全局未DONE，不把今日DONE完成锁定修复当作该轮根因修复。
+原始信箱往来及Ranger摘录保存于build/go2-field/mailbox-peer-diagnosis-20261029/，
+其中mailbox-transcript.json、ranger-evidence.txt及go2-evidence-121317.json为本轮证据，build不受Git保护。
+本机仅日志/代码核对与摘录重算，没有改生产代码、启动ROS、改网络或复现实验。
+
+用户追加允许令Ranger补充未来通信诊断日志；已发送请求4db156d0f658478cbf53b1007dfd687f，
+要求最小接收/过滤/更新时间与超时快照、限制日志量、必要离线测试，不改阈值/QoS/执行器，
+不部署、不重启、不启动现场采样。此处仅记录请求已投递，实施结果待对端回报。
+
+Ranger回复4391bf94c5f643a69c1956eb969eec62确认其本地用户也已授权日志补充，
+拟复用agent.log、有界接收/过滤摘要、首次超时单调计时快照。随后Go2连续三次45秒等待
+无新消息，按信箱规则结束本轮收信；尚未收到修改diff及测试结果，日志功能仍标记实施中、
+未验收，不能报告已部署或后续实验自动生效。继续时先按同task收信核对交付，不重复实施。
+
+
+### 2026-10-29 白色桶目标C
+
+用户要求将C改为白色的桶、构建并切换新环境，必要时更新正式启动文档。
+`cooperative_ws/src/multi_agent_nav/config/scene.yaml`中C由椅子改为白色的桶，A/B仍为灭火器。
+新默认pair：`build/go2-white-bucket-20261029/overlay/install/local_setup.bash`；环境入口、Launcher、相关测试夹具及
+[双机协同启动与验收](../双机协同启动与验收.md)的安装路径和目标说明已同步。旧安装及用户已有改动保留，包含当前工作区构建内容。
+两包构建23.9秒成功；环境/Launcher修改前48通过、修改后48通过，无新增用例；安装来源/字节及目标配置一致检查通过。
+新安装--offline三类gates=[]、motion_sent=false。详细命令与验证见[runbook](go2_runbook.md#2026-10-29-白色桶目标c与新安装)。
+默认环境实际source仍因enp4s0无192.168.123.x地址退出1；已切换默认选择，未完成现场环境加载。
+旧终端显式覆盖和旧进程不会热更新；Ranger端C描述也须一致，本次未操作远端，待核实。
+证据`build/go2-white-bucket-20261029/evidence/`；未全库/C++测试、真实VLM、SSH/bridge/录包/运动或重启现场进程，无提交。
+
+
+### 2026-10-29 相机断联等待
+
+用户要求现场输入检查忽略rgbd_ready及相机临时未就绪，初始/其他观察位置停稳等拔插恢复；
+明确保留整轮600秒（含相机等待），仅取消相机等待自身错误/超时。后续授权构建、切换环境和更新正式文档第一节。
+入口/inspect稳定窗口不再阻断临时相机缺失；adapter导航健康与RGB-D就绪分离，静态标定和深度单位仍检查。
+扫描停稳等待、恢复再识别；相机等待不消耗扫描预算，真正的Spin失败立即终止；已完成规划等待不被120秒watchdog误杀，
+未完成规划/运动和整轮期限、定位/costmap/停稳/ARM/心跳保护保留。具体边界见[runbook](go2_runbook.md#2026-10-29-相机断联等待与新安装)。
+
+新默认pair为`build/go2-camera-reconnect-20261029/overlay/install/local_setup.bash`；两包23.4秒构建成功，
+CoVLM_env/Cooperative_env/Launcher及[正式启动文档](../双机协同启动与验收.md)第一节三种入口、分步命令均已更新。
+构建包含当时工作区已有修改；保留旧安装及未提交工作。C=白色的桶、coverage_range=2.5未变。
+修改前四文件170通过/2失败；最终19文件源码/新安装各600通过/2失败，新增9项全部通过。
+两失败在基线即存在：field_preparation的live_gates及offline_single_robot_config旧预期，完整名称见runbook。
+55模块安装来源/字节和配置检查通过，--offline三类gates=[]、motion_sent=false。
+本次默认环境实际source退出0，enp4s0检查通过且两包prefix来自新pair；此前网卡失败为历史记录，不覆盖或删除。
+旧进程/显式覆盖的旧终端不会热更新；本次未启动现场/真机/真实VLM/SSH/Ranger/bridge/录包，也未全库/C++测试或提交。
+真实拔插恢复仍待现场验证；相机驱动进程若已退出，插线本身不保证恢复。证据`build/go2-camera-reconnect-20261029/evidence/`保留。
+
+
+### 2026-10-29 16:04故障只读排查（中途转入环扫修改）
+
+最新task_id=1f62c81455d24bf487dbfd3fbf4eaac8，启动日志build/go2-field/cooperative-task.lmi6efsx/start.log。
+本机events.jsonl（build/go2-vlm-experiments/1f62c81455d24bf487dbfd3fbf4eaac8_go2_1/）第2/3行确认初始相机等待约132.8秒后恢复，之后继续观察。
+第1226–1228行确认扫描中取消，STOP_COMMAND_SENT reason=local navigation not ready，原生Spin终态CANCELED。
+新环境ros-logs/python3_33126_1793260687666.log在16:04:53.290记录SYSTEM_READY=false；
+twist_to_go2_sport_bridge_33445_1793260689436.log第438行记录SYSTEM_READY lost while ARMED进入FAULT。
+python3_33672_1793260729140.log第7/8行16:04:53.679首次NAV失败项为system_ready_value，之后odom/scan/obstacle等陆续过期。
+用户16:05:38 watch显示STOPPING（最后报告）及ddsi_udp_conn_write失败，不能当作该时刻实体已停稳确认。
+只读查询enp4s0为NO-CARRIER、carrier=0、无IPv4；本机本地域DDS绑定该接口。
+现有证据确认本地底层健康丢失及当时接口断链，未唯一定位物理线缆、供电或网卡操作原因；系统NetworkManager日志无读取可见条目。
+没有启动订阅/ROS、改网络或重启/复现实验。用户随后转向按整轮交替环扫的工程修改；未把方向修改宣称为已验证的断链修复。
+
+### 2026-10-29 环扫方向交替
+
+用户确认Go2按整轮环扫奇数顺时针、偶数逆时针；初始单帧不计，每个新task_id重置，同任务A/C共用序号。
+已修改Go2Adapter方向和计数，explore_steps及runner显式传task_id；原有8方向、提前检测结束、深度补拍、相机等待/超时及运动保护保留。
+图片metadata.json记录scan_number/scan_direction。接受过的环扫取消或提前结束不回退计数，进程重启不恢复旧序号。
+
+新默认pair为build/go2-alternating-scan-20261029/overlay/install/local_setup.bash，两包23.8秒构建成功。
+CoVLM_env/Cooperative_env/Launcher及[正式启动文档](../双机协同启动与验收.md)第一节和分步命令已同步，旧安装/用户未提交工作保留。
+修改前基线157通过；新增6项先失败后通过；源码与新安装均为469+31=500项通过。
+已修审查发现的dual_acceptance测试替身漏传task_id；未跑全库/C++，之前已知旧断言失败未销账。
+55模块字节/来源及配置一致，offline三类gates=[]、motion_sent=false；详见[runbook](go2_runbook.md#2026-10-29-环扫方向交替与新安装)。
+实际source默认环境仍因enp4s0无192.168.123.x地址退出1，仅默认选择已切换，完整现场环境未加载成功。
+未改网络/放宽门槛，未启动ROS/真实VLM/SSH/Ranger/bridge/录包/真机运动或重启现场组件，无提交。
+真实交替方向及现场连接待验证，证据build/go2-alternating-scan-20261029/evidence/保留。
+
+
+## 2026-10-29 距离验收失败后继续观察
+
+用户要求：Go2停靠距离不在阈值内且retry无效时，不因该次目标结果结束任务，视为未观察到可接受目标并继续新观察。
+本轮修改只在终态+停稳+有限距离>0.81m+一次retry耗尽时分类为可继续探索的距离拒绝，
+初始单帧、环扫与缓存C入口均继续生成/选择后续候选，失败观察点跳过、拒绝的C缓存移除。
+原始检测/接近失败证据保留，不置READY/放置完成；未完整环扫不扩展覆盖。600秒原期限、真实健康故障、
+动作取消/停稳失败和候选耗尽语义保留；相机等待、交替旋转及白色桶目标不变。
+
+新默认安装：`build/go2-distance-rescan-20261029/overlay/install/local_setup.bash`；CoVLM_env.bash、
+Cooperative_env.bash、Launcher和[正式文档第一节](../双机协同启动与验收.md#1-完整启动一条命令)已同步。
+完整构建命令见[runbook新安装节](go2_runbook.md#2026-10-29-距离验收失败后继续观察与新安装)。
+保留原未提交修改、旧安装和日志，无提交、远端部署或新运动授权推定。
+
+验证：修改前接近/入口基线126通过；新增12项距离拒绝用例覆盖有限距离、终态/停稳边界、初始/环扫/缓存C后继续观察、
+生成候选去重/保留未完成扫描证据、其他错误不吞掉及只移除被拒绝C缓存，其中6项先失败再通过。
+原overshoot入口用例改为检查继续选点；其跨入口完整停止轨迹比较不再包含overshoot，因协同夹具只包接近、单机夹具还包后续探索，
+两者此后流程不同；底层冻结接近轨迹测试仍保留。源码18文件577通过，双机离线31通过，共608个不同用例；
+新安装从/tmp清除源码PYTHONPATH后同范围577+31通过。两包23.1秒构建成功，仅既有CMake/接口包复用提示。
+55模块安装路径/源码字节检查和安装配置一致性检查通过；--offline三类gates=[]、motion_sent=false。
+Bash语法、正式文档23个命令块/本地链接和git diff --check通过。
+
+本次默认source Cooperative_env.bash go2退出0，DDS接口enp4s0；multi_agent_nav包前缀确认为新pair。
+这是环境加载结果，不是相机/导航/通信或现场运动验收；未启动ROS节点、真实VLM、SSH/Ranger/bridge/录包或新实验。
+未跑全库，历史field_preparation两个旧断言失败未纳入本轮，不据此销账。旧终端/旧进程不会热更新，
+已有任务按正式文档正常结束并确认停稳后，再选择第一节的一个入口。证据在
+`build/go2-distance-rescan-20261029/evidence/`，包括before、baseline/red/green、source/installed、dual-*、
+build、check-install、offline-config、default-env和本轮增量task.diff；目录不受Git保护，须保留。
+
+
+### 2026-10-29 16:57 最新实验失败只读排查（task 53ec7cb）
+
+用户要求排查最新实验失败；本轮只读排查日志/代码及进程是否存在，未操作ROS节点或真机、未改运行逻辑/参数。
+最新任务53ec7cb894ba44fbab6c1b1bf183928f，启动证据为
+`build/go2-field/cooperative-task.kpxpikq1/start.log`：受理成功，安装为go2-distance-rescan-20261029，记录的模块matches_source=true。
+失败发生在本机第2条命令（找C），不是A距离验收失败：
+
+- `build/go2-vlm-experiments/53ec7cb894ba44fbab6c1b1bf183928f_go2_1/events.jsonl:315–317`：A距离验收通过，TARGET_APPROACHED实测0.7983289124882551m，retry=0。
+- 第2条命令当前单帧C为NOT_DETECTED，模型响应有效；选择P12/free/170/210，目标坐标(2.435,-12.275,0)，规划路径6.8714m。
+- `..._go2_2/events.jsonl:1283–1286`：VIEWPOINT_NAV成功、确认停稳后进入SCANNING。
+- `build/go2-distance-rescan-20261029/ros-logs/controller_server_52174_1793263945991.log`：北京时间16:56:59.143886 Reached the goal。
+- 同目录`behavior_server_52180_1793263945992.log:23–27`：16:56:59.271680 Running spin，Turning -0.79；16:57:01.272053 Collision Ahead - Exiting Spin，spin failed并Aborting handle。
+- 第2命令events.jsonl:1287–1292：首轮顺时针Spin接受约2秒后ABORTED(native_status=6)，观察点记observation_failed，任务停车原因local execution failed: scan failed。
+
+直接原因已确认是Nav2旋转碰撞保护中止，任务层把Spin失败作为观察异常结束本地执行。调用链为
+adapters/go2.py的SPIN_WAIT非SUCCEEDED→RuntimeError('scan spin failed')，go2_exploration.py读取future异常→
+ExplorationStopped('scan failed')，runner.py→machine.stop。第2命令未出现HEALTH_FAILED、SCAN_HEALTH_FAILED、
+WAITING_CAMERA、TARGET_REJECTED或APPROACH_DISTANCE_FAILED；本轮未触发刚增加的“距离验收失败后继续观察”分支。
+同批nav/safety supervisor日志只有启动阶段false→true，没有失败时刻再次失效记录。
+agent在16:55:47有phase must be synchronized before execution的拒绝记录，但随后第2命令已执行并成功到达P12，
+该警告不是此次16:57停车的直接触发。
+
+代码确认的检查边界：选点及到达后parking_free(actual_pose)通过global costmap检查，
+Go2Adapter.observation_candidate_free也只检查global_costmap整圈圆盘；没有对local costmap做同等整圈预检。
+因此“全局检查通过”不能证明旋转全过程无碰撞；运行中障碍变化也可能导致Spin拒绝。
+实体障碍/局部残影/瞬时点云或定位误差的具体原因仍待证据，不能把碰撞保护解释为已发生实际碰撞，
+也不能认定方向交替有误（此次首轮-0.79符合奇数顺时针）。当前保存记录没有该时刻local costmap/点云快照；
+build中最新已有db3录包时间为10月25日，与此次实验不对应。排查时上述behavior/controller/agent PID均已退出。
+建议后续修复范围是让到点预检同时核对局部旋转空间、阻挡点跳过并重选；不关闭Nav2碰撞保护。
+本轮仅提出基于证据的改进方向，没有实施或重新构建；具体障碍成因和现场恢复仍未验证。
+
+
+### 2026-10-29 到点局部旋转空间检查
+
+用户在task 53ec7cb失败排查后明确要求：不能因目标超出局部costmap范围就不前往；
+确认“选点/前往只用全局，到点再检查局部，覆盖不足等待、确认受阻换点”的规则并授权修改。
+Go2Adapter新增local_rotation_check，仅在探索执行器到达观察点并确认停稳后使用，按实际位姿/时间戳TF/旋转网格原点检查完整旋转圆盘。
+覆盖不足或unknown等待，保持原600秒期限；确认障碍记scan_blocked、排除本次本地探索中的该点并重选。
+初始单帧不旋转不受此门槛影响；远候选、Ranger、全局规划和Nav2碰撞保护均保留。
+Spin ABORTED仅在确认停稳及局部障碍后允许继续；CANCELED及其他异常、未停稳、Nav2/定位/TF/costmap数据流健康故障仍停车，
+不能把真实健康丢失当作地图覆盖等待。覆盖不足与障碍、数据健康失效有独立结果。
+
+独立审查发现等待期间定位修正后可能沿用旧scan_pose写覆盖，已补用例先复现后修复：
+局部预检完成后重新取健康位姿再作为scan_pose；审查复核关闭该问题。
+构建/边界及验证见[runbook](go2_runbook.md#2026-10-29-到点局部旋转空间检查与新安装)。
+新默认pair：`build/go2-local-scan-20261029/overlay/install/local_setup.bash`；环境入口、Launcher及
+[正式启动文档第一节](../双机协同启动与验收.md#1-完整启动一条命令)同步。保留旧安装、日志和用户未提交工作，无提交。
+
+本轮验证：修改前generated_candidates/approach_costmap/go2_exploration三文件166通过；新增18项测试，
+首批14项先失败后通过，另新增审查发现的等待位姿修正回归也先失败后通过。
+最终20文件源码644通过，双机离线31通过；新安装从/tmp清除源码PYTHONPATH后同范围644+31通过，
+各合计675个不同用例，未把重复运行计作新用例。覆盖远点不受局部窗口否决、整圈侧向障碍/未知区域区别、
+TF/网格旋转与陈旧数据、到点后覆盖等待恢复、原期限/健康/停稳/动作终态、阻挡点不重复选及Spin ABORTED/CANCELED边界。
+两包27.3秒构建成功，仅既有CMake及接口包复用提示；55模块安装来源/源码字节检查通过，安装配置一致，
+--offline三类gates=[]、motion_sent=false。Bash语法、正式文档23个命令块/本地链接和git diff --check通过。
+默认source Cooperative_env.bash go2退出0，DDS接口enp4s0，包前缀指向新pair；这不等于现场验收。
+最终文档已同步新安装share/docs。
+
+未启动现场ROS节点、真实VLM、SSH/Ranger/bridge/录包、ARM/start或真机运动；没有重启旧进程。
+未跑全库/C++测试，历史field_preparation旧断言失败未纳入本轮，不据此销账。旧进程/显式旧环境不会热更新，
+使用新版时按正式文档正常结束旧任务并确认停稳后选择一个入口；实际障碍来源和本次恢复效果仍待现场验证。
+证据`build/go2-local-scan-20261029/evidence/`保留before、baseline/red/green、review-red、source/installed、
+final-changed、dual-*、build、check-install、offline-config、default-env和task.diff，不受Git保护，须保留。
+
+
+### 2026-10-29 18:04 心跳失联联合排障（task 1c6b）
+
+用户先要求更新overlay/脚本，随后要求当前heartbeat lost联合排障。按新增AGENTS信箱约定读取README/角色，
+本机go2、peer ranger、hub local，doctor通过；同信箱task heartbeat-1c6b-20261029联合。
+实验task_id=1c6b7c6027924890bdb1a17c758e190f，start.log为build/go2-field/cooperative-task.4sr1bran/start.log。
+本轮首次宿主复核时三进程Go2 agent66826、coordinator67099、bridge66538均实测使用go2-local-scan-20261029；
+环境入口、脚本默认指向本版，55模块安装源码检查通过，未发现overlay滞后，故本轮不重复构建。
+
+已确认的本机故障：events.jsonl第1449行，steady21804.100058663/北京时间18:04:13.978416，
+STOP_COMMAND_SENT reason=peer heartbeat lost for current task。之前Spin18:04:04.180203已成功；VLM后台等待随后取消，
+晚到返回不推动运动。A已接近成功，C搜索未完成。此处是本机当前任务peer计时失效，不是转述对端暂停。
+
+联合证据：Ranger信箱消息892d88e5d9e2453ab381e850936c0b26提供本轮首次超时原始JSON：
+reason=coordinator heartbeat timeout，now26702.308814966，lost_timeout3，sync_received年龄3.043973396秒，
+peer年龄2.788119880秒。本机独立重算32条peer历史均accepted，最大callback间隔0.272671490秒，
+没有内容过滤导致丢心跳的迹象。Ranger记录首次报警北京时间18:04:13.906955；两机monotonic不直接比较，
+也不依据约71ms壁钟先后断言传播因果。Ranger报告自己state在故障窗连续，最大发送stamp间隔0.500626秒，
+独立peer echo出现18:04:11.129090→18:04:15.346092的4.217003秒发送stamp空窗；echo无本机接收时刻。
+
+Go2本机15秒并行只读高层state采样（没有传感器订阅或发布控制）：
+- Domain0：Go2状态150条，Ranger0条；可见go2_cooperative_task_bridge_0的Ranger发布端但没有数据。
+- Domain40：Ranger28条，最大接收间隔0.614721秒；Go2 state没有发布端。
+- 采样时双方同任务PAUSED，Go2 ready=true/deposited=false，Ranger ready/deposited=true，双方nav/localization/stopped报告true。
+- 以上仅消息报告，不认证实体停稳或DISARM。
+
+定位到旧Go2 bridge的地址绑定失配：采样时wlo1=192.168.137.142；bridge66538仍绑定UDP fd15
+192.168.137.138:57225，Domain0 fd8=192.168.123.222:35743。Ranger同期邻居表也见.142与Go2 MAC
+c0:35:32:d3:c6:53，.138 INCOMPLETE/FAILED。bridge进程存在不等于共享域正常转发。
+排障中Ranger用户告知双方已设置静态IP；Go2再次实测wlo1=192.168.137.128/24、nmcli ipv4.method=manual，
+当时再次宿主只读查询确认同一个bridge PID/fd仍绑定.138（输出也已通过信箱661d256e81b44a0283eb2d639ec9ec47同步Ranger）。
+因此静态配置完成时旧DDS参与者没有自动重新绑定；不能把信箱/SSH恢复说成DDS恢复。最终进程状态另见下段。
+
+历史根因边界：证据强烈指向Go2无线改址后的桥接/DDS连接失效，但本机故障窗没有agent接收/发布快照，
+NetworkManager系统journal当前账号不可见，无法证明地址切换精确时刻或唯一判定该瞬间的底层触发。
+本机普通沙箱进程视图看不到宿主进程，已通过授权的宿主只读/proc检查确认仍在运行；不能据沙箱“PID不存在”宣称进程退出。
+先前53ec7cb排障中的PID退出说法亦未用宿主视图确认，仅保留为当时观察，不作为退出证据。
+
+恢复方向：现场确认停稳并按既有退出流程后重新创建Go2 bridge/DDS参与者，使共享域使用当前静态地址；
+再只读核对双向state和SYNC新鲜后，按正常流程另起任务，不能自动解除当前PAUSED。
+本轮没有重启bridge/agent、改网络/阈值/代码、ARM/start或发送运动命令；未验证恢复效果。
+证据根build/go2-field/heartbeat-1c6b-joint-20261029，含双域原始接收、端点/间隔摘要、进程socket、静态地址复核、
+日志快照及SHA256、信箱来往和Ranger超时JSON；目录不受Git保护，须保留。
+此前Ranger补充诊断日志交付c708e4b6f8b448c7bd343ed0b82dc63c已保存并ack，本次实际超时JSON证明Ranger端已生效；
+未将对端交付视为Go2本机已补充同类日志，未把历史10292c根因改写为已修复。
+
+最终现场复核 2026-10-29T18:45:11.039327+08:00：Go2 wlo1仍为manual 192.168.137.128/24；宿主/proc未发现task agent、coordinator或domain_bridge进程。
+本轮未执行kill/退出/重启，不能据此推断谁关闭了组件；旧socket失配为此前已确认事实，不再写作当前仍运行。
+最终静态地址与进程列表保存在static-ip-confirmation.json。恢复后的DDS双向通信未验证；后续应在固定IP后按正常流程启动组件并先检查高层双向心跳。
+
+
+### 2026-10-29 19:52 对端导航健康瞬时失效联合排障（task 774a）
+
+用户报告peer localization/navigation invalid并要求联合排障。本轮使用Codex信箱task peer-health-774a-20261029，
+实验task_id=774a19a84fa945b1809715bc734700d6，start.log为build/go2-field/cooperative-task.jdm_y9cj/start.log。
+只读核对双方日志、Go2宿主进程及15秒Domain0高层state；不改网络/阈值/代码、不重启、ARM/start或发送运动命令。
+
+本机确定时序：`...774a..._go2_2/events.jsonl:3886–3890`为导航取消及STOP_COMMAND_SENT，
+steady28276.672438396 reason=peer localization/navigation invalid，原生导航随后CANCELED。
+Sport日志twist_to_go2_sport_bridge_83146_1793274114712.log:1463提供wall1793274726.550799151，
+即19:52:06.550799。bt_navigator在19:52:06.572才报halt中的follow_path结果获取失败，晚于任务层取消，
+不作为最初根因。停车前12秒PATH_RECEIVED203条、最大间隔0.057690325秒；本轮无HEALTH_FAILED/SCAN_HEALTH_FAILED，
+Go2本机supervisor从启动ready=true后没有故障转换。A已接近成功（0.766441548m），C仍在搜索。
+
+Ranger回复9a29ca7f956743f3bf8bc2ff5c460051定位直接触发项：定位有效，local_costmap header_stale使nav_ready短暂false。
+远端证据根（不是Go2本地路径）：
+/home/isee601/ws/VLM_Nav/build/ranger-local/acceptance-20261015_161341/cooperative-startup-20261029_193955-3M5Cl7。
+agent.log:128，wall1793274726.524568999，failed_checks仅local_costmap，localization_valid=true；
+header_age_s=1.085712194442749>1.0，但receipt_age_s=0.19932491199870128，last_update.header_age_s=0.0011718273162841797。
+按对端数值重算，消息时钟年龄与单调接收年龄不一致约0.885215455秒。
+Ranger系统journal同秒记录systemd-resolved Clock change detected. Flushing caches及systemd-timesyncd
+Initial synchronization to time server 91.189.91.157:123 (ntp.ubuntu.com)。证据指向NTP校时跳变造成header年龄突增，
+不是实际0.199秒的数据传输间隔超过1秒，也没有定位失效证据；不据此放宽costmap健康门槛。
+state.log:111343首个false stamp1793274726.524804，localization=true/nav_ready=false，PAUSED local health invalid: nav_ready；
+111541 stamp1793274726.6202612 reason变peer paused during task；111574 stamp1793274726.6602066 nav_ready恢复true，
+仍PAUSED；本机重算false窗口约0.135402441秒。
+对端随后通过7c5b58386c9d4c43b1d537c208eaf24a补齐完整健康JSON、journal JSON及实际install源码片段，已保存并离线重算。
+clock change的journal wall=1793274726.523532，距首个nav_ready=false约1.272毫秒；
+timesync初次同步的源时间_SOURCE_REALTIME_TIMESTAMP=1793274726.523498（journal收录时间4726.526952）。
+Ranger安装nav2.py链接到其源码，文件修改时间早于当前agent启动；costmap_transform先按monotonic检查receipt，
+再按abs(ROS now-header stamp)检查header，后者返回header_stale，与完整健康JSON一致。
+远端原始内容由信箱提供，未直接访问远端文件系统；本地副本为证据目录的ranger-health.json、ranger-clock-journal.jsonl及ranger-7c5b58386c9d4c43b1d537c208eaf24a.txt。
+
+代码链已核对：Go2 receive_peer在同任务localization/nav false时先stop(peer localization/navigation invalid)，
+该检查早于peer STOPPING/PAUSED转述；stop锁存。离线复用状态机夹具分别输入一次localization=false/nav_ready=false，
+均重现停车，后续true仍PAUSED；无ROS初始化。Ranger报告其_peer_fault将Go2此旧文案归为peer paused during task，
+并撤销原local nav_ready的自动恢复资格；本轮不跨端迁移自动恢复语义。
+Go2 HEAD=f6c75f27b20a17a2acc49e2ab3c56e1aa5bbf8f1，agent.py有既有未提交修改，实际安装agent.py与源码逐字节一致。
+当前Go2无is_nav_ready_pause函数；实际片段及hash通过6d29b963abc84af5ae0c5cd87d18a0d2发Ranger核对。
+
+Go2时钟核对：同一Sport日志1481条wall/steady配对，偏移全程极差0.000014782秒，故障窗90条稳定；
+未见与Ranger约0.885秒同量级跳变。Go2当前NTP/NTPSynchronized均yes，但系统journal当前账号不可见，
+“没有可见条目”不等于没有系统校时事件；两机monotonic不直接比较。
+
+后续15秒只读采样双方各150条，同任务、localization/nav/stopped均true但PAUSED；
+Go2 reason=peer localization/navigation invalid、ready=true/deposited=false；Ranger reason=peer paused during task、ready/deposited=true。
+当前消息恢复不改写当时瞬时false；停稳字段只是消息报告，不认证实体停稳或DISARM。
+宿主bridge83834绑定当前192.168.137.128/192.168.123.222，agent84123/coordinator84396及bridge使用go2-local-scan-20261029；
+本轮没有旧IP绑定失配证据，历史1c6b问题不套用本轮。
+
+建议后续从两端启动前完成并稳定时间同步、避免运行中系统时间跳变入手；若修改代码，应明确处理时钟跳变，
+仍保留单调接收新鲜度和真实costmap/TF健康检查，不以扩大超时或自动解除PAUSED替代根因处理。
+本轮仅诊断，没有修复部署或现场恢复验证。证据build/go2-field/peer-health-774a-20261029含本地日志快照/SHA256、
+当前状态/端点、宿主进程socket、Ranger信箱摘录、时钟偏移重算、暂停锁存离线自检和causal-summary.json，须保留。
+
+### 2026-10-29 接收可恢复暂停修改意见（尚未在Go2实现）
+
+本轮用户要求“接收codex信箱中的修改消息”。doctor通过，接收并回复/ack同一task peer-health-774a-20261029的两条消息：
+74e172f781004626a5045cbc2e73dc3a确认前述诊断闭环；151d42ff92a949fb8a4d9b6830e0f7e1转达修改意见原文：
+
+> 将此类的navigation invalid设为可恢复,遇到后不直接锁存pause而是可以在恢复正常后继续.以及当heartbeat timeout,则两边都进入暂停状态;恢复正常heartbeat则可继续任务.不因为对端的pause而锁存pause, 避免恢复后死锁.据此进行修改,并将此修改意见原话传递到codex信箱
+
+Ranger报告开始修改本机恢复逻辑与回归测试，尚未交付实现结果。Go2本轮仅接收、核对现有触发位置和回执，未修改、构建或部署恢复逻辑。
+后续实施需核对nav_ready、peer/coordinator心跳、双方停稳与任务身份，以及人工停止/定位失效等锁存条件；不能将对端已开始修改写成双端已经兼容。
+原文及回执保存于build/go2-field/peer-health-774a-20261029/modification-messages.json、ranger-151d42ff92a949fb8a4d9b6830e0f7e1.txt、modification-receipt.txt。
+修改意见回执14bb5f726dd94d1598585dbf5a7ef205投递成功，原消息ack成功；没有启动机器人或恢复当前任务。
+
+### 2026-10-29 可恢复暂停实施（源码完成，未构建部署）
+
+用户明确“就按照此要求修改”，即上一节信箱意见。分支go2-cooperative-task-layer，HEAD仍f6c75f27b20a17a2acc49e2ab3c56e1aa5bbf8f1；已有dirty工作保留，不提交。
+本次改models.py、agent.py、coordinator.py、runner.py、go2_exploration.py，新增test_recoverable_pause.py，更新test_startup_handshake.py的旧“永不恢复”契约断言，更新runbook及正式文档第1.4节。
+
+实现限定独立地图协同（share_c_coordinates=false）；纯nav_ready失败、peer/coordinator心跳超时可恢复。
+AgentMachine.stop保存恢复前状态并仍取消动作；收到新鲜同task的SYNC、peer状态，定位/nav恢复、本机stopped+motion_terminal、peer停稳且不STOPPING，恢复原阶段内同一未完成command。
+coordinator保存resume_phase及commands/ack，双方fresh/healthy/stopped/可恢复PAUSED后恢复原phase；暂不消费恢复中的CANCELED为任务失败。
+双方恢复先公布活动且停稳，再等对端退出PAUSED才推进执行；runner延迟effect和generator，原生motion_guard继续兜底，避免先恢复端移动阻塞后恢复端的停稳门槛。
+已成功的command不重跑，ready/deposited/C缓存和adapter环扫计数保留；当前未完成探索执行器重建，候选历史不保证延续。
+整轮600秒含暂停，deadline/started不重置。人工PAUSE/CANCEL、定位/身份错误、未知原因、清理失败可覆盖软暂停成为硬锁存。
+
+双端编码与Ranger消息f151207d3fa84472af3b6f53b2aecd87确认：PAUSE kind=NAV_READY_WAIT；具体is_recoverable_pause原因白名单在models.py，兼容附加` | nav_ready:`诊断。
+旧peer localization/navigation invalid混合文案不自动恢复；Go2拆成peer localization invalid和peer navigation not ready。
+Ranger确认相同的不对称恢复等待，报告50项定向测试通过（仅对端报告，不记为Go2验收）；Go2实际HEAD/dirty、文件hash及健康异常捕获片段通过3cf194c75f58499b912e2d55910a7de8投递。
+信箱task保持peer-health-774a-20261029。后续两端仍需核对实际安装和现场消息序列，不能把约定或源码成功当双机已部署。
+
+独立只读代码审查发现并修复3项边界，均RED→GREEN：真实SingleRobotApproach提前进入生成器导致guard拒绝；explore内部首次发现纯nav失效需NavigationNotReady专门分类；generator.close清理异常必须升级硬锁存且仍发物理stop。
+新增32项通过，包含三类故障恢复到DONE、双向不对称恢复、停稳/终态/新鲜度门槛、失联期间短暂定位失败不可被掩盖、未知混合原因、人工升级、期限、成功拾取不重跑、旧VLM结果废弃、真实Go2 adapter受控future。
+核心修改前基线94通过/1旧失败；广测协同目录1007通过/14失败（当时含29新例，后3例在最终范围通过）；14项用原生产文件快照逐项复现，未新增失败。
+最终核心/恢复/入口范围256通过/1旧失败（test_covlm_env仍要求20261018旧overlay顺序，退出95），也用原代码快照复现。失败逐项名单和证据见build/go2-recoverable-pause-20261029/evidence/verification.md。
+广测含Domain31 localhost合成ROS，costmap/ROS smoke等失败保留；本轮没有Domain0现场节点、真实VLM、ARM/start、真实运动或重启。
+
+证据根build/go2-recoverable-pause-20261029/evidence，包含before快照、基线/red/green、审查red/green、广测、最终定向、原代码差分、协议原文及modified-sha256.json；必须保留。
+没有构建、切换overlay或修改启动脚本；当前默认仍build/go2-local-scan-20261029/overlay/install，不含本次代码，源码一致性预检可能拒绝启动。
+后续若更新安装，须按runbook成对构建根包与协同包到新目录，核对Ranger已同步协议后再走正常退出/启动流程。旧进程不热更新，未做真实恢复验收。
+
+收尾补充：Ranger通过4f7e590451564f9c9f1952c63a0bd905发送HEAD ab922276108c21f44612b7805e26fc0560300528 dirty实际diff，报告97项定向通过且未部署。
+Go2保存ranger-implementation.json及原文，从diff提取12项RECOVERABLE_PAUSES，用本机实际分类函数逐项验证原因及实际诊断后缀接受，旧混合/定位/人工原因拒绝，protocol-check.log通过。
+核对NAV_READY_WAIT及恢复等待编码一致；双方内部异常类型和重启/检查点策略不同，未直接访问Ranger文件系统或做跨机运行验收。已回复并ack。
+
+### 2026-10-29 可恢复暂停新overlay构建完成（默认未切换）
+
+用户明确要求“将修改构建overlay”。按runbook同时构建根包vlm_nav与cooperative_ws/src中的multi_agent_nav，输出新目录：
+`/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash`。
+两包22.8秒完成，退出0；没有覆盖旧安装。接口schema未变，multi_agent_task_msgs复用build/go2-coop/install。
+从/tmp清除源码PYTHONPATH并最后source新overlay，55模块安装路径/源码字节一致检查通过；安装配置一致，离线三类gates=[]、motion_sent=false。
+24文件相关安装回归731通过（699既有+32恢复新增）、退出0、25.54秒、11条第三方弃用警告；未把重复验证计为新增测试。
+证据build/go2-recoverable-pause-20261029/evidence包含build/check-install/offline/installed及Junit报告；本次未跑全库/C++测试，上一轮14项广测和旧env断言失败仍保留。
+
+仅构建与安装验证，没有修改CoVLM_env/Cooperative_env/start_go2_vlm默认值；默认仍go2-local-scan-20261029。
+正式文档新增overlay状态和runbook构建命令已更新，文档同步进新安装share/docs。
+没有重启/切换运行中的进程、启动ROS现场节点、真实VLM、ARM/start或真机运动；新旧双端混用不等于恢复通过，现场验收待后续。

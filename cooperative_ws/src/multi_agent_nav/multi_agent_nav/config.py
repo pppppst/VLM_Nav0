@@ -70,7 +70,7 @@ def go2_local_gates(config, motion=False, vision=False, check_map_files=True, *,
         footprint=go2.get('footprint')
         if not isinstance(footprint,list) or len(footprint)<3 or not all(valid_numbers(p,2) for p in footprint):
             errors.append('Go2 finite footprint missing')
-        for field,default in (('stationary_linear_speed',.02),('stationary_angular_speed',.02),
+        for field,default in (('stationary_linear_speed',.03 if robot_id=='go2' else .02),('stationary_angular_speed',.05 if robot_id=='go2' else .02),
             ('stationary_duration',.5),('odom_max_age',.5),('pose_max_age',1.),
             ('costmap_max_age',1.),('goal_costmap_max_age',1.),
             ('path_receive_timeout',5.),('path_start_timeout',1.),('cancel_timeout',5.)):

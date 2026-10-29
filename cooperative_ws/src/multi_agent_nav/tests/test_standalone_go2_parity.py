@@ -54,6 +54,9 @@ def success(s):
 @pytest.mark.parametrize('scenario', ['normal', 'inside', 'empty', 'plan_failed', 'aborted', 'overshoot'])
 def test_both_wrappers_use_frozen_requests_and_outcomes(local_stack, scenario):
     s = local_stack
+    if scenario=='overshoot' and s.mode=='standalone':
+        # Keep subsequent observation goals blocked in this approach-only fixture.
+        s.a.costmap_candidate_free=lambda *args,**kwargs:False
     if scenario == 'inside':s.health[0] = replace(s.health[0], pose=Pose2D(1.2, 0.))
     s.tick()
     if scenario != 'inside':
@@ -72,6 +75,7 @@ def test_both_wrappers_use_frozen_requests_and_outcomes(local_stack, scenario):
     s.tick(.21);s.tick()
     if scenario=='overshoot':
         s.tick(.51);assert len(s.plans)==2
+        for _ in range(3):s.odom()
         s.planned();terminal=accept(s.requests[1]);terminal.set_result(S(status=4))
         for _ in range(3):s.odom()
         s.tick(.21);s.tick()
@@ -80,10 +84,11 @@ def test_both_wrappers_use_frozen_requests_and_outcomes(local_stack, scenario):
     assert not s.a.results and s.a.approach is None
     if s.mode=='standalone':
         assert s.scans==[dict(stop_on_target='A',current_view_only=True,task_id=s.scans[0]['task_id'])]
-        assert not any(e.get('state')=='SELECTED' for e in s.events)
+        assert any(e.get('state')=='SELECTED' for e in s.events)==(scenario=='overshoot')
+        assert any(e.get('state')=='TARGET_REJECTED' for e in s.events)==(scenario=='overshoot')
 
 
-def test_success_event_waits_for_outer_stop_without_another_motion(local_stack):
+def test_success_event_uses_shared_stop_without_another_wait_or_motion(local_stack):
     s=local_stack;s.tick();s.planned();terminal=accept(s.requests[0])
     s.health[0]=replace(s.health[0],pose=Pose2D(1.2,0.),stopped=False)
     terminal.set_result(S(status=4))
@@ -93,7 +98,8 @@ def test_success_event_waits_for_outer_stop_without_another_motion(local_stack):
     assert not any(e.get('state')=='TARGET_APPROACHED' for e in s.events)
     assert len(s.requests)==len(s.plans)==1
     s.health[0]=replace(s.health[0],stopped=True)
-    s.tick()
+    for _ in range(3):s.odom()
+    s.tick(.21);s.tick()
     assert success(s)
     assert len([e for e in s.events if e.get('state')=='TARGET_APPROACHED'])==1
 
@@ -129,7 +135,7 @@ def test_standalone_deadline_and_owner_guard_at_plan_callback(local_stack):
 
 @pytest.mark.parametrize('status,located,expected', [
     ('NOT_DETECTED',False,'EXHAUSTED'),('UNCERTAIN',False,'EXHAUSTED'),
-    ('DETECTED',False,'TARGET_DETECTED_UNLOCATED'),('API_ERROR',False,None),
+    ('DETECTED',False,'EXHAUSTED'),('API_ERROR',False,None),
     ('missing',False,None),('exception',False,None)])
 def test_standalone_initial_observation_keeps_cooperative_branches(status,located,expected):
     from multi_agent_nav.go2_check import standalone_explore_steps
@@ -160,7 +166,7 @@ def test_standalone_initial_observation_keeps_cooperative_branches(status,locate
         with pytest.raises(ExplorationStopped):run()
     else:assert run()==expected
     assert scans[0]
-    assert bool(a.calls)==(status in ('NOT_DETECTED','UNCERTAIN'))
+    assert bool(a.calls)==(status in ('NOT_DETECTED','UNCERTAIN','DETECTED'))
     assert all(c[0]=='VIEWPOINT_NAV' for c in a.calls)
 
 
@@ -179,7 +185,7 @@ def test_standalone_scan_spin_has_local_ownership_without_a_task_id(live_stack):
     assert not s.a.motion_guard('', 'scan')
 
 
-@pytest.mark.parametrize('scenario',['normal','inside','empty','plan_failed','aborted','overshoot'])
+@pytest.mark.parametrize('scenario',['normal','inside','empty','plan_failed','aborted'])
 def test_local_decision_traces_match_between_wrappers(monkeypatch,scenario):
     traces=[]
     for mode in ('cooperative','standalone'):
@@ -250,3 +256,52 @@ def test_both_entries_continue_beyond_old_radius_and_still_accept_target(local_s
     s.tick(.21); s.tick()
     assert success(s)
     assert len(s.plans) == len(s.requests) == 1
+
+
+@pytest.mark.parametrize('resume',['healthy','cancel','timeout'])
+def test_stopped_perception_wait_retains_plan_result_and_original_watchdog(live_stack,resume):
+    s=configure_stack(live_stack,'standalone')
+    s.tick()
+    original=s.a.get_health
+    waiting=[True]
+    s.a.get_health=lambda:replace(original(),nav_ready=not waiting[0],stopped=True)
+    s.a.perception_wait_allowed=lambda h:waiting[0] and h.stopped and h.motion_terminal
+    approach=s.a.approach
+    began=approach.goal_started
+    if resume=='timeout':
+        s.tick(120.01)
+        assert approach.state=='FAILED'
+        assert 'timed out' in approach.reason
+    else:
+        s.planned()
+        assert approach.state=='APPROACHING' and not s.requests
+        assert approach.goal_started==began
+        if resume=='cancel':
+            s.steps.close()
+            waiting[0]=False
+            approach.tick()
+            assert not s.requests and approach.state=='FAILED'
+        else:
+            for _ in range(3):s.tick(.1)
+            assert not s.requests
+            waiting[0]=False
+            s.tick(.21)
+            assert len(s.requests)==1 and len(s.plans)==1
+
+
+@pytest.mark.parametrize('mode',['standalone','cooperative'])
+def test_completed_plan_can_wait_for_camera_beyond_action_timeout(live_stack,mode):
+    s=configure_stack(live_stack,mode)
+    s.tick()
+    original=s.a.get_health
+    s.a.get_health=lambda:replace(original(),stopped=True)
+    waiting=[True]
+    s.a.perception_wait_allowed=lambda h:waiting[0] and h.stopped and h.motion_terminal
+    s.planned()
+    approach=s.a.approach
+    assert approach.pending_plan_result is not None and not s.requests
+    s.tick(130.)
+    assert approach.state=='APPROACHING' and not s.requests
+    waiting[0]=False
+    s.tick(.21)
+    assert len(s.requests)==1 and len(s.plans)==1

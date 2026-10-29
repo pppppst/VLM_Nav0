@@ -204,14 +204,15 @@ def test_global_goal_input_and_parking_are_rechecked_before_motion(fault):
     assert not adapter.calls
 
 
-def test_detection_stops_search_even_without_projected_position():
+def test_unlocated_detection_preserves_evidence_and_continues_existing_points():
     from multi_agent_nav.models import Observation
     adapter = LocalFixture()
     adapter.start_scan = lambda descriptions, scan_id, **kwargs: completed([
         Observation(target_id='A',status='DETECTED',position_valid=False,view_index=0)])
     events = []
-    assert run_case(adapter, events) == 'TARGET_DETECTED_UNLOCATED'
-    assert len(adapter.calls) == 1
+    assert run_case(adapter, events) == 'EXHAUSTED'
+    assert len(adapter.calls) == 3
+    assert len([e for e in events if e['state']=='TARGET_DETECTED_UNLOCATED'])==3
 
 
 @pytest.mark.parametrize('mode', ['lost', 'api', 'stop'])
@@ -290,7 +291,7 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
         def start_scan(self,descriptions,scan_id,**kwargs):
             if initial_status=='unlocated':
                 from multi_agent_nav.models import Observation
-                return completed([Observation(target_id='A',status='DETECTED',position_valid=False)])
+                return completed([Observation(target_id=t,status='DETECTED' if t=='A' else 'NOT_DETECTED',position_valid=False) for t in descriptions])
             return super().start_scan(descriptions,scan_id,**kwargs)
         def close(self,stop=False):pass
     monkeypatch.setenv('ROS_DOMAIN_ID','0');monkeypatch.setenv('GO2_NET_IFACE','enp4s0')
@@ -312,8 +313,10 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
     rows=[json.loads(line) for line in (output/'events.jsonl').read_text().splitlines()]
     report=json.loads((output/'result.json').read_text())
     if initial_status=='unlocated':
-        assert report['result']=='TARGET_DETECTED_UNLOCATED'
-        assert report['stop_confirmed'] and not report.get('motion_sent',False)
+        assert report['result']=='EXHAUSTED'
+        assert report['stop_confirmed']
+        assert any(e['state']=='TARGET_DETECTED_UNLOCATED' for e in rows)
+        assert any(e['state']=='NAVIGATING' for e in rows)
         return
     assert report['goal_costmap_valid']==global_ready
     assert report['goal_costmap_topic']==config['robot_go2']['goal_costmap_topic']
@@ -336,11 +339,11 @@ def test_grounded_detection_approaches_only_safe_standoff(mode,scan_angles):
     from multi_agent_nav.models import Observation, ApproachResult
     from multi_agent_nav.go2_exploration import ExplorationStopped
     adapter=LocalFixture();events=[];scans=[]
-    def scan(descriptions, scan_id, *, stop_on_target=None):
+    def scan(descriptions, scan_id, *, stop_on_target=None, task_id=''):
         assert stop_on_target=='A'
         scans.append(descriptions)
         return completed([Observation(target_id='A',status='DETECTED',position_valid=mode!='unlocated',
-            common_position=Pose2D(5.,2.,0.),view_index=0)])
+            common_position=Pose2D(5.,2.,0.),view_index=i) for i in (range(len(scan_angles)) if mode=='unlocated' else [0])])
     adapter.start_scan=scan
     def select(obj, excluded, **kwargs):
         assert obj.x==5. and obj.y==2.
@@ -353,9 +356,9 @@ def test_grounded_detection_approaches_only_safe_standoff(mode,scan_angles):
         with pytest.raises(ExplorationStopped):run_case(adapter,events,resources={},approach=True,scan_angles=scan_angles)
     else:
         outcome=run_case(adapter,events,resources={},approach=True,scan_angles=scan_angles)
-        assert outcome==({'success':'TARGET_APPROACHED','unlocated':'TARGET_DETECTED_UNLOCATED'}.get(mode,'APPROACH_FAILED'))
-    assert len(adapter.calls)==(2 if mode=='success' else 1)
-    assert scans==[{'A':'灭火器'}]
+        assert outcome==({'success':'TARGET_APPROACHED','unlocated':'EXHAUSTED'}.get(mode,'APPROACH_FAILED'))
+    assert len(adapter.calls)==(2 if mode=='success' else 3 if mode=='unlocated' else 1)
+    assert scans==[{'A':'灭火器'}]*(3 if mode=='unlocated' else 1)
     if mode=='success':
         nav=[e for e in events if e['state']=='NAVIGATING']
         assert [e['goal_kind'] for e in nav]==['VIEWPOINT_NAV','PICKUP_NAV']
@@ -386,8 +389,9 @@ def test_arrival_verifies_stopped_distance_and_bounds_retry(corrects):
         if finishing:adapter.pose=Pose2D(4.3 if corrects and len(radii)==2 else 4.1,2.)
     adapter.advance=advance
     outcome=run_case(adapter,events,resources={},approach=True)
-    assert outcome==('TARGET_APPROACHED' if corrects else 'APPROACH_DISTANCE_FAILED')
-    assert radii==pytest.approx([.53,.44])
+    assert outcome==('TARGET_APPROACHED' if corrects else 'EXHAUSTED')
+    assert radii==pytest.approx([.53,.44]*(1 if corrects else 3))
+    assert len([e for e in events if e['state']=='TARGET_REJECTED'])==(0 if corrects else 3)
     verified=[e for e in events if e['state']=='ARRIVAL_VERIFIED']
     assert verified[0]['measured_distance']==pytest.approx(.9)
     assert verified[0]['decision']=='RETRY'
@@ -510,5 +514,5 @@ def test_arrival_distances_transform_common_object_to_local_map_once():
     assert row['stopped_distance']==pytest.approx(.5)
 
 
-def test_initial_camera_early_return_still_confirms_stop(monkeypatch,tmp_path):
+def test_initial_unlocated_target_continues_exploration_and_confirms_final_stop(monkeypatch,tmp_path):
     test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,True,'unlocated')

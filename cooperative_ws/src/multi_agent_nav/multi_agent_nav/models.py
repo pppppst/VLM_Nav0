@@ -12,6 +12,18 @@ PRIVATE_RESOURCE_FIELDS = ('resource_id', 'token', 'permit_command_id', 'resourc
                            'requested_resource', 'requested_command_id')
 
 
+def is_recoverable_pause(reason):
+    # Wire-compatible with Ranger; mixed/unknown health faults must remain latched.
+    return reason.split(' | nav_ready:', 1)[0] in {
+        'local health invalid: nav_ready', 'peer health invalid: nav_ready',
+        'peer paused for nav_ready', 'coordinator nav_ready pause',
+        'peer heartbeat timeout', 'coordinator heartbeat timeout',
+        'peer paused for recovery', 'coordinator recoverable pause',
+        'local navigation not ready', 'peer navigation not ready',
+        'coordinator SYNC heartbeat lost', 'peer heartbeat lost for current task',
+    }
+
+
 def clean_private_state(state):
     return not any((state.command_id, state.goal_id, state.sequence, state.ready, state.deposited,
         state.exited, state.pose_valid, *(getattr(state, name) for name in PRIVATE_RESOURCE_FIELDS))) and state.common_pose == Pose2D()

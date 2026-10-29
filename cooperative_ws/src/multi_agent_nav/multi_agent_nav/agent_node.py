@@ -125,7 +125,8 @@ def main(args=None):
             while time.monotonic()<deadline:
                 node.runner.tick(time.monotonic())
                 node.publish_state()
-                if node.machine.state().run_state=='PAUSED':break
+                if (node.machine.state().run_state=='PAUSED' or node.machine.task_completed
+                        and node.machine.health.stopped and node.machine.health.motion_terminal):break
                 executor.spin_once(timeout_sec=.05)
         if node.adapter and hasattr(node.adapter,'close'):node.adapter.close()
         executor.shutdown()

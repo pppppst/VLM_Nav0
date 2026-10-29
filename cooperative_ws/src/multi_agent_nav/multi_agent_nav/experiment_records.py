@@ -10,6 +10,17 @@ import time
 OWNER='go2-vlm-experiment-v1'
 
 
+def numbered_directory(root):
+    root=Path(root)
+    root.mkdir(parents=True,exist_ok=True)
+    number=max((int(p.name) for p in root.iterdir() if p.name.isascii() and p.name.isdigit()),default=0)+1
+    while True:
+        path=root/f'{number:04d}'
+        try:path.mkdir()
+        except FileExistsError:number+=1
+        else:return path
+
+
 def _lock(path):
     return os.open(path,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
 

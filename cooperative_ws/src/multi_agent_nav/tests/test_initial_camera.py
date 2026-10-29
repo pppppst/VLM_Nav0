@@ -13,7 +13,7 @@ from test_generated_candidates import generated_config
 
 @pytest.mark.parametrize('status,located,outcome', [
     ('DETECTED', True, 'TARGET_APPROACHED'),
-    ('DETECTED', False, 'TARGET_DETECTED_UNLOCATED'),
+    ('DETECTED', False, 'EXHAUSTED'),
     ('NOT_DETECTED', False, 'EXHAUSTED'),
     ('UNCERTAIN', False, 'EXHAUSTED'),
 ])
@@ -30,7 +30,7 @@ def test_initial_view_precedes_selection_and_only_found_target_skips_it(status, 
     assert run_case(adapter,events,approach=True,initial_camera_check=True,
         require_navigation_success=True,on_observations=observed.extend)==outcome
     assert scans[0] and scans.count(True)==1 and observed
-    if status=='DETECTED':
+    if status=='DETECTED' and located:
         assert not any(e['state']=='SELECTED' for e in events)
         assert [c[0] for c in adapter.calls]==(['PICKUP_NAV'] if located else [])
         assert any(e['state']=='PATH_PLANNED' and e['path'] for e in events)==located

@@ -87,6 +87,8 @@ class AgentRunner:
         identity=(command.task_id,command.command_id)
         if self.on_event:self.on_event(dict(state='DISPLAY_RESET',task_id=command.task_id))
         def record(event):
+            if event.get('state')=='TARGET_REJECTED' and event.get('target_id')=='C':
+                self.machine.local_c_observations.pop(event['observation_id'],None)
             if event.get('state')=='APPROACH_PLANNING':
                 from .models import Pose2D
                 self.machine.local_target=Pose2D(**event['object_pose'])
@@ -120,6 +122,10 @@ class AgentRunner:
             self.machine.stop('other navigation owner present')
         if self.machine.paused:
             self.dispatch(self.machine.take_effects(),self.clock())
+            return False
+        peer = self.machine.peer_state
+        if (self.machine.awaiting_peer_resume and peer is not None and
+                peer.run_state in ('STOPPING', 'PAUSED')):
             return False
         return self.machine.command is command and self.machine.peer_received is not None and health.stopped and health.motion_terminal
 
@@ -165,7 +171,7 @@ class AgentRunner:
                     identity==(command.task_id,command.command_id)]
         effects+=self.machine.take_effects()
         self.dispatch(effects,now)
-        if self.execution is not None and not self.machine.paused:
+        if self.execution is not None and not self.machine.paused and not self.machine.awaiting_peer_resume:
             try:
                 next(self.execution)
             except StopIteration as finished:
@@ -173,8 +179,12 @@ class AgentRunner:
                 self.machine.health=self.adapter.get_health()
                 self.local_completion=(self.execution_identity,finished.value)
             except Exception as error:
+                from .go2_exploration import NavigationNotReady
                 self.execution=None
-                self.machine.stop('local execution failed: '+str(error))
+                if isinstance(error, NavigationNotReady):
+                    self.machine.stop('local navigation not ready', recoverable=True)
+                else:
+                    self.machine.stop('local execution failed: '+str(error))
             self.dispatch(self.machine.take_effects(),self.clock())
         if self.local_completion is not None:
             identity,outcome=self.local_completion
@@ -202,6 +212,7 @@ class AgentRunner:
                     if execution is not None:execution.close()
                 except Exception:
                     reason+='; local execution cleanup failed'
+                    self.machine.stop('local execution cleanup failed')
                 if self.machine.local_motion is not None:
                     self.machine.local_motion['reply'].cancel()
                     self.machine.local_motion=None
@@ -212,12 +223,16 @@ class AgentRunner:
                     if goal_id:self.adapter.cancel_navigation(goal_id)
                 finally:
                     self.adapter.stop_motion(reason)
-                    if self.on_event:self.on_event(dict(state='STOPPING'))
+                    if self.on_event and not self.machine.task_completed:self.on_event(dict(state='STOPPING'))
             elif command and self.machine.command is command and not self.machine.paused:
                 if effect.kind=='OBSERVATION':
                     self.on_observation(effect.payload)
                     continue
                 try:
+                    if self.machine.awaiting_peer_resume:
+                        # Announce active/stopped before either local executor can send motion.
+                        self.waiting.append((effect,(command.task_id,command.command_id)))
+                        continue
                     if effect.kind=='LOCAL_EXECUTION':
                         if self.execution is None:self.start_local_execution()
                         continue
@@ -232,7 +247,7 @@ class AgentRunner:
                     elif effect.kind=='PLAN':
                         goal=effect.payload;future=self.adapter.compute_path(goal)
                     elif effect.kind=='SCAN':
-                        future=self.adapter.start_scan(self.descriptions,effect.payload);goal=None
+                        future=self.adapter.start_scan(self.descriptions,effect.payload,task_id=command.task_id);goal=None
                     elif effect.kind=='NAVIGATE':
                         goal,kind=effect.payload
                         goal_id=self.adapter.start_navigation(goal,command.task_id,command.command_id,kind)

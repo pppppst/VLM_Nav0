@@ -37,6 +37,10 @@ class AgentMachine:
         self.task_synced = False
         self.last_sequence = 0
         self.paused = False
+        self.recovery_state = None
+        self.pause_sync_received = None
+        self.awaiting_peer_resume = False
+        self.task_completed = False
         self.retry = 0
         self.excluded = []
         self.selected_goal = None
@@ -91,10 +95,17 @@ class AgentMachine:
             self.peer_task_received = now
         if self.committed or self.executing:
             if state.task_id != self.context.task_id:self.stop('peer restarted: task identity lost')
-            elif not state.localization_valid or not state.nav_ready:
-                self.stop('peer localization/navigation invalid')
-            elif state.run_state in ('STOPPING', 'PAUSED'):
+            elif not state.localization_valid:
+                self.stop('peer localization invalid')
+            elif state.run_state in ('STOPPING', 'PAUSED') and not is_recoverable_pause(state.reason):
                 self.stop('peer paused: '+state.reason)
+            elif not state.nav_ready:
+                self.stop('peer navigation not ready', recoverable=True)
+            elif state.run_state in ('STOPPING', 'PAUSED'):
+                if not (self.awaiting_peer_resume and state.run_state == 'PAUSED' and state.stopped):
+                    self.stop('peer paused for recovery', recoverable=True)
+            else:
+                self.awaiting_peer_resume = False
 
     def _reject_peer(self, reason):
         self.peer_problem = reason
@@ -117,7 +128,7 @@ class AgentMachine:
                 'SCANNING', 'ARRIVAL_STOP', 'RETRY_STOP', 'IDLE'))
 
     def _prepare_state(self, now):
-        if self.paused or self.executing:return
+        if self.paused or self.executing or self.task_completed:return
         local_ready = (self._state.localization_valid and self.health.nav_ready and self.health.stopped
                        and self.health.motion_terminal)
         if self.context.task_id:
@@ -190,11 +201,36 @@ class AgentMachine:
             self.task_started = now
             self.last_sequence = 0
             self.paused = False
+            self.recovery_state = None
+            self.awaiting_peer_resume = False
+            self.task_completed = False
         reply = validate_command(command, self.context)
         if not reply.accepted:
             return reply
+        if self.task_completed:
+            if sync and command.phase == 'DONE':
+                self.sync_received = now
+                return reply
+            if command.action in ('PAUSE', 'CANCEL'):
+                if command.action == 'CANCEL' and command.cancel_command_id != self._state.command_id:
+                    return CommandReply(False, 'cancel command mismatch')
+                self.stop('coordinator stop after task completion')
+                return reply
+            return CommandReply(False, 'task complete: new task required')
         if sync:
             if not self.context.share_c_coordinates:
+                if command.phase == 'DONE':
+                    # Global completion alone cannot certify an unfinished local action.
+                    if (self.paused or not self._state.ready or not self._state.deposited
+                            or self._state.run_state != 'IDLE' or self._state.reply != 'SUCCEEDED'
+                            or not self.health.stopped or not self.health.motion_terminal
+                            or self._state.goal_id or self.local_motion is not None
+                            or not self.command or self.command.kind != 'APPROACH_DEPOSIT'):
+                        return CommandReply(False, 'DONE requires local C success and confirmed stop')
+                    self.task_completed = True
+                    self.committed = self.executing = False
+                    self.command = self.selected_goal = None
+                    self.effects.clear()
                 if self.committed and command.phase == 'SYNCING':
                     return CommandReply(False, 'task phase already committed')
                 if command.phase == 'SEARCH_AB' and not self.committed:
@@ -210,7 +246,9 @@ class AgentMachine:
         if command.action in ('PAUSE', 'CANCEL'):
             if command.action == 'CANCEL' and (not self.command or command.cancel_command_id != self.command.command_id):
                 return CommandReply(False, 'cancel command mismatch')
-            self.stop('coordinator pause/cancel')
+            recoverable = command.action == 'PAUSE' and command.kind == 'NAV_READY_WAIT'
+            self.stop('coordinator recoverable pause' if recoverable else 'coordinator pause/cancel',
+                      recoverable=recoverable)
             return reply
         if command.sequence <= self.last_sequence:
             return CommandReply(command.command_id == self._state.command_id, 'duplicate/stale command')
@@ -251,6 +289,7 @@ class AgentMachine:
         return reply
 
     def on_approach(self, approach, now):
+        if self.task_completed:return
         if approach.goal is None:
             self.fail(approach.reason or 'no reachable approach')
             return
@@ -374,15 +413,52 @@ class AgentMachine:
             self._state.reply, self._state.run_state = 'SUCCEEDED', 'IDLE'
 
     def fail(self, reason):
+        if self.task_completed:return
         self._state.reply, self._state.reason, self._state.run_state = 'FAILED', reason, 'IDLE'
 
-    def stop(self, reason):
-        if self._state.run_state == 'STOPPING' or self.paused:
+    def stop(self, reason, *, recoverable=False):
+        if self.task_completed:
+            self.effects.append(Effect('STOP', ('', reason)))
             return
+        recoverable = recoverable and not self.context.share_c_coordinates
+        if self._state.run_state == 'STOPPING' or self.paused:
+            if self.recovery_state is not None and not recoverable:
+                self.recovery_state = None
+                self._state.reason = reason
+            return
+        self.recovery_state = replace(self._state) if recoverable else None
+        self.pause_sync_received = self.sync_received
+        self.awaiting_peer_resume = False
         self.paused = True
+        self.effects.clear()
         self.effects.append(Effect('STOP', (self._state.goal_id, reason)))
         self._state.goal_id = ''
         self._state.run_state, self._state.reply, self._state.reason = 'STOPPING', 'CANCELED', reason
+
+    def _resume(self, now):
+        if self.recovery_state is None or self._state.run_state != 'PAUSED':return
+        peer = self.peer_state
+        if (self.phase not in ('SEARCH_AB', 'SEARCH_C', 'DEPOSIT') or
+                self.sync_received is None or self.sync_received == self.pause_sync_received or
+                now-self.sync_received > self.lost_timeout or
+                not self._peer_healthy(now) or peer.task_id != self.context.task_id or
+                self.peer_task_received is None or now-self.peer_task_received > self.lost_timeout or
+                not self._state.localization_valid or not self.health.nav_ready or
+                not self.health.stopped or not self.health.motion_terminal or not peer.stopped or
+                peer.run_state == 'STOPPING' or
+                peer.run_state == 'PAUSED' and not is_recoverable_pause(peer.reason) or
+                any(effect.kind == 'STOP' for effect in self.effects)):
+            return
+        saved, self.recovery_state = self.recovery_state, None
+        self.paused = False
+        self.awaiting_peer_resume = peer.run_state == 'PAUSED'
+        self.local_motion = None
+        self.local_target = None
+        self.local_approach_succeeded = False
+        self._state.run_state, self._state.reply, self._state.reason = saved.run_state, saved.reply, saved.reason
+        if self.command and saved.reply not in ('SUCCEEDED', 'FAILED', 'CANCELED'):
+            self._state.run_state, self._state.reply, self._state.reason = 'PLANNING', 'ACCEPTED', ''
+            self._plan()
 
     def check_health(self, now, health):
         self.health = health
@@ -390,20 +466,36 @@ class AgentMachine:
         self._state.nav_ready, self._state.stopped = health.nav_ready, health.stopped
         if self._state.pose_valid:
             self._state.common_pose = self.frame.to_common(health.pose)
+        if self.task_completed:
+            # Keep the task result; report current health independently of execution gates.
+            issues = []
+            if not self._state.localization_valid:issues.append('local localization invalid')
+            if not health.nav_ready:issues.append('local navigation not ready')
+            if not health.stopped:issues.append('stop unconfirmed')
+            if not health.motion_terminal:issues.append('motion terminal unconfirmed')
+            if self.sync_received is None or now-self.sync_received > self.lost_timeout:
+                issues.append('coordinator heartbeat lost')
+            if self.peer_task_received is None or now-self.peer_task_received > self.lost_timeout:
+                issues.append('peer heartbeat lost')
+            if self.peer_problem:issues.append(self.peer_problem)
+            elif self.peer_state is not None and (not self._peer_healthy(now) or self.peer_state.run_state in ('STOPPING','PAUSED')):
+                issues.append('peer unhealthy or paused')
+            self._state.reason = 'post-completion health: '+ '; '.join(issues) if issues else ''
+            return
         # The first peer state gets one fixed handshake window; later loss gets no new grace.
         peer_since = self.peer_received if self.peer_received is not None else self.task_started
         if not self.context.share_c_coordinates:
             if self.context.task_id and self.task_started is not None and now-self.task_started > self.task_timeout:
                 self.stop('task timeout')
-            if (self.committed or self.executing) and not self.paused:
-                if self.sync_received is None or now-self.sync_received > self.lost_timeout:
-                    self.stop('coordinator SYNC heartbeat lost')
-                elif self.peer_task_received is None or now-self.peer_task_received > self.lost_timeout:
-                    self.stop('peer heartbeat lost for current task')
-                elif not self._state.localization_valid:
+            if self.committed or self.executing:
+                if not self._state.localization_valid:
                     self.stop('local localization invalid')
+                elif self.sync_received is None or now-self.sync_received > self.lost_timeout:
+                    self.stop('coordinator SYNC heartbeat lost', recoverable=True)
+                elif self.peer_task_received is None or now-self.peer_task_received > self.lost_timeout:
+                    self.stop('peer heartbeat lost for current task', recoverable=True)
                 elif not health.nav_ready:
-                    self.stop('local navigation not ready')
+                    self.stop('local navigation not ready', recoverable=True)
             self._prepare_state(now)
         elif self.context.task_id and not self.paused and (
             self.sync_received is None or now-self.sync_received > self.lost_timeout or
@@ -417,6 +509,9 @@ class AgentMachine:
             if health.stopped and health.motion_terminal:
                 self._state.run_state = 'PAUSED'
             return self.take_effects()
+        if self.paused:
+            self._resume(now)
+            if self.paused:return self.take_effects()
         if self.command and self._state.run_state=='NAVIGATING':
             self._monitor_path(health, now)
         if health.stopped and health.motion_terminal:

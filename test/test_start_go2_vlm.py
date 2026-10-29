@@ -85,8 +85,7 @@ def test_report_parsing_allows_ros_logs_before_json():
     assert launcher.parse_report('[INFO] observer started\n' + json.dumps(report, indent=2)) == report
 
 
-@pytest.mark.parametrize('field', ['active_map_matches', 'costmap_valid', 'rgbd_ready',
-                                  'depth_units_verified'])
+@pytest.mark.parametrize('field', ['active_map_matches', 'costmap_valid', 'depth_units_verified'])
 def test_inspect_rejects_failed_inputs(field):
     report = ready_report()
     report[field] = False
@@ -94,7 +93,7 @@ def test_inspect_rejects_failed_inputs(field):
         launcher.require_inputs(report)
 
 
-def test_inspect_accepts_disarmed_bridge_but_requires_stable_camera():
+def test_inspect_accepts_disarmed_bridge_but_requires_stable_navigation_inputs():
     report = ready_report()
     launcher.require_inputs(report)
     report['health_window']['non_motion_inputs_stable'] = False
@@ -138,14 +137,17 @@ def test_failed_service_response_does_not_count_as_success():
     launcher.require_service_success('response:\nTrigger_Response(success=True, message="ARMED")')
 
 
-def test_camera_reuses_unique_publishers_and_rejects_partial_or_duplicate_camera(monkeypatch):
+def test_camera_reuses_publishers_during_reconnection_but_rejects_duplicates(monkeypatch):
     app = launcher.Launcher(ROOT, prepare_only=True, target='灭火器')
     monkeypatch.setattr(app, 'confirm', lambda *args: pytest.fail('should not prompt or start SSH'))
     monkeypatch.setattr(app, 'window', lambda *args: pytest.fail('should not start another camera'))
     counts = iter([1, 1])
     monkeypatch.setattr(app, 'publishers', lambda topic: next(counts))
     app.camera()
-    for values in ([1, 0], [2, 1]):
+    for values in ([1, 0], [0, 1]):
+        counts = iter(values)
+        app.camera()
+    for values in ([2, 1], [0, 2]):
         counts = iter(values)
         with pytest.raises(RuntimeError):
             app.camera()
@@ -208,7 +210,7 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
     monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
-    prefix=tmp_path/'build/go2-unified-entry-20261027/overlay/install'
+    prefix=tmp_path/'build/go2-local-scan-20261029/overlay/install'
     for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
     app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
     monkeypatch.setattr(app,'check_owners',lambda:None)
@@ -463,3 +465,23 @@ def test_child_reload_of_old_pair_blocks_component_start(monkeypatch,tmp_path,co
     monkeypatch.setattr(app,'command',command)
     app.window('System',['touch',marker])
     assert not marker.exists()
+
+
+def test_inspect_camera_disconnection_is_diagnostic_only():
+    report = ready_report()
+    report['rgbd_ready'] = False
+    report['health_details'] = {'checks': {'rgbd_ready': False, 'camera_geometry': False}}
+    report['health_window']['failure_counts'] = {'rgbd_ready': 100, 'camera_geometry': 100}
+    launcher.require_inputs(report)
+
+
+def test_camera_launch_does_not_wait_for_usb_or_input_ready(monkeypatch):
+    app = launcher.Launcher(ROOT, prepare_only=True, target='灭火器')
+    windows=[]; confirmations=[]
+    monkeypatch.setattr(app, 'publishers', lambda topic: 0)
+    monkeypatch.setattr(app, 'confirm', lambda *args: confirmations.append(args[0]))
+    monkeypatch.setattr(app, 'window', lambda *args: windows.append(args))
+    monkeypatch.setattr(launcher.time, 'sleep', lambda _: pytest.fail('camera availability blocks startup'))
+    app.camera()
+    assert confirmations==['CAMERA']
+    assert windows==[('Camera SSH', ['bash', ROOT/'scripts/go2_camera_ssh.sh'])]

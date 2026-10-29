@@ -42,13 +42,13 @@ def test_far_approach_enters_planning_with_all_eight_original_candidates():
 
 
 @pytest.mark.parametrize('value', [253, 254, 255])
-def test_global_obstacle_or_unknown_under_footprint_still_vetoes(value):
+def test_global_footprint_distinguishes_inscribed_from_lethal_and_unknown(value):
     a, _, global_grid = maps()
-    # The center is free; the unsafe cell is under the forward edge of the body.
+    # Center stays free; only lethal/unknown body cells veto under the revised contract.
     global_grid.data[40*80+58] = value
     a.on_costmap(global_grid, global_goal=True)
-    assert not a.approach_candidate_free(Pose2D(1.6, 0.))
-    assert a.costmap_candidate_check(Pose2D(1.6, 0.), global_goal=True)['status'] == 'collision'
+    assert a.approach_candidate_free(Pose2D(1.6, 0.)) == (value==253)
+    assert a.costmap_candidate_check(Pose2D(1.6, 0.), global_goal=True)['status'] == ('free' if value==253 else 'collision')
 
 
 @pytest.mark.parametrize('value', [253, 254, 255])
@@ -59,8 +59,8 @@ def test_partial_local_footprint_keeps_collision_and_unknown_veto(value):
     a.on_costmap(local)
     goal = Pose2D(1.6, 0.)
     assert a.costmap_candidate_free(goal, global_goal=True)
-    assert not a.approach_candidate_free(goal)
-    assert a.costmap_candidate_check(goal)['status'] == 'collision'
+    assert a.approach_candidate_free(goal) == (value==253)
+    assert a.costmap_candidate_check(goal)['status'] == ('coverage_insufficient' if value==253 else 'collision')
 
 
 @pytest.mark.parametrize('x,status', [(0., 'free'), (1.6, 'coverage_insufficient'), (3., 'coverage_insufficient')])
@@ -241,3 +241,38 @@ def test_exploration_rechecks_far_requested_goal_and_actual_endpoint_without_loc
     assert run_case(fixture, events, resources={}, approach=True) == 'TARGET_APPROACHED'
     assert [c[0] for c in fixture.calls] == ['VIEWPOINT_NAV', 'PICKUP_NAV']
     assert any(e['state'] == 'ARRIVAL_VERIFIED' for e in events)
+
+
+@pytest.mark.parametrize('global_goal', [False, True])
+def test_body_edge_inscribed_cost_is_not_a_second_inflation(global_goal):
+    a, local, grid = maps()
+    if global_goal:
+        grid.data[40*80+58] = 253
+    else:
+        local.data[15*30+29] = 253
+    check = a.costmap_candidate_check(Pose2D(1.6, 0.), global_goal)
+    assert check['status'] == ('free' if global_goal else 'coverage_insufficient')
+    assert a.approach_candidate_free(Pose2D(1.6, 0.))
+
+
+@pytest.mark.parametrize('value', [253, 254, 255])
+def test_center_cost_rejected_for_body_and_rotation(value):
+    a, local, grid = maps()
+    local.data[15*30+15] = grid.data[40*80+40] = value
+    assert a.costmap_candidate_check(Pose2D())['status'] == 'collision'
+    assert a.costmap_candidate_check(Pose2D(), True)['status'] == 'collision'
+    assert not a.observation_candidate_free(Pose2D())
+
+
+@pytest.mark.parametrize('offset', [1, 4], ids=['disk_interior', 'intersecting_edge'])
+@pytest.mark.parametrize('value', [253, 254, 255])
+def test_rotation_disk_retains_full_area_check_without_double_inflation(offset, value):
+    a, _, grid = maps()
+    grid.data[(40+offset)*80+40] = value
+    assert a.observation_candidate_free(Pose2D()) == (value == 253)
+
+
+@pytest.mark.parametrize('pose', [Pose2D(float('nan'), 0.), Pose2D(0., float('inf'))])
+def test_invalid_rotation_pose_cannot_pass(pose):
+    a, _, _ = maps()
+    assert not a.observation_candidate_free(pose)

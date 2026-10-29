@@ -168,7 +168,7 @@ class TaskLauncher(Launcher):
 
     def pause_task(self):
         print(self.cooperative('pause').stdout,flush=True)
-        print('暂停请求已受理；仍须从两端state/原诊断确认PAUSED、实际停稳及原生动作终止。',flush=True)
+        print('暂停请求已受理；仍须从两端state/原诊断确认未完成任务PAUSED（全局已完成保持IDLE/SUCCEEDED）、实际停稳及原生动作终止。',flush=True)
 
     def disarm_task(self):
         self.confirm('STOPPED','先按原文暂停并确认两机实际停稳、原生动作终止，正常结束agent/coordinator/bridge；现在仅解除Go2 Sport使能。')
@@ -179,7 +179,7 @@ class TaskLauncher(Launcher):
 
     def restart(self):
         self.pause_task()
-        self.confirm('CLOSED','先确认两端 PAUSED、实体停稳及原生导航/恢复动作终止，再在原窗口按顺序 Ctrl+C：\n'
+        self.confirm('CLOSED','先确认未完成任务两端 PAUSED（全局已完成保持 IDLE/SUCCEEDED）、实体停稳及原生导航/恢复动作终止，再在原窗口按顺序 Ctrl+C：\n'
                      '两端 agents → Go2 coordinator → 两端任务 bridges。等待各进程正常结束。\n'
                      '保留 Go2 Camera SSH、System、RViz、Sport 和 Ranger 健康底层；本脚本不操作 Ranger。\n'
                      '旧任务组件退出完成后继续；Ranger 随后由操作者在本机检查并重启任务 bridge/agent。')

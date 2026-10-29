@@ -111,7 +111,7 @@ def scan_adapter(e,results=None,error=None):
     a.config=dict(scan_angles=[0.,math.pi/2]);a.motions={};a.plans={};a.motion_fault=False
     a.vision=S(poll=lambda:None,cancel=lambda:None,available=True)
     a.frame=FrameAdapter('fixture','1','lab_ref','',[0,0,0])
-    a.get_health=lambda:S(nav_ready=not a.motion_fault,localization_valid=True,stopped=True,pose=Pose2D())
+    a.get_health=lambda:S(nav_ready=not a.motion_fault,localization_valid=True,stopped=True,motion_terminal=True,pose=Pose2D())
     a.node=S(ground_pixel_with_reason=lambda *args:(None,''),stop_pub=S(publish=lambda m:None),spinner=S())
     pending=Future()
     if error:pending.set_exception(error)
@@ -119,7 +119,7 @@ def scan_adapter(e,results=None,error=None):
     scan=dict(reply=Future(),id='scan',targets={'A':'灭火器'},index=0,phase='INFER',
         angles=list(a.config['scan_angles']),current_view_only=False,
         initial=0.,pending=pending,observations=[],after=0.,deadline=float('inf'),
-        snapshot=S(stamp=S(sec=1,nanosec=0)),evidence=e,
+        snapshot=S(stamp=S(sec=1,nanosec=0),captured_monotonic=1.),evidence=e,
         navigation=('native-nav',dict(task='task',command='command',kind='VIEWPOINT_NAV',target=[1.,2.,0.])))
     a.scan=scan
     return a,scan,events
@@ -171,6 +171,7 @@ def test_frame_worker_records_artifacts_without_blocking_ros_or_using_new_images
     snapshot=S(stamp=S(sec=3,nanosec=123),frame_id='camera',sequence=7,
         rgb=np.full((100,160,3),60,dtype=np.uint8),captured_monotonic=time.monotonic()+1.)
     a.node.latest_snapshot=snapshot;a.node.vlm_input_ready=lambda now:True
+    a.node.ground_pixel_with_reason=lambda *args:((1.,2.,0.),'ok')
     original=client.client.chat.completions.create;thread_names=[]
     def create(**kwargs):
         thread_names.append(threading.current_thread().name)
@@ -262,7 +263,7 @@ def test_timeout_does_not_start_next_spin_until_worker_finishes(tmp_path):
 
 
 @pytest.mark.parametrize('located', [True, False])
-def test_search_detection_returns_immediately_without_another_spin(tmp_path, located):
+def test_search_only_located_detection_returns_immediately_without_another_spin(tmp_path, located):
     client,_,_=client_and_response(visible=True)
     results=client.infer_abc(np.zeros((100,160,3),dtype=np.uint8),{'A':'灭火器'})
     a,scan,events=scan_adapter(evidence(tmp_path),results)
@@ -270,7 +271,11 @@ def test_search_detection_returns_immediately_without_another_spin(tmp_path, loc
     a.node.ground_pixel_with_reason=lambda *args:((1.,2.,0.) if located else None,'ok' if located else 'no depth')
     a._motion=lambda *args:pytest.fail('rotated after detecting the search target')
     a.tick()
-    assert scan['reply'].done() and a.scan is None
+    assert scan['reply'].done()==located
+    assert (a.scan is None)==located
+    if not located:
+        assert scan['phase']=='FRAME' and scan['attempt']==1
+        return
     observation=scan['reply'].result()[0]
     assert observation.status=='DETECTED' and observation.position_valid==located
     a.tick()

@@ -16,6 +16,19 @@ def test_rejects_untrusted_selection(payload):
         parse_selection(json.dumps(payload), ['table_01'])
 
 
+@pytest.mark.parametrize('reason,expected',[
+    ('视野开阔','视野开阔'),
+    ('12345678901234567890','12345678901234567890'),
+    ('123456789012345678901','12345678901234567890'),
+    ('一二三四五六七八九十一二三四五六七八九十尾','一二三四五六七八九十一二三四五六七八九十'),
+    ('  P1视野开阔\n','P1视野开阔'),
+    ('',''),
+])
+def test_furniture_reason_is_limited_without_changing_selection(reason,expected):
+    reply=parse_selection(json.dumps(dict(action='inspect_furniture',furniture_id='table_01',reason=reason)),['table_01'])
+    assert reply==dict(action='inspect_furniture',furniture_id='table_01',reason=expected)
+
+
 def test_selection_state_invalidates_old_or_cancelled_requests():
     state = SelectionState([{'id': 'p1'}, {'id': 'p2'}])
     token = state.snapshot(['p1'])

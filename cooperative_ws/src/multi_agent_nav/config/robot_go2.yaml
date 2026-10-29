@@ -27,12 +27,14 @@ costmap_source_verified: true
 costmap_max_age: 1.0
 costmap_blocked_cost: 253
 stop_margin: 1.0
-stationary_linear_speed: 0.02
-stationary_angular_speed: 0.02
+stationary_linear_speed: 0.03
+stationary_angular_speed: 0.05
 stationary_duration: 0.5
 odom_max_age: 0.5
 odom_topic: /odometry
 cancel_timeout: 5.0
+target_depth_retries: 2
+# 角度幅值；同任务奇数轮顺时针、偶数轮逆时针，初始单帧不计数。
 scan_angles:
 - -0.7853981633974483
 - -1.5707963267948966
@@ -60,6 +62,8 @@ vision_validated: true
 exploration_strategy: fixed_viewpoints
 experiment_records_root: /home/isee-pst/unitree_ros2/VLM_Nav/build/go2-vlm-experiments
 generated_candidates:
+  # Suppress visible nearby viewpoints only after a successful full scan (meters).
+  coverage_range: 2.5
   # Furniture annotations are optional; known free-space candidates work without this file.
   semantic_yaml: /home/isee-pst/unitree_ros2/VLM_Nav/maps/lab_rescan_20261018_155656_0pa6gm/semantic_map.yaml
   # Distance from each furniture edge midpoint to the robot center; not field certified.

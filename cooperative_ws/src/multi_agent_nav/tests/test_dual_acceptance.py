@@ -86,13 +86,13 @@ def test_c_discovered_while_peer_searches_c_never_completes_peer(finder):
     for robot, adapter in mission.adapters.items():
         del adapter.detections['C']
         scan = adapter.start_scan
-        def delayed(descriptions, scan_id, *, stop_on_target=None, current_view_only=False, robot=robot, adapter=adapter, scan=scan):
+        def delayed(descriptions, scan_id, *, stop_on_target=None, current_view_only=False, task_id='', robot=robot, adapter=adapter, scan=scan):
             if stop_on_target == 'C':
                 if robot == peer:
-                    work.append((scan, descriptions, scan_id, stop_on_target))
+                    work.append((scan, descriptions, scan_id, stop_on_target, task_id))
                     return pending
                 adapter.detections['C'] = Pose2D(9, 1)
-            return scan(descriptions, scan_id, stop_on_target=stop_on_target, current_view_only=current_view_only)
+            return scan(descriptions, scan_id, stop_on_target=stop_on_target, current_view_only=current_view_only, task_id=task_id)
         adapter.start_scan = delayed
     assert mission.start().accepted
     mission.run(120)
@@ -101,8 +101,8 @@ def test_c_discovered_while_peer_searches_c_never_completes_peer(finder):
     assert mission.coordinator.phase == 'DEPOSIT'
     assert not any(r == peer and c.kind == 'APPROACH_DEPOSIT' for r, c in mission.executed)
     mission.adapters[peer].detections['C'] = Pose2D(12, 4)
-    scan, descriptions, scan_id, target = work[0]
-    pending.set_result(scan(descriptions, scan_id, stop_on_target=target).result())
+    scan, descriptions, scan_id, target, task_id = work[0]
+    pending.set_result(scan(descriptions, scan_id, stop_on_target=target, task_id=task_id).result())
     mission.run(120)
     assert mission.coordinator.phase == 'DONE', mission.coordinator.reason
     assert all(s.ready and s.deposited and s.stopped for s in mission.coordinator.states.values())

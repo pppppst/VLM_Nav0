@@ -41,7 +41,8 @@ class CoordinatorNode(Node):
 
     def pause(self,request,response):
         for command in self.coordinator.pause('explicit local pause'):self.command_pub.publish(to_ros(command))
-        response.success,response.message=True,'paused; stop confirmation reported by agents'
+        response.success,response.message=True,('task already DONE; stop requested without changing result'
+            if self.coordinator.phase=='DONE' else 'paused; stop confirmation reported by agents')
         return response
 
     def tick(self):

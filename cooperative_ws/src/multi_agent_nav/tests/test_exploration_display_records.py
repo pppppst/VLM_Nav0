@@ -109,19 +109,20 @@ def test_selection_records_exact_request_and_invalid_raw_response(monkeypatch,tm
     sent=[]
     def completion(self,messages,max_tokens,schema=None):
         sent.extend(messages)
-        raw='secret-key invalid JSON' if invalid else '{"candidate_id":"P1","reason":"side"}'
+        raw='secret-key invalid JSON' if invalid else '{"candidate_id":"P1","reason":"12345678901234567890extra"}'
         return S(id='response',choices=[S(finish_reason='stop',message=S(content=raw))])
     monkeypatch.setattr(OpenAICompatibleVLMClient,'_completion',completion)
     snapshot=dict(images=list(map(str,images)),evidence_directory=str(directory),task_id='task',decision_id='decision',
                   main_target='target',candidates=[dict(display_id='P1')],history=[])
     if invalid:
         with pytest.raises(ValueError):client.choose_candidate(snapshot)
-    else:assert client.choose_candidate(snapshot)['candidate_id']=='P1'
+    else:assert client.choose_candidate(snapshot)==dict(candidate_id='P1',reason='12345678901234567890')
     request=json.loads((directory/'request.json').read_text())
     assert request['messages']==sent and len(sent[1]['content'])==3
-    assert (directory/'response.txt').read_text()==('[REDACTED] invalid JSON' if invalid else '{"candidate_id":"P1","reason":"side"}')
+    assert (directory/'response.txt').read_text()==('[REDACTED] invalid JSON' if invalid else '{"candidate_id":"P1","reason":"12345678901234567890extra"}')
     meta=json.loads((directory/'metadata.json').read_text())
     assert meta['api_returned'] and meta['validation_success']==(not invalid) and meta['decision_id']=='decision'
+    if not invalid:assert meta['parsed_selection']['reason']=='12345678901234567890'
 
 
 def test_selection_write_failure_prevents_upload_and_preserves_existing_file(monkeypatch,tmp_path):

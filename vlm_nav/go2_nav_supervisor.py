@@ -74,7 +74,7 @@ class Go2NavSupervisor(Node):
         self.receipts = {}
         self.lifecycle_active = {name: False for name in self.NAV2_NODES}
         self.lifecycle_receipts = {name: 0.0 for name in self.NAV2_NODES}
-        self.pending = {name: False for name in self.NAV2_NODES}
+        self.pending = {name: None for name in self.NAV2_NODES}
         self.lifecycle_requested_at = {name: 0.0 for name in self.NAV2_NODES}
         self.last_ready = None
         self.last_readiness_signature = None
@@ -176,13 +176,16 @@ class Go2NavSupervisor(Node):
             if self.pending[name]:
                 if now - self.lifecycle_requested_at[name] > self.lifecycle_timeout:
                     self.lifecycle_active[name] = False
+                    expired = self.pending[name]
+                    self.pending[name] = None
+                    expired.cancel()
                 continue
             if not client.service_is_ready():
                 self.lifecycle_active[name] = False
                 continue
-            self.pending[name] = True
             self.lifecycle_requested_at[name] = now
             future = client.call_async(GetState.Request())
+            self.pending[name] = future
             future.add_done_callback(
                 lambda completed, node_name=name: self._on_lifecycle_state(
                     node_name, completed
@@ -190,7 +193,9 @@ class Go2NavSupervisor(Node):
             )
 
     def _on_lifecycle_state(self, name, future) -> None:
-        self.pending[name] = False
+        if self.pending[name] is not future:
+            return
+        self.pending[name] = None
         try:
             self.lifecycle_active[name] = (
                 future.result().current_state.id == State.PRIMARY_STATE_ACTIVE

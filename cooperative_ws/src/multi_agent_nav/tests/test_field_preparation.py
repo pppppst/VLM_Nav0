@@ -139,7 +139,7 @@ def test_global_goal_preserves_obstacle_and_unknown_veto(value):
     a=adapter();a.on_costmap(costmap())
     grid=costmap();grid.header.frame_id='map';grid.data[40*80+72]=value
     a.on_costmap(grid,global_goal=True)
-    assert not a.costmap_candidate_free(Pose2D(3.,0.),global_goal=True)
+    assert a.costmap_candidate_free(Pose2D(3.,0.),global_goal=True) == (value==253)
     assert a.costmap_candidate_free(Pose2D())
 
 
@@ -227,6 +227,7 @@ def test_stationary_uses_linear_norm_and_separate_angular_limit():
     a.on_odometry(m)
     assert a.stationary_since is None
     v.linear.x=v.linear.y=0;v.angular.z=.025
+    m.header.stamp=stamp(10.01)
     a.on_odometry(m)
     assert a.stationary_since is not None
 
@@ -432,9 +433,11 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     if action=='inspect':
         assert report['costmap_probe']['footprint_free'] is True
         assert report['health_window']['samples']>10
-        assert report['health_window']['non_motion_inputs_stable']==(change not in ('rgbd_blink','rgbd_late','odom_stale'))
-        if change=='rgbd_blink':assert report['health_window']['post_input_ready_failure_counts']['rgbd_ready']>0
-        if change=='rgbd_late':assert report['health_window']['post_input_ready_observed_s']<2.
+        assert report['health_window']['non_motion_inputs_stable']==(change!='odom_stale')
+        if change=='rgbd_blink':
+            assert report['health_window']['failure_counts']['rgbd_ready']>0
+            assert 'rgbd_ready' not in report['health_window']['post_input_ready_failure_counts']
+        if change=='rgbd_late':assert report['health_window']['post_input_ready_observed_s']>=2.
         if change=='arm_stale':assert report['health_window']['failure_counts']['external_gates_fresh']>0
         if change=='odom_stale':assert report['health_window']['failure_counts']['odom_fresh']>0
     assert report['live_gates']  # Ranger/alignment remain incomplete, even for a local unit goal.

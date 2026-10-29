@@ -148,7 +148,8 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
         health=adapter.get_health()
         if not active or clock()>=deadline:
             raise ExplorationStopped('exploration deadline reached or task ended')
-        if owners() or not health.nav_ready or not health.localization_valid or adapter.costmap_transform() is None:
+        waiting=getattr(adapter,'perception_wait_allowed',lambda _:False)(health)
+        if owners() or (not health.nav_ready and not waiting) or not health.localization_valid or adapter.costmap_transform() is None:
             raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost')
         error=motion_path_error(replace(health,path_valid=True),[health.pose])
         if error:raise ExplorationStopped(error)
@@ -158,10 +159,10 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
         except ExplorationStopped:return False
         scan=getattr(adapter,'scan',None)
         owned=task==task_id or (not task and scan and command==scan['id'])
-        return bool(owned and health.stopped and health.motion_terminal)
+        return bool(owned and health.nav_ready and health.stopped and health.motion_terminal)
     adapter.motion_guard=motion_ready
     def approaching(pose,kind,record):
-        check()
+        while not check().nav_ready:yield
         parameters=load_parameters(config['robot_go2'].get('arrival_config_files'))
         execution=LocalApproachExecution(adapter,pose,task_id,command_id,kind,parameters,record,clock)
         before_motion()
@@ -264,7 +265,7 @@ def run_ros(config,args,events=None):
         # Initial data collection is passive, even for an explicit future motion action.
         until=min(deadline,time.monotonic()+(args.timeout if args.action=='inspect' else 2.))
         began=time.monotonic();next_sample=began;last_checks=None
-        input_checks=('localization_valid','local_costmap','rgbd_ready','depth_units_verified','odom_fresh')
+        input_checks=('localization_valid','local_costmap','depth_units_verified','odom_fresh')
         window=dict(samples=0,first_input_ready_elapsed_s=None,post_input_ready_samples=0,
             post_input_ready_observed_s=0.,minimum_observation_s=2.,
             failure_counts={},post_input_ready_failure_counts={},transitions=[])
@@ -303,7 +304,7 @@ def run_ros(config,args,events=None):
                 and window['post_input_ready_observed_s']>=window['minimum_observation_s']
                 and not window['post_input_ready_failure_counts'])
             report['health_window']=window
-        if motion and not node.vlm_input_ready(time.monotonic()):
+        if motion and args.action!='explore' and not node.vlm_input_ready(time.monotonic()):
             record({'state':'WAITING_INPUTS','reason':'waiting for RGB-D synchronization and image-time TF','motion_sent':False})
             # A new TF buffer may need longer than the initial two-second collection.
             while time.monotonic()<deadline and not node.vlm_input_ready(time.monotonic()):spin()

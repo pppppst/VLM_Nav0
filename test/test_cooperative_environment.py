@@ -19,7 +19,7 @@ def test_go2_environment_selects_single_robot_parity_overlay_and_preserves_overr
     setups = {
         'build/go2-independent-c-20261020/install/local_setup.bash':'old',
         'build/go2-rviz-markers-20261022/install/local_setup.bash':'old-rviz',
-        'build/go2-unified-entry-20261027/overlay/install/local_setup.bash':'single-parity',
+        'build/go2-local-scan-20261029/overlay/install/local_setup.bash':'single-parity',
         'custom/install/local_setup.bash':'override',
     }
     for path, marker in setups.items():
@@ -34,7 +34,7 @@ def test_go2_environment_selects_single_robot_parity_overlay_and_preserves_overr
     lines = result.stdout.splitlines()
     assert lines[0] == ('override' if override else 'single-parity')
     assert lines[1] == str(tmp_path/('custom/install/local_setup.bash' if override else
-        'build/go2-unified-entry-20261027/overlay/install/local_setup.bash'))
+        'build/go2-local-scan-20261029/overlay/install/local_setup.bash'))
 
 
 @pytest.mark.parametrize('override',[False,True])
@@ -51,7 +51,7 @@ def test_standalone_and_child_load_one_pair_without_legacy_overlays(tmp_path,ove
     (tmp_path/'scripts').mkdir()
     (tmp_path/'scripts/go2_network_env.sh').write_text(':\n')
     msg=tmp_path/'messages/install/local_setup.bash';msg.parent.mkdir(parents=True);msg.write_text(':\n')
-    default=tmp_path/'build/go2-unified-entry-20261027/overlay/install/local_setup.bash'
+    default=tmp_path/'build/go2-local-scan-20261029/overlay/install/local_setup.bash'
     custom=tmp_path/'custom/install/local_setup.bash'
     for setup in (default,custom):
         setup.parent.mkdir(parents=True)

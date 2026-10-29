@@ -1,5 +1,6 @@
 """Same safety gates with failure-time evidence; no hardware or API calls."""
 import json
+from concurrent.futures import Future
 import time
 from types import SimpleNamespace as S
 
@@ -11,7 +12,8 @@ def healthy_adapter():
     from test_field_preparation import adapter,costmap,stamp
     a=adapter();del a.get_health
     now=time.monotonic()
-    a.config.update(stationary_duration=.5,pose_max_age=1.)
+    a.config.update(stationary_duration=.5,pose_max_age=1.,camera_calibrated=True)
+    a.node.camera_extrinsic_matrix=np.eye(4)
     a.node.nav_ready=a.node.control_armed=a.node.depth_units_verified=True
     a.node.external_gate_receipts={'nav_ready':now,'control_armed':now}
     a.node.p=S(external_gate_timeout=2.,rgbd_wait_timeout=2.,tf_failure_timeout=3.)
@@ -22,7 +24,7 @@ def healthy_adapter():
     a.node.tf_buffer.lookup_transform=lambda *args:S(header=S(stamp=stamp(10)),transform=S(
         translation=S(x=0.,y=0.),rotation=S(x=0.,y=0.,z=0.,w=1.)))
     for name in ('navigator','path_planner','spinner'):setattr(a.node,name,S(server_is_ready=lambda:True))
-    a.motion_fault=False;a.motions={};a.path=[];a.path_at=0.;a.odom_at=now;a.stationary_since=now-1.
+    a.motion_fault=False;a.motions={};a.path=[];a.path_at=0.;a.odom_at=now;a.odom_stamp=10.;a.stationary_since=now-1.
     a.on_costmap(costmap())
     return a
 
@@ -54,7 +56,8 @@ def test_each_failed_gate_is_identified_without_relaxing_readiness(fault):
     details=a.last_health_details
     assert details['checks'][fault] is False
     assert health.localization_valid if fault!='localization_valid' else not health.localization_valid
-    if fault!='localization_valid':assert not health.nav_ready
+    if fault=='rgbd_ready':assert health.nav_ready
+    elif fault!='localization_valid':assert not health.nav_ready
     if fault=='local_costmap':
         assert details['local_costmap']['reason']=='header_stale'
         assert details['local_costmap']['header_age_s']==2.
@@ -72,7 +75,8 @@ def test_healthy_diagnostics_match_actual_ready_snapshot():
 def test_scan_failure_keeps_trigger_snapshot_after_stop_even_if_health_recovers(fault):
     from test_field_preparation import stamp
     a=healthy_adapter();a.vision=S(poll=lambda:None)
-    a.scan={'id':'scan','phase':'INFER','index':5};events=[]
+    a.scan={'id':'scan','phase':'INFER','index':5,'reply':Future()};events=[]
+    a.stationary_since=None
     if fault=='rgbd_ready':a.node.rgbd_sync_status={'healthy':False,'matched':25,'total':30,'rate':25/30}
     elif fault=='local_costmap':a.costmap.header.stamp=stamp(8.)
     else:

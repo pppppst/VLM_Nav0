@@ -93,3 +93,61 @@ def test_nav_supervisor_does_not_shadow_rclpy_clients_property():
     source = (Path(__file__).resolve().parents[1] / "vlm_nav/go2_nav_supervisor.py").read_text()
     assert "self.lifecycle_clients =" in source
     assert "self.clients =" not in source
+
+
+def lifecycle_fixture(monkeypatch):
+    from concurrent.futures import Future
+    from types import SimpleNamespace as S
+    from vlm_nav.go2_nav_supervisor import Go2NavSupervisor
+    now = [10.]
+    monkeypatch.setattr('vlm_nav.go2_nav_supervisor.time.monotonic', lambda: now[0])
+    requests = []
+    def query(_):
+        future = Future()
+        requests.append(future)
+        return future
+    client = S(service_is_ready=lambda: True, call_async=query)
+    node = S(lifecycle_clients={'nav': client}, pending={'nav': None},
+             lifecycle_requested_at={'nav': 0.}, lifecycle_timeout=2.,
+             lifecycle_active={'nav': False}, lifecycle_receipts={'nav': 0.},
+             get_logger=lambda: S(warning=lambda _: None))
+    node._on_lifecycle_state = lambda name, future: Go2NavSupervisor._on_lifecycle_state(node, name, future)
+    return node, client, requests, now, lambda: Go2NavSupervisor._request_lifecycle_states(node)
+
+
+def test_lifecycle_hung_query_expires_then_new_active_recovers(monkeypatch):
+    from types import SimpleNamespace as S
+    node, client, requests, now, poll = lifecycle_fixture(monkeypatch)
+    poll()
+    now[0] += 2.1
+    poll()
+    assert not node.lifecycle_active['nav']
+    poll()
+    assert len(requests) == 2
+    requests[-1].set_result(S(current_state=S(id=3)))
+    assert node.lifecycle_active['nav']
+
+
+def test_lifecycle_late_and_cancel_callbacks_cannot_replace_current_query(monkeypatch):
+    from types import SimpleNamespace as S
+    node, client, requests, now, poll = lifecycle_fixture(monkeypatch)
+    poll()
+    old = requests[0]
+    # Emulate an already dispatched RPC: local cancellation cannot suppress its reply.
+    old.set_running_or_notify_cancel()
+    now[0] += 2.1
+    poll(); poll()
+    assert len(requests) == 2
+    old.set_result(S(current_state=S(id=3)))
+    assert not node.lifecycle_active['nav']
+    requests[1].set_result(S(current_state=S(id=3)))
+    assert node.lifecycle_active['nav']
+    old = S(result=lambda: S(current_state=S(id=2)))
+    node._on_lifecycle_state('nav', old)
+    assert node.lifecycle_active['nav']
+    client.service_is_ready = lambda: False
+    poll()
+    assert not node.lifecycle_active['nav']
+    now[0] += 5.
+    poll()
+    assert not node.lifecycle_active['nav'] and len(requests) == 2

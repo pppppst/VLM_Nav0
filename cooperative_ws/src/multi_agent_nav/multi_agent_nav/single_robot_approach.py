@@ -18,9 +18,7 @@ FAILED = 'FAILED'
 
 # Frozen merged Go2 values are checked, not silently substituted for configuration.
 BASELINE = dict(target_success_radius=.81, approach_cancel_radius=.89,
-    arrival_retry_limit=1, arrival_linear_speed_tolerance=.03,
-    arrival_angular_speed_tolerance=.05, arrival_stationary_samples=3,
-    arrival_odom_max_age=.5, arrival_cancel_timeout=3., arrival_stop_timeout=5.,
+    arrival_retry_limit=1, arrival_cancel_timeout=3., arrival_stop_timeout=5.,
     arrival_odom_topic='/odometry', max_travel_radius=3., goal_timeout=120.,
     navigation_tick_period=.5, blocked_goal_seconds=15.)
 
@@ -58,7 +56,6 @@ class SingleRobotApproach:
         self.goal_kind = self.goal_pose = self.active_motion_origin = None
         self.blocked_goals = {}
         self.arrival_retry_count = 0
-        self.arrival_last_odom_received = 0.
         self.reset_approach_stop()
         self.path_planner = adapter.node.path_planner
         self.navigator = adapter.node.navigator
@@ -86,13 +83,13 @@ class SingleRobotApproach:
         self.emit('APPROACH_STATE', approach_state=state,
                   distance=self.target_reference_distance(self.robot_pose()),
                   arrival_retry=self.arrival_retry_count,
-                  stationary_samples=self.arrival_stationary_count)
+                  stopped=self.adapter.get_health().stopped)
         self.state = state
 
     def fail_safe(self, reason):
         self.reason = reason
         self.emit('APPROACH_FAILURE_DETAIL', reason=reason, arrival_retry=self.arrival_retry_count,
-                  stationary_samples=self.arrival_stationary_count,
+                  stopped=self.adapter.get_health().stopped,
                   distance=self.target_reference_distance(self.robot_pose()))
         self.close()
         self.set_state(FAILED)
@@ -106,17 +103,27 @@ class SingleRobotApproach:
 
     def tick(self):
         now = self.clock()
+        if getattr(self,'pending_plan_result',None) is not None:
+            # A completed plan waiting for the camera is no longer an active request.
+            self.goal_started += now-self.pending_plan_received_at
+            self.pending_plan_received_at = now
         if now >= self.next_safety:
             self.next_safety = now + .2
             self.safety_tick()
+        if self.state in (SUCCEEDED, FAILED):return
+        if getattr(self.adapter,'perception_wait_allowed',lambda _:False)(self.adapter.get_health()):return
+        pending=getattr(self,'pending_plan_result',None)
+        if pending is not None:
+            self.pending_plan_result=None
+            self.on_plan_result(*pending)
         if now >= self.next_navigation:
             self.next_navigation = now + max(.1, float(self.p.navigation_tick_period))
             self.navigation_tick()
         if self.state == APPROACH_STOPPING:
             self.emit('APPROACH_STOP_STATUS', action_terminal=self.arrival_action_terminal,
                       cancel_acknowledged=self.arrival_cancel_acknowledged,
-                      stationary_samples=self.arrival_stationary_count,
-                      odom_age=self.elapsed_since(self.arrival_last_odom_received, now),
+                      stopped=self.adapter.get_health().stopped,
+                      odom_age=self.elapsed_since(self.adapter.odom_at, now),
                       distance=self.target_reference_distance(self.robot_pose()),
                       arrival_retry=self.arrival_retry_count)
 
@@ -184,7 +191,6 @@ class SingleRobotApproach:
         self.arrival_cancel_acknowledged = False
         self.arrival_action_terminal = False
         self.arrival_action_terminal_at = 0.0
-        self.arrival_stationary_count = 0
         if reset_retry:
             self.arrival_retry_count = 0
 
@@ -224,7 +230,6 @@ class SingleRobotApproach:
         self.arrival_action_terminal_at = (
             self.arrival_stop_started if action_terminal else 0.0
         )
-        self.arrival_stationary_count = 0
         self.publish_stop()
         if self.plan_handle is not None or self.plan_pending:
             self.plan_token += 1
@@ -260,11 +265,7 @@ class SingleRobotApproach:
         stop_elapsed = now - (
             terminal_at if terminal_at > 0.0 else float(self.arrival_stop_started)
         )
-        odom_age = self.elapsed_since(self.arrival_last_odom_received, now)
-        stationary = self.arrival_stationary_count >= int(
-            self.p.arrival_stationary_samples
-        )
-        if stationary and odom_age <= float(self.p.arrival_odom_max_age):
+        if self.adapter.get_health().stopped:
             pose = self.robot_pose() if pose is None else pose
             distance = self.target_reference_distance(pose)
             self.easy_target_distance = distance
@@ -280,6 +281,7 @@ class SingleRobotApproach:
                 self.reset_approach_stop(reset_retry=False)
                 self.set_state(APPROACHING)
                 return
+            self.distance_rejected = math.isfinite(distance)
             self.fail_safe(
                 "Approach stopped outside target distance contract after retry"
             )
@@ -291,8 +293,8 @@ class SingleRobotApproach:
 
     def finish_approach_success(self):
         self.emit('APPROACH_VERIFIED', distance=self.target_reference_distance(self.robot_pose()),
-                  stationary_samples=self.arrival_stationary_count,
-                  odom_age=self.elapsed_since(self.arrival_last_odom_received,self.clock()),
+                  stopped=self.adapter.get_health().stopped,
+                  odom_age=self.elapsed_since(self.adapter.odom_at,self.clock()),
                   arrival_retry=self.arrival_retry_count)
         self.publish_stop()
         self.goal_handle = None
@@ -302,25 +304,6 @@ class SingleRobotApproach:
         self.active_motion_origin = None
         self.reset_approach_stop(reset_retry=False)
         self.set_state(SUCCEEDED)
-
-    def on_arrival_odom(self, message):
-        twist = message.twist.twist
-        self.arrival_last_odom_received = self.clock()
-        self.arrival_linear_speed = math.hypot(
-            float(twist.linear.x), float(twist.linear.y)
-        )
-        self.arrival_angular_speed = abs(float(twist.angular.z))
-        if self.state != APPROACH_STOPPING:
-            return
-        if (
-            self.arrival_linear_speed
-            <= float(self.p.arrival_linear_speed_tolerance)
-            and self.arrival_angular_speed
-            <= float(self.p.arrival_angular_speed_tolerance)
-        ):
-            self.arrival_stationary_count += 1
-        else:
-            self.arrival_stationary_count = 0
 
     @staticmethod
     def goal_key(pose):
@@ -439,6 +422,10 @@ class SingleRobotApproach:
 
     def on_plan_result(self, future, token):
         if token != self.plan_token:
+            return
+        if getattr(self.adapter,'perception_wait_allowed',lambda _:False)(self.adapter.get_health()):
+            self.pending_plan_result=(future,token)
+            self.pending_plan_received_at=self.clock()
             return
         try:
             wrapped = future.result()

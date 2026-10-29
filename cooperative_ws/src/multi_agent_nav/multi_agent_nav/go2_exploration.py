@@ -3,14 +3,21 @@ from dataclasses import asdict, replace
 import math
 import time
 import uuid
+from pathlib import Path
+from .experiment_records import numbered_directory
 from .config import valid_numbers, go2_local_gates
 from .models import Pose2D, motion_path_error
 from vlm_nav.arrival import target_distance, stop_radius, arrival_decision, load_contract
 from .semantic_search import FixedViewpoints, SemanticFurniture, SelectionState, load_catalog
 from .generated_candidates import GeneratedCandidates, GeneratedCandidatesVLM, render_selection
+from .adapters.base import ScanSpinAborted
 
 
 class ExplorationStopped(RuntimeError):
+    pass
+
+
+class NavigationNotReady(ExplorationStopped):
     pass
 
 
@@ -101,7 +108,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
 
     def update(status, **details):
         state.update(current['viewpoint_id'], status, clock(), **details)
-        if generated and status in ('navigation_failed','observation_failed') and 'display_id' in current:
+        if generated and status in ('navigation_failed','observation_failed','scan_blocked') and 'display_id' in current:
             history.append(dict(decision_id=decision_id,candidate_id=current['display_id'],
                 furniture_id=current['furniture_id'],result=status))
         emit('OBSERVATION_RECORD', observation_status=status, records=state.records.copy())
@@ -111,7 +118,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if clock() >= deadline:
             raise ExplorationStopped('exploration deadline reached')
         other=owners();local_costmap_ok=adapter.costmap_transform() is not None
-        if other or not health.nav_ready or not health.localization_valid or not local_costmap_ok:
+        waiting=getattr(adapter,'perception_wait_allowed',lambda _:False)(health)
+        if other or (not health.nav_ready and not waiting) or not health.localization_valid or not local_costmap_ok:
             details=getattr(adapter,'last_health_details',{})
             failed=[key for key,value in details.get('checks',{}).items() if not value]
             for key,ok in (('other_goal_owner',not other),('nav_ready',health.nav_ready),
@@ -119,7 +127,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 if not ok and key not in failed:failed.append(key)
             emit('HEALTH_FAILED',failed_gates=failed,health=asdict(health),health_details=details,
                  costmap_checks=getattr(adapter,'last_costmap_checks',{}),other_goal_owners=other)
-            raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost: '+', '.join(failed))
+            error = NavigationNotReady if not other and health.localization_valid and health.pose.valid else ExplorationStopped
+            raise error('motion owner/localization/Nav2/costmap health lost: '+', '.join(failed))
         if navigating and approaching is not None:
             checked = replace(health, path_valid=True)
             checked_path = [health.pose]
@@ -134,6 +143,13 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         error=motion_path_error(checked,checked_path)
         if error:raise ExplorationStopped(error)
         return health, acquired
+
+    def perception_ready():
+        health,_=health_check()
+        while not health.nav_ready or getattr(adapter,'perception_wait_allowed',lambda _:False)(health):
+            yield
+            health,_=health_check()
+        return health
 
     def stopped():
         if stopping is not None:
@@ -166,7 +182,25 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             raise ExplorationStopped('global goal costmap missing, stale or TF unavailable')
         return free
 
+    def local_scan_space():
+        waiting = False
+        while True:
+            health, _ = health_check()
+            if not health.stopped or not health.motion_terminal:
+                raise ExplorationStopped('local rotation check requires confirmed stop')
+            check = adapter.local_rotation_check(health.pose)
+            if check['status'] in ('free', 'collision'):
+                emit('SCAN_SPACE_BLOCKED' if check['status']=='collision' else 'SCAN_MAP_READY',
+                     actual_stopped_pose=asdict(health.pose), local_check=check, stop_confirmed=True)
+                return check['status']=='free'
+            if not waiting:
+                emit('WAITING_SCAN_MAP', actual_stopped_pose=asdict(health.pose), local_check=check,
+                     stop_confirmed=True)
+                waiting = True
+            yield
+
     def navigate(goal, command_id, kind, target=None, radius=None, path_accept=None):
+        yield from perception_ready()
         if navigation is not None:
             before_motion()
             terminal = yield from navigation(goal, kind, **(dict(path_accept=path_accept) if path_accept else {}))
@@ -421,17 +455,16 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         snapshot = dict(robot_id=robot_id, task_id=state.task_id, decision_id=decision_id, revision=state.revision, main_target=target,
                         search_hint=robot_config.get('search_hint'), candidates=candidates,
                         records={k: dict(v) for k,v in state.records.items()})
-        if getattr(adapter,'selection_evidence_dir',None) is not None:
-            snapshot['evidence_directory']=str(adapter.selection_evidence_dir / decision_id)
         if generated:
             for index,candidate in enumerate(candidates,1):candidate['display_id']=f'P{index}'
-            health, _ = health_check()
-            camera=(adapter.selection_camera_snapshot()
-                    if robot_id=='go2' and hasattr(adapter,'selection_camera_snapshot') else None)
+            health = yield from perception_ready()
             images = yield from prepare_work(lambda:render_selection(geometry,candidates,snapshot['records'],
-                health.pose,adapter.selection_evidence_dir / decision_id,camera_snapshot=camera))
-            snapshot.update(history=history[-12:], images=images)
+                health.pose,adapter.selection_evidence_dir))
+            snapshot.update(history=history[-12:], images=images,evidence_directory=str(Path(images[0]).parent))
         else:
+            if getattr(adapter,'selection_evidence_dir',None) is not None:
+                directory=yield from prepare_work(lambda:numbered_directory(adapter.selection_evidence_dir))
+                snapshot['evidence_directory']=str(directory)
             snapshot.update(targets=config['scene'].get('targets', {}),current_room=catalog['current_room'],
                             furniture=list(catalog['furniture'].values()),image=catalog['image'])
         request_type = 'candidate_selection' if generated else 'furniture_selection'
@@ -492,6 +525,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         finally:
             if not future.done():future.cancel()
         yield from stopped()
+        yield from perception_ready()
         if on_observations is not None:on_observations(scan_results)
         emit('INITIAL_CAMERA_RESULT', observations=[asdict(o) for o in scan_results], stop_confirmed=True)
         observations = [o for o in scan_results if o.target_id == target_id]
@@ -503,18 +537,34 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             emit(outcome)
             if outcome == 'TARGET_FOUND' and robot_config.get('approach_on_detection', False):
                 initial_observation = detections[0]
-            else:return outcome
-        elif (len(scan_results) != len(descriptions)
+            elif outcome == 'TARGET_FOUND':return outcome
+        if not any(o.navigable for o in detections) and (len(scan_results) != len(descriptions)
                 or {(o.target_id,o.view_index) for o in scan_results} != {(t,0) for t in descriptions}
                 or any(o.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in scan_results)):
             raise ExplorationStopped('initial camera scan incomplete or inference failed')
 
-    if initial_observation is None:
-        if generated:
-            geometry = yield from prepare_work(lambda:GeneratedCandidates(config, robot_id))
-        elif semantic:
-            catalog = yield from prepare_work(lambda:load_catalog(config))
-        points = geometry.points if generated else catalog['points'] if semantic else measured_viewpoints(config, robot_id)
+    def approach_or_reject(observation):
+        outcome = yield from approach_target(observation)
+        if robot_id != 'go2' or outcome != 'APPROACH_DISTANCE_FAILED':
+            return outcome
+        yield from stopped()
+        emit('TARGET_REJECTED', target_id=target_id, observation_id=observation.observation_id,
+             reason='stopped outside target distance contract after retry', stop_confirmed=True)
+        if semantic and current.get('viewpoint_id'):
+            update('target_rejected', observation_id=observation.observation_id)
+        if generated and history:
+            history[-1]['result'] = 'TARGET_REJECTED'
+        return None
+
+    if initial_observation is not None:
+        outcome = yield from approach_or_reject(initial_observation)
+        if outcome is not None:return outcome
+        current = {}
+    if generated:
+        geometry = yield from prepare_work(lambda:GeneratedCandidates(config, robot_id))
+    elif semantic:
+        catalog = yield from prepare_work(lambda:load_catalog(config))
+    points = geometry.points if generated else catalog['points'] if semantic else measured_viewpoints(config, robot_id)
     policy = GeneratedCandidatesVLM(adapter.client) if generated else SemanticFurniture(adapter.client) if semantic else FixedViewpoints(points)
     state = SelectionState(points)
     if generated:
@@ -522,9 +572,6 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         if geometry is not None:
             record(dict(state='CANDIDATE_GEOMETRY',task_id=state.task_id,candidates=points,
                 rotation_radius=geometry.radius,semantic_yaml=str(geometry.semantic_path) if geometry.semantic_path else None))
-    if initial_observation is not None:
-        return (yield from approach_target(initial_observation))
-
     while True:
         point = yield from next_point()
         if point is None:
@@ -588,11 +635,16 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             emit('SCAN_SPACE_BLOCKED',actual_stopped_pose=asdict(health.pose),stop_confirmed=True)
             update('observation_failed',reason='actual stopped pose has no full rotation space')
             continue
+        if robot_id=='go2' and not (yield from local_scan_space()):
+            if semantic:update('scan_blocked',reason='local rotation space blocked')
+            continue
+        health, _ = health_check()
         before_motion()
         emit('SCANNING')
+        scan_pose = health.pose
         adapter.scan_viewpoint_id=point['id']
         descriptions = dict(config['scene']['targets'], **{target_id: target}) if generated or navigation is not None or approaching is not None else {target_id: target}
-        future = adapter.start_scan(descriptions, command_id, stop_on_target=target_id)
+        future = adapter.start_scan(descriptions, command_id, stop_on_target=target_id, task_id=task_id)
         while not future.done():
             health_check()
             yield
@@ -605,18 +657,23 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             observations = [o for o in scan_results if o.target_id == target_id]
         except Exception as error:
             yield from stopped()
+            if robot_id=='go2' and isinstance(error,ScanSpinAborted) and not (yield from local_scan_space()):
+                if semantic:update('scan_blocked',reason='spin aborted with confirmed local obstacle')
+                continue
             if semantic:update('observation_failed', reason='scan failed')
             raise ExplorationStopped('scan failed') from error
         yield from stopped()
+        yield from perception_ready()
         detections = [o for o in observations if o.status == 'DETECTED']
         scan_complete = (len(scan_results)==len(descriptions)*len(robot_config['scan_angles'])
                 and {(o.target_id,o.view_index) for o in scan_results} ==
                     {(t,i) for t in descriptions for i in range(len(robot_config['scan_angles']))})
-        incomplete_abc = generated and ((not scan_complete and not detections)
+        located = [o for o in detections if o.navigable]
+        incomplete_abc = generated and ((not scan_complete and not located)
                 or any(o.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in scan_results))
         if incomplete_abc:
             update('observation_failed', reason='incomplete ABC scan or image/API/validation error')
-            if not detections:raise ExplorationStopped('incomplete ABC scan or image/API/validation error')
+            if not located:raise ExplorationStopped('incomplete ABC scan or image/API/validation error')
             # A valid detection survives errors in other views/targets; the point stays unfinished.
             observations=[o for o in observations if o.status=='DETECTED']
         emit('SCAN_RESULT', observations=[asdict(o) for o in scan_results], stop_confirmed=True,
@@ -625,13 +682,19 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if semantic:
                 update('observation_failed', reason='image/API/validation error')
             raise ExplorationStopped('target scan missing or API/validation error')
-        if not detections and not incomplete_abc and {o.view_index for o in observations} != set(range(len(robot_config['scan_angles']))):
+        if not located and not incomplete_abc and {o.view_index for o in observations} != set(range(len(robot_config['scan_angles']))):
             if semantic:
                 update('observation_failed', reason='incomplete scan directions')
                 continue
             raise ExplorationStopped('target scan directions incomplete')
         if semantic and not incomplete_abc and scan_complete:
-            update('observed', results=[asdict(o) for o in (scan_results if generated else observations)])
+            if generated:
+                covered = yield from prepare_work(lambda:geometry.covered_points(scan_pose,robot_config['scan_angles']))
+                for pid in covered:
+                    if pid != point['id'] and state.records[pid]['status'] != 'observed':
+                        state.update(pid,'covered',clock(),covered_by=point['id'],scan_pose=asdict(scan_pose))
+            update('observed', results=[asdict(o) for o in (scan_results if generated else observations)],
+                   scan_pose=asdict(scan_pose))
         if generated:
             history.append(dict(decision_id=decision_id,candidate_id=point['display_id'],
                 furniture_id=point['furniture_id'],observation_complete=scan_complete and not incomplete_abc,result='DETECTED' if detections else
@@ -640,10 +703,12 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             outcome = 'TARGET_FOUND' if any(o.navigable for o in detections) else 'TARGET_DETECTED_UNLOCATED'
             emit(outcome)
             if outcome == 'TARGET_FOUND' and robot_config.get('approach_on_detection', False):
-                return (yield from approach_target(max((o for o in detections if o.navigable), key=lambda o:o.confidence)))
-            return outcome
-        emit('NOT_DETECTED' if all(o.status == 'NOT_DETECTED' for o in observations) else 'UNCERTAIN')
-    if semantic and (any(row['status'] != 'observed' for row in state.records.values()) or generated and not points):
+                outcome = yield from approach_or_reject(max((o for o in detections if o.navigable), key=lambda o:o.confidence))
+                if outcome is not None:return outcome
+                continue
+            if outcome == 'TARGET_FOUND':return outcome
+        else:emit('NOT_DETECTED' if all(o.status == 'NOT_DETECTED' for o in observations) else 'UNCERTAIN')
+    if semantic and (any(row['status'] not in ('observed','covered') for row in state.records.values()) or generated and not points):
         emit('WAITING_VIEWPOINTS', records=state.records, reason='候选暂不可达或观察失败；不代表目标不存在')
         return 'WAITING_VIEWPOINTS'
     emit('EXHAUSTED', reason='当前视角已检查完；目标是否存在未知')
@@ -689,7 +754,7 @@ def generated_exploration_markers(display):
         pid=point['id'];x,y,yaw=point['pose']
         if pid not in selectable:continue
         status=records.get(pid,{}).get('status','unchecked')
-        available=pid in selectable and status not in ('observed','executing')
+        available=pid in selectable and status not in ('observed','covered','executing')
         color=(.15,.55,1.) if available else (.4,.4,.4)
         for offset,kind in enumerate((Marker.SPHERE,Marker.TEXT_VIEW_FACING)):
             marker=Marker();marker.header.frame_id='map';marker.ns='generated_candidates'

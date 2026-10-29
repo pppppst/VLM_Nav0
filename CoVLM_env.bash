@@ -8,7 +8,7 @@ fi
 _covlm_load_environment() {
   export REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   export GO2_COOP_OUTPUT="${GO2_COOP_OUTPUT:-/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-coop}"
-  export COOP_SETUP_FILE="${COOP_SETUP_FILE:-$REPO/build/go2-unified-entry-20261027/overlay/install/local_setup.bash}"
+  export COOP_SETUP_FILE="${COOP_SETUP_FILE:-$REPO/build/go2-local-scan-20261029/overlay/install/local_setup.bash}"
   [[ "$COOP_SETUP_FILE" == /* ]] || { echo 'COOP_SETUP_FILE 必须是绝对路径' >&2; return 1; }
   export GO2_EXPLORE_CONFIG="${GO2_CONFIG:-$REPO/cooperative_ws/src/multi_agent_nav/config}"
   local setup
@@ -32,7 +32,7 @@ _covlm_load_environment() {
     source "$setup" || return 1
   done
   export VLM_NAV_EXTRA_SETUP_FILES="$GO2_COOP_OUTPUT/install/local_setup.bash:$COOP_SETUP_FILE"
-  export ROS_LOG_DIR="$REPO/build/go2-unified-entry-20261027/ros-logs"
+  export ROS_LOG_DIR="$REPO/build/go2-local-scan-20261029/ros-logs"
   mkdir -p "$ROS_LOG_DIR" || return 1
   cd "$REPO" || return 1
 }

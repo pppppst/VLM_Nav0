@@ -11,6 +11,7 @@ import yaml
 from .config import map_file_info, valid_numbers
 from .region_guard import edges, inside, segments_intersect, path_intersects
 from .models import Pose2D
+from .experiment_records import numbered_directory
 
 
 def rotation_radius(footprint, padding=0.):
@@ -42,6 +43,9 @@ class GeneratedCandidates:
         self.robot_id=robot_id
         robot=config[f'robot_{robot_id}'];options=robot['generated_candidates']
         distance=options['observation_distance']
+        self.coverage_range=options.get('coverage_range',0.) if robot_id=='go2' else 0.
+        if not valid_numbers([self.coverage_range],1) or self.coverage_range<0:
+            raise ValueError('finite nonnegative coverage_range required')
         if not valid_numbers([distance],1) or distance<=0:
             raise ValueError('positive finite observation_distance required')
         self.radius=rotation_radius(robot['footprint'],robot.get('footprint_padding',0.))
@@ -143,6 +147,33 @@ class GeneratedCandidates:
         ox,oy,yaw=self.source['origin'];c,s=math.cos(yaw),math.sin(yaw)
         return c*(x-ox)+s*(y-oy),-s*(x-ox)+c*(y-oy)
 
+    def covered_points(self,pose,angles):
+        """Conservative static-map visibility after a successful full sweep."""
+        # shortcut: static visibility and <=45-degree scan gaps approximate coverage; use measured camera/depth coverage if needed.
+        directions=sorted({a%(2*math.pi) for a in angles})
+        if (not self.coverage_range or not directions or
+                max(b-a for a,b in zip(directions,directions[1:]+[directions[0]+2*math.pi]))>math.pi/4+1e-6):
+            return []
+        start=self.map_xy(pose.x,pose.y);res=self.source['resolution']
+        covered=[]
+        for point in self.points:
+            x,y=point['pose'][:2]
+            if math.hypot(x-pose.x,y-pose.y)>self.coverage_range:continue
+            end=self.map_xy(x,y)
+            if any(not (0<=px<self.raw.shape[1]*res and 0<=py<self.raw.shape[0]*res) for px,py in (start,end)):continue
+            if any(path_intersects([pose,Pose2D(x,y)],f['polygon'],0.) for f in self.furniture):continue
+            # Include adjacent cells when the sightline lies exactly on a cell edge.
+            left,bottom=[max(0,math.floor(min(a,b)/res)-1) for a,b in zip(start,end)]
+            right,top=[math.floor(max(a,b)/res) for a,b in zip(start,end)]
+            blocked=False
+            for row,col in np.argwhere(self.raw[bottom:top+1,left:right+1]!=0):
+                gx,gy=(col+left)*res,(row+bottom)*res
+                square=[(gx,gy),(gx+res,gy),(gx+res,gy+res),(gx,gy+res)]
+                if inside(start,square) or inside(end,square) or any(segments_intersect(start,end,a,b) for a,b in edges(square)):
+                    blocked=True;break
+            if not blocked:covered.append(point['id'])
+        return covered
+
     def pixel(self,x,y,scale=3):
         mx,my=self.map_xy(x,y);res=self.source['resolution']
         return (mx/res-.5)*scale,(self.source['height']-.5-my/res)*scale
@@ -201,7 +232,7 @@ def render_candidate_camera(snapshot,candidates,directory):
     return str(path)
 
 
-def render_selection(catalog,candidates,records,robot_pose,directory,*,camera_snapshot=None):
+def render_selection(catalog,candidates,records,robot_pose,root,*,camera_snapshot=None):
     """One overlay is composited onto both maps so every selectable marker matches."""
     scale=3;width,height=catalog.source['width']*scale,catalog.source['height']*scale
     columns=max(1,width//90)
@@ -232,7 +263,7 @@ def render_selection(catalog,candidates,records,robot_pose,directory,*,camera_sn
     marks=[(rx,ry,robot_label,blue)]
     marks.extend((*catalog.pixel(*p['pose'][:2]),p['display_id'],orange) for p in candidates)
     marks.extend((*catalog.pixel(*p['pose'][:2]),'observed',gray) for p in catalog.points
-                 if records.get(p['id'],{}).get('status')=='observed')
+                 if records.get(p['id'],{}).get('status') in ('observed','covered'))
     footer_index=0
     for x,y,label,color in marks:
         reserved.append((x-8,y-8,x+8,y+8))
@@ -278,7 +309,7 @@ def render_selection(catalog,candidates,records,robot_pose,directory,*,camera_sn
     for offset,label,color in ((65,robot_label+': blue circle and heading',blue),(45,'P IDs: orange / selectable',orange),
                                (25,'Gray: observed / cannot select',gray)):
         draw.text((10,height+footer-offset),label,fill=color,font=font)
-    directory=Path(directory);directory.mkdir(parents=True,exist_ok=False)
+    directory=numbered_directory(root)
     paths=[]
     for base,name in zip(bases,('occupancy.png','semantic.png')):
         path=directory/name;Image.alpha_composite(base,overlay).convert('RGB').save(path);paths.append(str(path))
@@ -300,6 +331,7 @@ def parse_candidate_selection(raw,allowed):
             or not isinstance(reply['candidate_id'],str) or reply['candidate_id'] not in allowed
             or not isinstance(reply['reason'],str)):
         raise ValueError('invalid or unavailable candidate ID')
+    reply['reason']=reply['reason'].strip()[:20]
     return reply
 
 

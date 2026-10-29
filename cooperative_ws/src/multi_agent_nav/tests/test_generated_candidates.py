@@ -168,7 +168,7 @@ def test_dual_images_have_identical_marks_and_do_not_write_map(generated_config,
     assert Path(catalog.source['image']).read_bytes()==original
 
 
-def run_generated(config,tmp_path,mode='normal',initial_camera_check=False,camera_snapshot=None):
+def run_generated(config,tmp_path,mode='normal',initial_camera_check=False,camera_snapshot=None,**execution_options):
     from test_go2_exploration import LocalFixture
     from multi_agent_nav.adapters.fake import completed
     from multi_agent_nav.models import Pose2D, Observation, ApproachResult
@@ -191,11 +191,12 @@ def run_generated(config,tmp_path,mode='normal',initial_camera_check=False,camer
     adapter.vision=S(submit=submit)
     def scan(descriptions,scan_id,*,stop_on_target=None,current_view_only=False,task_id=''):
         adapter.scans+=1
-        return completed([Observation(target_id=t,view_index=0,
+        return completed([Observation(target_id=t,view_index=i,
                            status='API_ERROR' if mode=='api' or mode=='partial_detection' and t!='A' else
                                ('DETECTED' if mode in ('found','partial_detection') and t=='A' else 'NOT_DETECTED'),
                            position_valid=mode in ('found','partial_detection') and t=='A',
-                           common_position=Pose2D(5.,2.)) for t in descriptions])
+                           common_position=Pose2D(5.,2.)) for t in descriptions
+                          for i in range(1 if mode in ('found','partial_detection') else len(config['robot_go2']['scan_angles']))])
     adapter.start_scan=scan
     adapter.select_approach=lambda *args,**kwargs:completed(ApproachResult(Pose2D(4.5,2.)))
     def spin():
@@ -208,7 +209,7 @@ def run_generated(config,tmp_path,mode='normal',initial_camera_check=False,camer
     try:
         outcome=explore(adapter,spin,config,FrameAdapter('fixture','1','lab_ref','',[0,0,0]),
                         600.,'target',events.append,lambda:[],stop,lambda:None,clock=lambda:now[0],
-                        initial_camera_check=initial_camera_check)
+                        initial_camera_check=initial_camera_check,**execution_options)
     except Exception:
         if mode in ('invalid','late','cancel'):assert not adapter.calls
         if mode=='api':assert len(adapter.calls)==1 and adapter.scans==1
@@ -223,6 +224,9 @@ def test_fake_select_observe_next_and_current_id_mapping(generated_config,tmp_pa
     assert outcome=='EXHAUSTED' and adapter.scans==len(points) and len(requests)==len(points)
     assert {(c[1].x,c[1].y) for c in adapter.calls}=={tuple(p['pose'][:2]) for p in points}
     assert len({r['decision_id'] for r in requests})==len(points)
+    assert [Path(r['evidence_directory']).name for r in requests]==[f'{i:04d}' for i in range(1,len(requests)+1)]
+    assert all(Path(r['images'][0]).parent==Path(r['evidence_directory']) for r in requests)
+    assert all(r['decision_id']!=Path(r['evidence_directory']).name for r in requests)
     assert requests[0]['task_id']==next(e['task_id'] for e in events if e['state']=='NAVIGATING')
     assert requests[1]['candidates'][0]['display_id']=='P1'
     assert requests[1]['candidates'][0]['id']!=requests[0]['candidates'][0]['id']
@@ -311,6 +315,20 @@ def test_candidate_parser_rejects_extra_fields_duplicate_and_foreign_id(raw):
     with pytest.raises(ValueError):parse_candidate_selection(raw,['P1','P2'])
 
 
+@pytest.mark.parametrize('reason,expected',[
+    ('视野开阔','视野开阔'),
+    ('12345678901234567890','12345678901234567890'),
+    ('123456789012345678901','12345678901234567890'),
+    ('一二三四五六七八九十一二三四五六七八九十尾','一二三四五六七八九十一二三四五六七八九十'),
+    ('  P1视野开阔\n','P1视野开阔'),
+    ('',''),
+])
+def test_candidate_reason_is_limited_without_changing_selected_id(reason,expected):
+    from multi_agent_nav.generated_candidates import parse_candidate_selection
+    reply=parse_candidate_selection(json.dumps(dict(candidate_id='P1',reason=reason)),['P1'])
+    assert reply==dict(candidate_id='P1',reason=expected)
+
+
 @pytest.mark.parametrize('cost',[253,254,255])
 def test_global_rotation_space_rejects_side_obstacle_and_stale_grid(cost):
     from test_field_preparation import adapter,costmap
@@ -321,7 +339,7 @@ def test_global_rotation_space_rejects_side_obstacle_and_stale_grid(cost):
     assert a.observation_candidate_free(Pose2D(3.,0.))  # outside local coverage is irrelevant
     grid.data[43*80+70]=cost  # y=.35, inside scan disk but outside parked body y=.18
     assert a.costmap_candidate_free(Pose2D(3.,0.),global_goal=True)
-    assert not a.observation_candidate_free(Pose2D(3.,0.))
+    assert a.observation_candidate_free(Pose2D(3.,0.)) == (cost==253)
     grid.data[43*80+70]=0
     assert not a.observation_candidate_free(Pose2D(3.8,0.))
     a.node.get_clock=lambda:S(now=lambda:S(nanoseconds=12_000_000_000))
@@ -451,3 +469,101 @@ def test_new_task_yields_until_previous_worker_finishes(generated_config,tmp_pat
             assert not adapter.calls and not events
     finally:
         release.set();steps.close();adapter.vision.close();adapter.vision.executor.shutdown(wait=True)
+
+
+@pytest.mark.parametrize('block', [0, 254, 255, 'furniture'])
+@pytest.mark.parametrize('distance,edge,far', [(2.,-1.,-.99),(2.5,-.5,-.49)])
+def test_coverage_uses_configured_range_and_preserves_occluded_points(generated_config, block, distance, edge, far):
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    from multi_agent_nav.models import Pose2D
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = distance
+    catalog = GeneratedCandidates(generated_config)
+    catalog.raw[:] = 0
+    catalog.furniture = []
+    catalog.points = [dict(id=pid, pose=pose) for pid, pose in (
+        ('near', [-2., -3., 0.]), ('edge', [edge, -3., 0.]),
+        ('far', [far, -3., 0.]), ('behind', [-3., -1.5, 0.]))]
+    if block == 'furniture':
+        catalog.furniture = [dict(polygon=[[-3.2,-2.4],[-2.8,-2.4],[-2.8,-2.2],[-3.2,-2.2]])]
+    else:
+        catalog.raw[27:29, 19:22] = block
+    covered = catalog.covered_points(Pose2D(-3., -3.), [-i*math.pi/4 for i in range(1,9)])
+    assert set(covered) == ({'near', 'edge', 'behind'} if block == 0 else {'near', 'edge'})
+    assert not catalog.covered_points(Pose2D(-3., -3.), [0.])
+
+
+@pytest.mark.parametrize('value', [-1., float('nan'), True])
+def test_coverage_range_requires_finite_nonnegative_distance(generated_config, value):
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = value
+    with pytest.raises(ValueError, match='coverage_range'):
+        GeneratedCandidates(generated_config)
+
+
+def test_complete_scan_excludes_nearby_candidates_from_future_decisions(generated_config, tmp_path):
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = 2.
+    generated_config['robot_go2']['scan_angles'] = [-i*math.pi/4 for i in range(1,9)]
+    adapter, events, requests, outcome = run_generated(generated_config, tmp_path)
+    assert outcome == 'EXHAUSTED'
+    covered = {pid for e in events if e['state'] == 'OBSERVATION_RECORD'
+               for pid, row in e['records'].items() if row['status'] == 'covered'}
+    assert covered
+    for request in requests:
+        assert all(request['records'][p['id']]['status'] != 'covered'
+                   for p in request['candidates'])
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    assert adapter.scans < len(GeneratedCandidates(generated_config).points)
+
+
+@pytest.mark.parametrize('mode', ['found', 'partial_detection'])
+def test_early_detection_does_not_cover_unscanned_nearby_points(generated_config, tmp_path, mode):
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = 2.
+    generated_config['robot_go2']['scan_angles'] = [-i*math.pi/4 for i in range(1,9)]
+    _, events, _, outcome = run_generated(generated_config, tmp_path, mode)
+    assert outcome == 'TARGET_FOUND'
+    assert not any(row['status'] == 'covered' for e in events if e['state'] == 'OBSERVATION_RECORD'
+                   for row in e['records'].values())
+
+
+def test_coverage_is_disabled_without_go2_setting(generated_config):
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    from multi_agent_nav.models import Pose2D
+    angles = [-i*math.pi/4 for i in range(1,9)]
+    assert not GeneratedCandidates(generated_config).covered_points(Pose2D(-3., -3.), angles)
+    robot = generated_config['robot_go2']
+    robot['generated_candidates']['coverage_range'] = 2.
+    generated_config['robot_ranger'] = robot
+    generated_config['alignment']['robots']['ranger'] = generated_config['alignment']['robots']['go2']
+    robot['generated_candidates']['semantic_yaml'] = ''
+    assert not GeneratedCandidates(generated_config, 'ranger').covered_points(Pose2D(-3., -3.), angles)
+
+
+def test_coverage_keeps_point_when_ray_grazes_unknown_cell(generated_config):
+    from multi_agent_nav.generated_candidates import GeneratedCandidates
+    from multi_agent_nav.models import Pose2D
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = 2.
+    catalog = GeneratedCandidates(generated_config)
+    catalog.raw[:] = 0
+    catalog.furniture = []
+    catalog.points = [dict(id='behind', pose=[-3.,-1.5,0.])]
+    catalog.raw[27,19] = 255  # Ray x=-3 lies on this cell's right boundary.
+    assert not catalog.covered_points(Pose2D(-3.,-3.), [-i*math.pi/4 for i in range(1,9)])
+
+
+def test_coverage_records_actual_stop_instead_of_commanded_goal(generated_config, tmp_path, monkeypatch):
+    from dataclasses import replace
+    from multi_agent_nav.models import Pose2D
+    from test_go2_exploration import LocalFixture
+    get_health = LocalFixture.get_health
+    def offset_health(adapter):
+        health = get_health(adapter)
+        if adapter.calls and health.stopped:
+            health = replace(health, pose=Pose2D(health.pose.x+.3,health.pose.y,health.pose.yaw))
+        return health
+    monkeypatch.setattr(LocalFixture, 'get_health', offset_health)
+    generated_config['robot_go2']['generated_candidates']['coverage_range'] = 2.
+    generated_config['robot_go2']['scan_angles'] = [-i*math.pi/4 for i in range(1,9)]
+    adapter, events, _, _ = run_generated(generated_config, tmp_path)
+    observed = next(row for e in events if e['state'] == 'OBSERVATION_RECORD'
+                    for row in e['records'].values() if row['status'] == 'observed')
+    assert observed['scan_pose']['x'] == pytest.approx(adapter.calls[0][1].x+.3)

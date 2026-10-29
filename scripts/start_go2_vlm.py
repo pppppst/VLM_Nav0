@@ -26,7 +26,7 @@ def parse_report(output):
 
 
 def require_inputs(report):
-    failed = [key for key in ('active_map_matches', 'costmap_valid', 'rgbd_ready',
+    failed = [key for key in ('active_map_matches', 'costmap_valid',
                               'depth_units_verified') if report.get(key) is not True]
     failed += [key for key in ('localization_valid', 'stopped')
                if report.get('health', {}).get(key) is not True]
@@ -96,7 +96,7 @@ class Launcher:
         self.config = (Path(os.environ['COOP_CONFIG']) if cooperative_hardware
                        else Path(os.environ.get('GO2_EXPLORE_CONFIG', repo / 'cooperative_ws/src/multi_agent_nav/config')))
         self.setup = Path(os.environ.get('COOP_SETUP_FILE') or repo /
-            'build/go2-unified-entry-20261027/overlay/install/local_setup.bash')
+            'build/go2-local-scan-20261029/overlay/install/local_setup.bash')
         self.prepare_only = prepare_only or cooperative_hardware
         self.target = target
         self.logs = None
@@ -165,22 +165,17 @@ class Launcher:
     def camera(self):
         topics = ['/camera/camera/color/image_raw', '/camera/camera/depth/image_rect_raw']
         counts = [self.publishers(t) for t in topics]
+        if any(n > 1 for n in counts):
+            raise RuntimeError(f'相机发布者异常 {counts}；不叠加驱动，请在原终端排障')
         if counts == [1, 1]:
-            print('复用已有唯一相机发布者；稍后由 inspect 核对真实 RGB-D。', flush=True)
+            print('复用已有唯一相机发布者；相机输入由观察位置停稳等待。', flush=True)
             return
         if counts != [0, 0]:
-            raise RuntimeError(f'相机发布者异常 {counts}；不叠加驱动，请在原终端排障')
+            print(f'相机发布者暂不完整 {counts}；继续准备，在观察位置等待恢复，不叠加驱动。', flush=True)
+            return
         self.confirm('CAMERA', '没有相机发布者。确认旧相机进程/USB已释放，允许 SSH 启动相机。')
         self.window('Camera SSH', ['bash', self.repo / 'scripts/go2_camera_ssh.sh'])
-        deadline = time.monotonic() + 90
-        while time.monotonic() < deadline:
-            counts = [self.publishers(t) for t in topics]
-            if counts == [1, 1]:
-                return
-            if any(n > 1 for n in counts):
-                break
-            time.sleep(1)
-        raise RuntimeError('相机未就绪；检查 Camera SSH 终端，不自动重启')
+        print('已打开 Camera SSH 终端；继续准备，相机未连接时在观察位置停稳等待。', flush=True)
 
     def nodes(self):
         return self.ros('node', 'list', '--no-daemon').stdout.splitlines()

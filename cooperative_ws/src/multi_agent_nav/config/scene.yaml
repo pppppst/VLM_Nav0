@@ -6,7 +6,7 @@ share_c_coordinates: false
 targets:
   A: 灭火器
   B: 灭火器
-  C: 椅子
+  C: 白色的桶
 viewpoints:
   # Old-map poses cannot be reused without measured alignment; collect new poses.
   go2: []

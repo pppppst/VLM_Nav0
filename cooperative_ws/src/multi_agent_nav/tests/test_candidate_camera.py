@@ -1,6 +1,7 @@
 """Candidate RGB projections reuse an existing frame; no ROS graph or model calls."""
 import base64
 import json
+from pathlib import Path
 from types import SimpleNamespace as S
 
 import numpy as np
@@ -76,26 +77,28 @@ def test_adapter_reads_existing_snapshot_without_creating_subscriptions(ready):
         with pytest.raises(RuntimeError,match='camera'):adapter.selection_camera_snapshot()
 
 
-def test_generated_selection_passes_existing_camera_frame_through_map_worker(generated_config,tmp_path):
-    frame=camera_frame()
-    adapter,events,requests,outcome=run_generated(generated_config,tmp_path,camera_snapshot=frame)
+def test_generated_selection_uses_only_maps_without_reading_camera(generated_config,tmp_path,monkeypatch):
+    from test_go2_exploration import LocalFixture
+    def forbidden(self):raise AssertionError('selection must not read the camera')
+    monkeypatch.setattr(LocalFixture,'selection_camera_snapshot',forbidden,raising=False)
+    adapter,events,requests,outcome=run_generated(generated_config,tmp_path)
     assert outcome=='EXHAUSTED' and requests
     for request in requests:
-        assert len(request['images'])==3
-        directory=adapter.selection_evidence_dir/request['decision_id']
-        meta=json.loads((directory/'camera_projection.json').read_text())
-        assert meta['image_sequence']==17
-        assert {p['candidate_id'] for p in meta['projections']}.issubset(
-            {p['display_id'] for p in request['candidates']})
-        assert np.array_equal(np.asarray(Image.open(directory/'camera_rgb.png')),frame.rgb)
+        assert len(request['images'])==2
+        directory=Path(request['evidence_directory'])
+        assert request['images']==[str(directory/name) for name in ('occupancy.png','semantic.png')]
+        for name in ('camera.png','camera_rgb.png','camera_projection.json'):
+            assert not (directory/name).exists()
     assert any(e['state']=='CANDIDATE_SELECTED' for e in events)
 
 
-def test_candidate_request_uploads_marked_rgb_and_keeps_out_of_view_choices(monkeypatch,tmp_path):
+@pytest.mark.parametrize('camera_exists',[True,False])
+def test_candidate_request_uploads_only_maps_even_with_legacy_camera_path(monkeypatch,tmp_path,camera_exists):
     from multi_agent_nav.adapters.go2 import ABCClient
     from vlm_nav.vlm_client import OpenAICompatibleVLMClient
     paths=[tmp_path/name for name in ('occupancy.png','semantic.png','camera.png')]
     for i,path in enumerate(paths):Image.new('RGB',(20,20),(i*30,50,80)).save(path)
+    if not camera_exists:paths[2].unlink()
     calls=[]
     def completion(self,messages,max_tokens):
         calls.append(messages)
@@ -107,8 +110,9 @@ def test_candidate_request_uploads_marked_rgb_and_keeps_out_of_view_choices(monk
         dict(display_id='P2',pose=[-1,2,0])]))
     content=calls[0][1]['content'];context=json.loads(content[0]['text'])
     assert reply['candidate_id']=='P2' and context['allowed_candidate_ids']==['P1','P2']
-    assert len(context['images'])==3 and 'RGB' in context['images'][2]
-    assert len(content)==4
-    assert base64.b64decode(content[3]['image_url']['url'].split(',',1)[1])==paths[2].read_bytes()
-    assert '遮挡' in calls[0][0]['content'] and '视野外' in calls[0][0]['content']
+    assert context['images']==['occupancy map','exploration map with optional furniture annotations']
+    assert len(content)==3
+    for item,path in zip(content[1:],paths[:2]):
+        assert base64.b64decode(item['image_url']['url'].split(',',1)[1])==path.read_bytes()
+    assert 'RGB' not in context['legend'] and 'RGB' not in calls[0][0]['content']
     assert 'pose' not in content[0]['text']

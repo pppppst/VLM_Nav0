@@ -1,6 +1,7 @@
 """Differential approach decisions against actual methods from the frozen Git object.
 
-The cooperative radius watchdog is intentionally removed; other decisions stay aligned.
+The radius watchdog is removed and Go2 stopping now requires 0.5 seconds of fresh
+planar odometry. Planning, cancellation, terminal and distance decisions stay aligned.
 ROS transport is controlled here; no nodes, network, or hardware are started.
 """
 import ast
@@ -9,6 +10,7 @@ import math
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace as S
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -91,7 +93,11 @@ class Harness:
         a.emit = lambda *args, **kwargs: None
         a.path_planner = S(wait_for_server=lambda **kw: True, send_goal_async=self.plan)
         a.navigator = S(wait_for_server=lambda **kw: True, send_goal_async=self.navigate)
-        a.adapter = S(start_approach_navigation=self.adapt_navigation)
+        a.adapter = S(start_approach_navigation=self.adapt_navigation, odom_at=0.,
+            stationary_since=None, odom_stamp=None,
+            config=dict(odom_max_age=.5,stationary_duration=.5),
+            node=S(get_clock=lambda:S(now=lambda:S(nanoseconds=round(self.now*1e9)))))
+        a.adapter.get_health=lambda:S(stopped=self.stopped())
         a.task_id = 'task'; a.command_id = 'command'; a.goal_id = ''; a.goal_kind_wire = 'PICKUP_NAV'
 
     def plan(self, goal):
@@ -122,9 +128,21 @@ class Harness:
         self.goals[-1].set_result(S(accepted=True, get_result_async=lambda:self.terminal,
             cancel_goal_async=lambda:(self.events.append(('cancel',)) or self.cancel)))
 
-    def odom(self, x=0., y=0., z=0., angular_z=0.):
-        self.a.on_arrival_odom(S(twist=S(twist=S(linear=S(x=x,y=y,z=z),
-            angular=S(x=10.,y=10.,z=angular_z)))))
+    def stopped(self):
+        from multi_agent_nav.adapters.go2 import Go2Adapter
+        with patch('multi_agent_nav.adapters.go2.time.monotonic',lambda:self.now):
+            return Go2Adapter.is_stopped(self.a.adapter)
+
+    def odom(self, x=0., y=0., z=0., angular_z=0., dt=.25):
+        from multi_agent_nav.adapters.go2 import Go2Adapter
+        self.now+=dt
+        ns=round(self.now*1e9)
+        message=S(header=S(stamp=S(sec=ns//10**9,nanosec=ns%10**9)),
+            twist=S(twist=S(linear=S(x=x,y=y,z=z),angular=S(x=10.,y=10.,z=angular_z))))
+        if hasattr(self.a,'on_arrival_odom'):self.a.on_arrival_odom(message)
+        else:
+            with patch('multi_agent_nav.adapters.go2.time.monotonic',lambda:self.now):
+                Go2Adapter.on_odometry(self.a.adapter,message)
 
 
 def pair(reference):
@@ -302,7 +320,8 @@ def live_stack(navigation, monkeypatch):
     monkeypatch.setattr(module,'ComputePathToPose',ComputePathToPose)
     plans=[];events=[];zeros=[];warnings=[]
     health=[Health(Pose2D(0.,0.,.7),True,True,True,[],False,[[0.,0.],[1.,0.],[0.,1.]])]
-    def get_health():return replace(health[0],motion_terminal=not a.motions)
+    def get_health():return replace(health[0],stopped=health[0].stopped and a.is_stopped(),motion_terminal=not a.motions)
+    a.odom_at=now[0];a.odom_stamp=now[0];a.stationary_since=now[0]-.5
     a.get_health=get_health
     a.costmap_transform=lambda *args,**kwargs:object()
     a.vision=S(poll=lambda:None,cancel=lambda:None)
@@ -337,13 +356,14 @@ def live_stack(navigation, monkeypatch):
         plans[-1][1].set_result(S(accepted=accepted,get_result_async=lambda:f,cancel_goal_async=lambda:done()))
         f.set_result(S(status=status,result=S(path=S(poses=[pose(0.,0.,0.),pose(1.5,0.,0.)]))))
     def odom(x=0.):
+        now[0]+=.25
         a.on_odometry(S(header=S(stamp=S(sec=int(now[0]),nanosec=int(now[0]%1*1e9))),
             twist=S(twist=S(linear=S(x=x,y=0.,z=0.),angular=S(x=0.,y=0.,z=0.)))))
     return S(a=a,r=r,m=m,now=now,requests=requests,plans=plans,events=events,zeros=zeros,
         health=health,tick=tick,planned=planned,odom=odom,warnings=warnings)
 
 
-def test_real_adapter_runner_distance_cancel_then_outer_wait(live_stack):
+def test_real_adapter_runner_distance_cancel_uses_one_stop_decision(live_stack):
     from dataclasses import replace
     from multi_agent_nav.models import Pose2D
     s=live_stack;s.tick();s.planned()
@@ -360,12 +380,13 @@ def test_real_adapter_runner_distance_cancel_then_outer_wait(live_stack):
     assert not s.m.state().ready
     terminal.set_result(S(status=5))
     s.tick(.21);s.tick()
-    assert s.m.local_approach_succeeded and not s.m.state().ready
-    assert s.r.local_completion is not None
+    assert not s.m.local_approach_succeeded and not s.m.state().ready
+    assert s.r.approach.state=='APPROACH_STOPPING'
     for _ in range(4):s.tick()
     assert len(s.plans)==len(s.requests)==1 and s.m.retry==0
     s.health[0]=replace(s.health[0],stopped=True)
-    s.tick()
+    for _ in range(3):s.odom()
+    s.tick(.21);s.tick()
     assert s.m.state().ready and not s.a.results
 
 
@@ -505,6 +526,7 @@ def test_only_one_original_distance_retry_is_allowed(live_stack):
     s.tick(.21);s.tick(.51)
     assert len(s.plans)==2
     assert s.r.approach.approach_stop_radius()==.81
+    for _ in range(3):s.odom()
     s.planned();terminal=accept(s.requests[1]);terminal.set_result(S(status=4))
     for _ in range(3):s.odom()
     s.tick(.21);s.tick()
@@ -561,10 +583,11 @@ def test_default_watchdog_boundaries_against_frozen_source(reference,kind,value,
 
 
 @pytest.mark.parametrize('linear,angular,count',[(.03,.05,3),(.030001,0.,0),(0.,.050001,0)])
-def test_planar_stop_sample_boundaries_against_frozen_source(reference,linear,angular,count):
+def test_planar_stop_thresholds_agree_after_timed_samples(reference,linear,angular,count):
     def scenario(h):
         h.pose=(1.2,0.,.7);h.a.navigation_tick()
         for _ in range(3):h.odom(x=linear,angular_z=angular)
-        assert h.a.arrival_stationary_count==count
+        if hasattr(h.a,'arrival_stationary_count'):assert h.a.arrival_stationary_count==count
+        else:assert h.a.adapter.get_health().stopped == (count==3)
         h.a.advance_approach_stop()
     compare(reference,scenario)

@@ -119,7 +119,7 @@ def test_old_task_command_goal_or_acceptance_flags_cannot_complete_handshake(upd
 
 @pytest.mark.parametrize('robot', ['go2', 'ranger'])
 @pytest.mark.parametrize('failure', ['peer_unready', 'peer_timeout', 'sync_timeout', 'local_unready'])
-def test_execution_failures_still_stop_and_never_auto_resume(robot, failure):
+def test_transient_execution_failures_stop_then_resume_same_command(robot, failure):
     config, agent, health = activate(robot)
     other = 'ranger' if robot == 'go2' else 'go2'
     now = 4.
@@ -135,8 +135,10 @@ def test_execution_failures_still_stop_and_never_auto_resume(robot, failure):
     assert ('heartbeat' in agent.state().reason) == (failure in ('peer_timeout', 'sync_timeout'))
     agent.accept(sync(robot, phase='SEARCH_AB'), now+.1)
     agent.receive_peer(peer(config, other, task_id='task', run_state='SYNCED', reply='SYNCED'), now+.1)
-    agent.tick(now+.1, health)
-    assert agent.paused and agent.state().run_state == 'PAUSED'
+    command = agent.command
+    effects = agent.tick(now+.1, health)
+    assert not agent.paused and agent.state().run_state == 'PLANNING'
+    assert agent.command is command and any(e.kind == 'LOCAL_EXECUTION' for e in effects)
 
 
 def preparing_coordinator():
@@ -179,7 +181,7 @@ def test_coordinator_rejects_stale_or_partial_handshake(updates):
     assert coordinator.phase == 'SYNCING'
 
 
-def test_coordinator_reports_health_separately_and_preserves_first_fault():
+def test_coordinator_upgrades_transient_health_to_unknown_peer_pause():
     config, coordinator = preparing_coordinator()
     for robot in ('go2', 'ranger'):
         coordinator.ingest_state(peer(config, robot, task_id=coordinator.task_id, run_state='SYNCED', reply='SYNCED'), .1)
@@ -190,9 +192,10 @@ def test_coordinator_reports_health_separately_and_preserves_first_fault():
                                   run_state='PAUSED'), .2)
     coordinator.tick(.2)
     assert coordinator.phase == 'PAUSED'
-    assert coordinator.reason == 'go2: navigation not ready'
+    assert coordinator.reason == 'ranger: agent paused: '
+    assert coordinator.resume_phase is None
     coordinator.pause('secondary cancellation')
-    assert coordinator.reason == 'go2: navigation not ready'
+    assert coordinator.reason == 'ranger: agent paused: '
 
 
 @pytest.mark.parametrize('first_robot', ['go2', 'ranger'])

@@ -32,6 +32,8 @@ class FakeAdapter:
 
     def observation_candidate_free(self,goal):return self.costmap_candidate_free(goal,True)
 
+    def local_rotation_check(self,goal):return dict(status='free',reason='synthetic local rotation space')
+
     def approach_candidate_free(self,goal):return self.costmap_candidate_free(goal,True)
 
     def read_approach_parameters(self):

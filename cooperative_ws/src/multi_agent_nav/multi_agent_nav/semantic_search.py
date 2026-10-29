@@ -105,6 +105,7 @@ def parse_selection(raw, candidates):
             or payload['furniture_id'] not in candidates
             or not isinstance(payload['reason'], str)):
         raise ValueError('invalid furniture selection or unknown furniture ID')
+    payload['reason'] = payload['reason'].strip()[:20]
     return payload
 
 
@@ -117,7 +118,7 @@ class SelectionState:
 
     def eligible(self, now):
         return [pid for pid, row in self.records.items()
-                if row['status'] not in ('observed', 'executing') and row['retry_after'] <= now]
+                if row['status'] not in ('observed', 'covered', 'executing', 'target_rejected', 'scan_blocked') and row['retry_after'] <= now]
 
     def update(self, pid, status, now, **details):
         self.records[pid] = dict(status=status, retry_after=now + 30. if status in

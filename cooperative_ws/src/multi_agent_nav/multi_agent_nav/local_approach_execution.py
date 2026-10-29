@@ -30,7 +30,9 @@ class LocalApproachExecution:
                 on_tick()
                 yield
             check()
-            if approach.state == FAILED:return 'APPROACH_FAILED: ' + approach.reason
+            if approach.state == FAILED:
+                if getattr(approach, 'distance_rejected', False):return 'APPROACH_DISTANCE_FAILED'
+                return 'APPROACH_FAILED: ' + approach.reason
             return 'TARGET_APPROACHED'
         finally:
             if approach.state != SUCCEEDED:approach.close()

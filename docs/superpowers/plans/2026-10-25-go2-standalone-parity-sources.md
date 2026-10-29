@@ -1,5 +1,7 @@
 # Go2 独立入口对齐：来源、实施与验证
 
+> 以下保留10月25日迁移时的历史来源与验证。10月27日已按[五项最小修改](../../multi_agent/go2_runbook.md#2026-10-27-五项最小可靠性修改)有意改变停稳、感知等待和扫描退出语义；不再宣称这三项与冻结旧版完全一致。
+
 本轮规格来自用户附件 `/home/isee-pst/Downloads/2026-10-25-go2-standalone-parity.md`。
 原迁移来源记录见 [单机接近来源表](2026-10-25-go2-single-robot-parity-sources.md)。
 实施目录 `/home/isee-pst/.codex/worktrees/a897/VLM_Nav` 为已有隔离 worktree，detached HEAD；
