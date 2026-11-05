@@ -136,17 +136,20 @@ def require_ros_environment():
         raise ValueError('use the documented Go2-only CycloneDDS XML')
 
 def standalone_explore_steps(adapter, config, frame, deadline, target, record, owners,
-                             stop, before_motion, clock=time.monotonic):
+                             stop, before_motion, clock=time.monotonic, recovery=None):
     from .go2_exploration import explore_steps, ExplorationStopped
     from .local_approach_execution import LocalApproachExecution, local_target_accepted
     from .single_robot_approach import load_parameters
+    from .experiment_recovery import ExperimentRecovery
+    recovery = recovery or ExperimentRecovery(adapter, owners, record, clock)
+    clock = recovery.clock
     task_id='go2_explore/'+uuid.uuid4().hex
     command_id=uuid.uuid4().hex
     active=True
     adapter.single_robot_mode=True
     def check():
         health=adapter.get_health()
-        if not active or clock()>=deadline:
+        if not active or recovery.recovering or recovery.closed or clock()>=deadline:
             raise ExplorationStopped('exploration deadline reached or task ended')
         waiting=getattr(adapter,'perception_wait_allowed',lambda _:False)(health)
         if owners() or (not health.nav_ready and not waiting) or not health.localization_valid or adapter.costmap_transform() is None:
@@ -164,20 +167,44 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
     def approaching(pose,kind,record):
         while not check().nav_ready:yield
         parameters=load_parameters(config['robot_go2'].get('arrival_config_files'))
-        execution=LocalApproachExecution(adapter,pose,task_id,command_id,kind,parameters,record,clock)
+        execution=LocalApproachExecution(adapter,pose,task_id,command_id,kind,parameters,record,recovery.wall_clock)
         before_motion()
         outcome=yield from execution.run(check)
         if outcome=='TARGET_APPROACHED':
             while not local_target_accepted(check(),pose,1.0):yield
             execution.accepted()
         return outcome
+    progress = {}
     try:
-        return (yield from explore_steps(adapter,config,frame,deadline,target,record,owners,
-            stop,before_motion,clock=clock,task_id=task_id,parent_command_id=command_id,
-            initial_camera_check=True,require_navigation_success=True,success_radius=1.0,
-            approaching=approaching))
+        while True:
+            if clock() >= deadline:
+                raise ExplorationStopped('exploration deadline reached')
+            gates = recovery.gates()
+            if gates: yield from recovery.wait(', '.join(gates))
+            try:
+                steps = explore_steps(adapter,config,frame,deadline,target,record,owners,
+                    stop,before_motion,clock=clock,task_id=task_id,parent_command_id=command_id,
+                    initial_camera_check=True,require_navigation_success=True,success_radius=1.0,
+                    approaching=approaching,progress=progress,recovery=recovery)
+                try:
+                    while True:
+                        recovery.observe_camera()
+                        try:next(steps)
+                        except StopIteration as finished:
+                            outcome=finished.value
+                            break
+                        yield
+                finally:steps.close()
+                if outcome != 'WAITING_VIEWPOINTS': return outcome
+                reason = 'waiting for reachable viewpoints'
+            except ExplorationStopped as error:
+                if clock() >= deadline: raise
+                reason = str(error)
+            yield from recovery.wait(reason)
+            command_id = uuid.uuid4().hex
     finally:
         active=False
+        recovery.closed=True
 
 
 def run_ros(config,args,events=None):
@@ -196,8 +223,13 @@ def run_ros(config,args,events=None):
     report['mode']='local_go2_'+args.action
     latest={}; marker_pub=None; run_id=uuid.uuid4().hex; sequence=0
     display=None
+    recovery=status=None
+    phase='PREPARING'
+    next_status=0.
     def write_record(event):
-        nonlocal latest, sequence
+        nonlocal latest, sequence, phase
+        if event.get('state') and event['state'] not in ('WAITING','RUNNING'):
+            phase=event['state']
         if display:display.record(event)
         if events is None:return
         sequence+=1
@@ -230,6 +262,29 @@ def run_ros(config,args,events=None):
         markers=exploration_markers(latest)
         for marker in markers.markers:marker.header.stamp=node.get_clock().now().to_msg()
         marker_pub.publish(markers)
+    def publish_status(final=False):
+        nonlocal next_status
+        if status is None:return
+        now=time.monotonic()
+        if not final and now<next_status:return
+        next_status=now+.5
+        try:
+            health=adapter.get_health()
+            checks=getattr(adapter,'last_health_details',{}).get('checks',{})
+            state='WAITING' if recovery.paused_at is not None else 'RUNNING'
+            if final:
+                state=('STOP_UNCONFIRMED' if started and not report.get('stop_confirmed') else
+                       'CANCELLED' if report.get('result')=='operator interrupt' else
+                       'FINISHED' if report.get('result') in ('TARGET_FOUND','TARGET_APPROACHED','EXHAUSTED') else 'FAILED')
+            status.update(state=state,phase=phase,reason=recovery.reason,
+                **recovery.timing(deadline),
+                health=dict(nav_ready=health.nav_ready,localization_valid=health.localization_valid,
+                    stopped=health.stopped,motion_terminal=health.motion_terminal,
+                    rgbd_ready=checks.get('rgbd_ready'),control_armed=checks.get('control_armed_gate'),
+                    costmap_valid=adapter.costmap_transform() is not None),
+                result=report.get('result'),stop_confirmed=report.get('stop_confirmed'))
+        except Exception:
+            pass  # A diagnostic failure must never prevent stopping or recovery.
     try:
         node=make_observer(config['robot_go2'],read_only=not motion,
             node_name='multi_agent_go2_check_motion' if motion else 'multi_agent_go2_check_readonly')
@@ -257,11 +312,22 @@ def run_ros(config,args,events=None):
             node.create_timer(.5,publish_marker)
         parameters=node.create_client(GetParameters,'/map_server/get_parameters')
         active_map=parameters.call_async(GetParameters.Request(names=['yaml_filename']))
+        map_requested_at=time.monotonic()
         def spin():
             executor.spin_once(timeout_sec=.05)
             if started or args.action=='explore':adapter.tick()
             elif getattr(adapter, 'vision', None) is not None:adapter.vision.poll()
+            if recovery:recovery.observe_camera()
+            publish_status()
         deadline=time.monotonic()+args.timeout
+        if args.action=='explore':
+            from .experiment_recovery import ExperimentRecovery
+            from .experiment_status import ExperimentStatus
+            recovery=ExperimentRecovery(adapter,lambda:other_owners(node),record,clock=time.monotonic)
+            deadline=recovery.clock()+args.timeout
+            status=ExperimentStatus(Path(args.output_dir))
+            publish_status()
+            status.launch()
         # Initial data collection is passive, even for an explicit future motion action.
         until=min(deadline,time.monotonic()+(args.timeout if args.action=='inspect' else 2.))
         began=time.monotonic();next_sample=began;last_checks=None
@@ -308,6 +374,31 @@ def run_ros(config,args,events=None):
             record({'state':'WAITING_INPUTS','reason':'waiting for RGB-D synchronization and image-time TF','motion_sent':False})
             # A new TF buffer may need longer than the initial two-second collection.
             while time.monotonic()<deadline and not node.vlm_input_ready(time.monotonic()):spin()
+        if args.action=='explore':
+            def startup_gates():
+                nonlocal active_map,map_requested_at
+                pending=[]
+                configured=config['robot_go2'].get('map_path')
+                if not active_map.done() or active_map.cancelled() or active_map.exception() is not None:
+                    pending.append('active map_server pending')
+                else:
+                    values=active_map.result().values
+                    actual=values[0].string_value if values else ''
+                    if not actual or not configured or Path(actual).expanduser().resolve()!=Path(configured).expanduser().resolve():
+                        pending.append('active map_server YAML does not match configured map_path')
+                if pending and active_map.done() and time.monotonic()-map_requested_at>=1.:
+                    active_map=parameters.call_async(GetParameters.Request(names=['yaml_filename']))
+                    map_requested_at=time.monotonic()
+                if adapter.costmap_transform(global_goal=True) is None:
+                    pending.append('global goal costmap/TF')
+                return pending
+            pending=recovery.gates()+startup_gates()
+            if pending:
+                started=True
+                waiting=recovery.wait(', '.join(pending),startup_gates)
+                try:
+                    for _ in waiting:spin()
+                finally:waiting.close()
         actual_path=None
         if active_map.done() and active_map.exception() is None:
             values=active_map.result().values
@@ -337,13 +428,12 @@ def run_ros(config,args,events=None):
             report.update(goal_costmap_topic=config['robot_go2'].get('goal_costmap_topic'),
                 goal_costmap_max_age=config['robot_go2'].get('goal_costmap_max_age',1.),
                 goal_costmap_valid=adapter.costmap_transform(global_goal=True) is not None)
-            if not report['goal_costmap_valid']:gates.append('fresh global goal costmap/TF required')
-        if motion and time.monotonic()>=deadline:gates.append('startup input wait timed out')
-        if not map_matches:gates.append('active map_server YAML does not match configured map_path')
-        if not health.localization_valid or not health.stopped or adapter.costmap_transform() is None:
+        if motion and (recovery.clock() if recovery else time.monotonic())>=deadline:gates.append('startup input wait timed out')
+        if args.action!='explore' and not map_matches:gates.append('active map_server YAML does not match configured map_path')
+        if args.action!='explore' and (not health.localization_valid or not health.stopped or adapter.costmap_transform() is None):
             gates.append('fresh localization/stationary/realtime costmap required')
-        if motion and not health.nav_ready:gates.append('existing NAV_READY/CONTROL_ARMED/RGB-D/action gates closed')
-        if motion:
+        if motion and args.action!='explore' and not health.nav_ready:gates.append('existing NAV_READY/CONTROL_ARMED/RGB-D/action gates closed')
+        if motion and args.action!='explore':
             owners=other_owners(node)
             if owners:gates.append('other upper-level goal owner nodes present: '+', '.join(owners))
         if args.action in ('navigate','explore') and not config['robot_go2'].get('path_topic'):
@@ -363,7 +453,7 @@ def run_ros(config,args,events=None):
             started=True  # Initial observation also owns cancellation and final stop confirmation.
             steps=standalone_explore_steps(adapter,config,frame,deadline,args.target,record,
                 lambda:other_owners(node),lambda:stop_owned(adapter,spin,config['robot_go2'].get('cancel_timeout',5.),record),
-                before_motion,clock=time.monotonic)
+                before_motion,clock=time.monotonic,recovery=recovery)
             try:
                 while True:
                     try:next(steps)
@@ -432,6 +522,7 @@ def run_ros(config,args,events=None):
         reason=str(error) if isinstance(error,ExplorationStopped) else type(error).__name__
         report['result']=reason;record({'state':'STOPPING','reason':reason});return 1
     finally:
+        if recovery:recovery.closed=True
         if started and adapter:
             report['last_native_action_uuid']=getattr(adapter,'last_action_uuid','')
             try:report['stop_confirmed']=stop_owned(adapter,spin,config['robot_go2'].get('cancel_timeout',5.),record)
@@ -445,6 +536,9 @@ def run_ros(config,args,events=None):
             report['vlm_evidence_pending']=job is not None and not job.done()
             for handle in adapter.plans.values():
                 if handle:handle.cancel_goal_async()
+        if recovery:
+            report.update(recovery.timing(deadline))
+        publish_status(final=True)
         if events is not None:
             state=latest.get('state','STOPPED')
             if state=='STOPPING' and report.get('stop_confirmed'):state='STOPPED'

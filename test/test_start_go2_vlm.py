@@ -210,7 +210,7 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
     monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
-    prefix=tmp_path/'build/go2-local-scan-20261029/overlay/install'
+    prefix=tmp_path/'build/go2-recoverable-pause-20261029/overlay/install'
     for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
     app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
     monkeypatch.setattr(app,'check_owners',lambda:None)
@@ -276,6 +276,7 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
             output = f'Double value is: {value}'
         elif args[1:3] == ['topic', 'echo']:
             if '/vlm_nav/nav_ready' in args:
+                assert kwargs['timeout'] == 240
                 assert '/twist_to_go2_sport_bridge' in nodes, 'NAV_READY requires Sport through SYSTEM_READY'
                 nav_ready = True
             output = repr(bridge_state) if 'String' in ' '.join(args) else 'data: true'
@@ -306,7 +307,7 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
         assert preflights == []
         assert confirmations == ['READY', 'CURRENT']
     else:
-        assert confirmations == ['CAMERA', 'START', 'READY']
+        assert confirmations == ['READY']
         assert [name for name, args in windows] == ['Camera SSH', 'System', 'RViz', 'Sport']
         system = windows[1][1]
         assert 'start_bridge:=false' in system
@@ -483,5 +484,127 @@ def test_camera_launch_does_not_wait_for_usb_or_input_ready(monkeypatch):
     monkeypatch.setattr(app, 'window', lambda *args: windows.append(args))
     monkeypatch.setattr(launcher.time, 'sleep', lambda _: pytest.fail('camera availability blocks startup'))
     app.camera()
-    assert confirmations==['CAMERA']
+    assert confirmations==[]
     assert windows==[('Camera SSH', ['bash', ROOT/'scripts/go2_camera_ssh.sh'])]
+
+
+def test_agent_opt_in_defaults_off():
+    app=launcher.Launcher(ROOT,False,'灭火器')
+    assert app.agent_framework is False
+
+
+@pytest.mark.parametrize('agent', [False,True])
+def test_both_modes_use_shared_search_argv(monkeypatch,tmp_path,agent):
+    app=launcher.Launcher(ROOT,False,' 中文 "目标"; $(echo nope) ',agent_framework=agent)
+    app.logs=tmp_path
+    for key in ['DASHSCOPE_API_KEY','DASHSCOPE_BASE_URL','DASHSCOPE_MODEL']:monkeypatch.setenv(key,'offline')
+    for name in ['confirm','check_owners','inspect']:monkeypatch.setattr(app,name,lambda *a:None)
+    states=iter(['DISARMED','ARMED','DISARMED']);monkeypatch.setattr(app,'state',lambda:next(states))
+    services=[];monkeypatch.setattr(app,'service',services.append)
+    original=app.check
+    monkeypatch.setattr(app,'check',lambda *a:original(*a)+['--shared-test-marker'])
+    report=dict(result='TARGET_APPROACHED',stop_confirmed=True,evidence_write_failed=False,vlm_evidence_pending=False)
+    captured=[]
+    if agent:
+        monkeypatch.setattr(app,'agent_preflight',lambda:None)
+        def run(argv):
+            captured.append(argv)
+            return dict(state='SUCCEEDED',active_process=False,exit_code=0,original_report=report,framework_error=None)
+        monkeypatch.setattr(app,'agent_search',run)
+        monkeypatch.setattr(app,'agent_host_result',lambda result:None)
+    else:
+        class Process:
+            stdout=io.StringIO(json.dumps(report));returncode=0
+            def wait(self):return 0
+        def spawn(argv,**kw):captured.append(argv);return Process()
+        monkeypatch.setattr(launcher.subprocess,'Popen',spawn)
+    app.explore()
+    argv=captured[0]
+    assert argv[-1]=='--shared-test-marker'
+    assert argv[argv.index('--target')+1]==app.target
+    assert argv[argv.index('--timeout')+1]=='300'
+    assert services==['arm','disarm']
+
+
+def test_agent_preflight_failure_precedes_arm(monkeypatch,tmp_path):
+    app=launcher.Launcher(ROOT,False,'目标',agent_framework=True);app.logs=tmp_path
+    for key in ['DASHSCOPE_API_KEY','DASHSCOPE_BASE_URL','DASHSCOPE_MODEL']:monkeypatch.setenv(key,'offline')
+    monkeypatch.setattr(app,'agent_preflight',lambda:(_ for _ in ()).throw(RuntimeError('version mismatch')))
+    monkeypatch.setattr(app,'confirm',lambda *a:pytest.fail('no ARM confirmation'))
+    with pytest.raises(RuntimeError,match='version mismatch'):app.explore()
+
+
+@pytest.mark.parametrize('state,active,stop,services',[
+    ('STOP_UNCONFIRMED',True,True,['arm']),('STOP_UNCONFIRMED',False,True,['arm']),
+    ('FAILED',False,True,['arm','disarm']),('CANCELED',False,True,['arm','disarm']),
+])
+def test_agent_stop_unknown_never_disarms(monkeypatch,tmp_path,state,active,stop,services):
+    app=launcher.Launcher(ROOT,False,'目标',agent_framework=True);app.logs=tmp_path
+    for key in ['DASHSCOPE_API_KEY','DASHSCOPE_BASE_URL','DASHSCOPE_MODEL']:monkeypatch.setenv(key,'offline')
+    for name in ['confirm','check_owners','inspect','agent_preflight']:monkeypatch.setattr(app,name,lambda *a:None)
+    states=iter(['DISARMED','ARMED','DISARMED']);monkeypatch.setattr(app,'state',lambda:next(states))
+    actual=[];monkeypatch.setattr(app,'service',actual.append)
+    report=dict(result='TARGET_APPROACHED',stop_confirmed=stop,evidence_write_failed=False,vlm_evidence_pending=False)
+    monkeypatch.setattr(app,'agent_search',lambda argv:dict(state=state,active_process=active,original_report=report,exit_code=0))
+    monkeypatch.setattr(app,'agent_host_result',lambda result:None)
+    with pytest.raises(RuntimeError):app.explore()
+    assert actual==services
+
+
+@pytest.mark.parametrize('cause',[KeyboardInterrupt,subprocess.TimeoutExpired])
+def test_agent_host_cancels_manager_without_kill_escalation(monkeypatch,tmp_path,cause):
+    app=launcher.Launcher(ROOT,False,'目标',agent_framework=True)
+    app.agent_directory=tmp_path
+    result=dict(session_id=tmp_path.name,task_id=tmp_path.name+'/find-target',target=app.target,
+                state='CANCELED',active_process=False,framework_error=None)
+    calls=[]
+    class Process:
+        returncode=1
+        def communicate(self,**kwargs):
+            calls.append(kwargs)
+            if len(calls)==1:
+                if cause is KeyboardInterrupt:raise KeyboardInterrupt
+                raise subprocess.TimeoutExpired('adapter',1270)
+            (tmp_path/'agent-result.json').write_text(json.dumps(result))
+        def poll(self):return None
+        def send_signal(self,sig):assert sig==signal.SIGINT
+        def kill(self):pytest.fail('no force kill')
+        def terminate(self):pytest.fail('no SIGTERM')
+    captured=[]
+    def spawn(argv,**kwargs):captured.append((argv,kwargs));return Process()
+    monkeypatch.setattr(launcher.subprocess,'Popen',spawn)
+    monkeypatch.setenv('PYTHONPATH','/original/ros')
+    monkeypatch.setenv('DASHSCOPE_API_KEY','secret-in-pipe-only')
+    actual=app.agent_search(['ros2','--target',app.target])
+    assert actual['state']=='CANCELED'
+    assert calls[1]['timeout']==65
+    payload=json.loads(calls[0]['input'])
+    assert payload['ros_env']['PYTHONPATH']=='/original/ros'
+    assert 'PYTHONPATH' not in captured[0][1]['env']
+    assert captured[0][0][1]=='-I'
+    assert all('secret-in-pipe-only' not in p.read_text() for p in tmp_path.iterdir())
+
+
+def test_new_shell_delegates_to_original_entry(tmp_path):
+    scripts=tmp_path/'scripts';scripts.mkdir()
+    (scripts/'start_go2_agent_task.sh').write_text((ROOT/'scripts/start_go2_agent_task.sh').read_text())
+    legacy=scripts/'start_go2_vlm.sh'
+    legacy.write_text('#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n')
+    legacy.chmod(0o755)
+    target=' 中文 "目标"; $(false) '
+    result=subprocess.run(['bash',str(scripts/'start_go2_agent_task.sh'),'--target',target],capture_output=True,text=True,check=True)
+    assert json.loads(result.stdout)==['--agent-framework','--target',target]
+
+
+def test_agent_prepare_only_does_not_import_or_check_framework(monkeypatch,tmp_path):
+    import builtins
+    monkeypatch.setenv('REPO',str(ROOT));monkeypatch.setenv('DISPLAY',':test')
+    monkeypatch.setattr(sys,'argv',['start_go2_vlm.py','--agent-framework','--prepare-only'])
+    monkeypatch.setattr(sys,'stdin',SimpleNamespace(isatty=lambda:True))
+    monkeypatch.setattr(launcher.shutil,'which',lambda name:'/usr/bin/gnome-terminal')
+    monkeypatch.setattr(launcher,'open',lambda *a,**k:builtins.open(tmp_path/'start.lock','a'),raising=False)
+    monkeypatch.setattr(launcher.tempfile,'mkdtemp',lambda **k:str(tmp_path))
+    monkeypatch.setattr(launcher.Launcher,'start',lambda app:None)
+    monkeypatch.setattr(launcher.Launcher,'agent_preflight',lambda app:pytest.fail('framework preflight'))
+    monkeypatch.setattr(launcher.Launcher,'explore',lambda app:pytest.fail('search'))
+    assert launcher.main()==0

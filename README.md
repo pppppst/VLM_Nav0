@@ -146,7 +146,7 @@ Domain 31 仅用于隔离 mock/回放，不接现场 bridge。
 不要最后 source 旧 overlay 覆盖当前包。
 
 截至本次整理，`Cooperative_env.bash` 和 `CoVLM_env.bash` 默认选择
-`build/go2-local-scan-20261029/overlay/install/local_setup.bash`；显式 `COOP_SETUP_FILE`
+`build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash`；显式 `COOP_SETUP_FILE`
 优先，`COOP_CONFIG` / `GO2_CONFIG` 指向本次配置。这是本机已有安装位置，不是新克隆仓库
 自带产物。换电脑须按 runbook 构建并配置本机路径；已运行进程不会随源码或环境更新。
 

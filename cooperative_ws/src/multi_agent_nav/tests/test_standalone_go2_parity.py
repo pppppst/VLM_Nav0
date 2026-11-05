@@ -71,6 +71,14 @@ def test_both_wrappers_use_frozen_requests_and_outcomes(local_stack, scenario):
             terminal=accept(s.requests[0])
             s.health[0]=replace(s.health[0],pose=Pose2D(1.18 if scenario=='overshoot' else 1.2,0.))
             terminal.set_result(S(status=6 if scenario=='aborted' else 4))
+    if s.mode=='standalone' and scenario in ('empty','plan_failed','aborted'):
+        for _ in range(3):s.odom()
+        s.tick(.21)
+        assert s.outcome is None and any(e.get('state')=='WAITING' for e in s.events)
+        assert len(s.requests)==(1 if scenario=='aborted' else 0)
+        s.steps.close()
+        assert s.a.approach is None
+        return
     for _ in range(3):s.odom()
     s.tick(.21);s.tick()
     if scenario=='overshoot':
@@ -146,9 +154,9 @@ def test_standalone_initial_observation_keeps_cooperative_branches(status,locate
     a.client=object()
     def scan(descriptions,scan_id,**kwargs):
         scans.append(kwargs.get('current_view_only',False))
-        if status=='exception':
+        if status=='exception' and len(scans)==1:
             f=Future();f.set_exception(RuntimeError('inference failed'));return f
-        if status=='missing':return completed([])
+        if status=='missing' and len(scans)==1:return completed([])
         return completed([Observation(target_id=t,view_index=0,status=status if t=='A' and len(scans)==1 else 'NOT_DETECTED',
             position_valid=located) for t in descriptions])
     a.start_scan=scan
@@ -163,10 +171,12 @@ def test_standalone_initial_observation_keeps_cooperative_branches(status,locate
             now[0]+=.05;a.advance(now[0])
         pytest.fail('standalone stalled')
     if expected is None:
-        with pytest.raises(ExplorationStopped):run()
+        assert run()=='EXHAUSTED'
+        assert any(e.get('state')=='WAITING' for e in events)
+        assert scans[:2]==[True,True]
     else:assert run()==expected
     assert scans[0]
-    assert bool(a.calls)==(status in ('NOT_DETECTED','UNCERTAIN','DETECTED'))
+    assert a.calls
     assert all(c[0]=='VIEWPOINT_NAV' for c in a.calls)
 
 
@@ -197,6 +207,9 @@ def test_local_decision_traces_match_between_wrappers(monkeypatch,scenario):
         traces.append(dict(events=events,plans=[(g.goal.pose.position.x,g.goal.pose.position.y,
             g.goal.pose.orientation.z,g.use_start) for g,_ in s.plans],
             stops=len(s.zeros),requests=len(s.requests),success=success(s)))
+    if scenario in ('empty','plan_failed','aborted'):
+        # Single-robot recovery sends an additional stop; the first attempt is unchanged.
+        for trace in traces:trace.pop('stops')
     assert traces[0]==traces[1]
 
 
@@ -305,3 +318,29 @@ def test_completed_plan_can_wait_for_camera_beyond_action_timeout(live_stack,mod
     waiting[0]=False
     s.tick(.21)
     assert len(s.requests)==1 and len(s.plans)==1
+
+
+def test_long_health_pause_reobserves_target_and_fences_late_old_plan(live_stack):
+    s=configure_stack(live_stack,'standalone')
+    s.tick()
+    old_plan=s.plans[0][1]
+    original_health=s.health[0]
+    s.health[0]=replace(original_health,nav_ready=False)
+    s.tick()
+    assert s.a.approach is None and not s.requests
+    for _ in range(3):s.tick(20.)
+    assert len(s.plans)==1 and not s.requests
+    cancelled=[]
+    old_plan.set_result(S(accepted=True,cancel_goal_async=lambda:cancelled.append(True)))
+    assert cancelled and not s.requests
+    s.health[0]=original_health
+    for _ in range(3):s.odom()
+    s.tick()
+    assert len(s.scans)==2 and len(s.plans)==2
+    assert s.scans[0]['task_id']==s.scans[1]['task_id']
+    s.planned();terminal=accept(s.requests[0])
+    s.health[0]=replace(original_health,pose=Pose2D(1.2,0.))
+    terminal.set_result(S(status=4))
+    for _ in range(3):s.odom()
+    s.tick(.21);s.tick()
+    assert success(s) and len(s.requests)==1

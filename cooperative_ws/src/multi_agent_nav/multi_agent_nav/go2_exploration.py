@@ -86,7 +86,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                   target_id='A', success_radius=None, require_navigation_success=False,
                   navigation=None, stopping=None, on_observations=None,
                   initial_observation=None, task_id=None, parent_command_id=None,
-                  initial_camera_check=False, approaching=None):
+                  initial_camera_check=False, approaching=None, progress=None, recovery=None):
     robot_config = config[f'robot_{robot_id}']
     direct_target = robot_id == 'go2' and require_navigation_success
     task_id = task_id or robot_id + '_explore/' + uuid.uuid4().hex
@@ -97,7 +97,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
     geometry = catalog = policy = state = None
     points = []
     selection_epoch = None
-    history = []
+    history = [] if progress is None else progress.setdefault('history', [])
     decision_id = None
 
     def catalog_unchanged():
@@ -161,9 +161,14 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             raise ExplorationStopped('stop prerequisites changed')
 
     def prepare_work(function):
+        waiting=False
         while not getattr(adapter.vision, 'available', True):
+            if recovery and not waiting:
+                recovery.pause('vision_worker')
+                waiting=True
             health_check()
             yield
+        if waiting:recovery.resume()
         future = adapter.vision.submit(function)
         try:
             while not future.done():
@@ -190,10 +195,12 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 raise ExplorationStopped('local rotation check requires confirmed stop')
             check = adapter.local_rotation_check(health.pose)
             if check['status'] in ('free', 'collision'):
+                if recovery:recovery.resume()
                 emit('SCAN_SPACE_BLOCKED' if check['status']=='collision' else 'SCAN_MAP_READY',
                      actual_stopped_pose=asdict(health.pose), local_check=check, stop_confirmed=True)
                 return check['status']=='free'
             if not waiting:
+                if recovery:recovery.pause('local rotation costmap / TF')
                 emit('WAITING_SCAN_MAP', actual_stopped_pose=asdict(health.pose), local_check=check,
                      stop_confirmed=True)
                 waiting = True
@@ -469,9 +476,11 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                             furniture=list(catalog['furniture'].values()),image=catalog['image'])
         request_type = 'candidate_selection' if generated else 'furniture_selection'
         record(dict(state='CANDIDATE_REQUEST' if generated else 'FURNITURE_REQUEST', request_type=request_type, **snapshot))
-        future = adapter.vision.submit(lambda: policy.next_viewpoint(snapshot))
+        future = None
+        requesting = True
         expires = min(deadline, clock() + robot_config.get('api_timeout', 20.))
         try:
+            future = adapter.vision.submit(lambda: policy.next_viewpoint(snapshot))
             while not future.done():
                 health_check()
                 if clock() >= expires:
@@ -480,20 +489,28 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if clock() >= expires:
                 raise ExplorationStopped('late furniture selection discarded')
             point = future.result()
+            requesting = False
             unchanged = yield from prepare_work(catalog_unchanged)
             health, _ = health_check()
             if (epoch != getattr(adapter, 'selection_epoch', 0) or
                     not state.accepts(token, point['id'], clock()) or
                     not health.stopped or not health.motion_terminal or not unchanged):
                 raise ExplorationStopped('stale furniture selection discarded')
-        except BaseException:
-            future.cancel()
+        except BaseException as error:
+            if future is not None:future.cancel()
             state.cancel()
             if getattr(adapter.client,'selection_evidence_write_failed',False):
                 adapter.evidence_write_failed=True
                 adapter.motion_fault=True
             record(dict(state='CANDIDATE_SELECTION_FAILED' if generated else 'FURNITURE_SELECTION_FAILED', request_type=request_type,
                         task_id=state.task_id, decision_id=decision_id, motion_sent=False))
+            # AsyncVision removes provider details, which may contain credentials.
+            retryable={'vision request/validation failed','vision busy'}
+            if (recovery is not None and requesting and not getattr(adapter.client,'selection_evidence_write_failed',False)
+                    and (isinstance(error,(TimeoutError,ConnectionError,ValueError))
+                         or isinstance(error,RuntimeError) and str(error) in retryable)):
+                raise ExplorationStopped('candidate selection unavailable: '+
+                    (str(error) if isinstance(error,RuntimeError) else type(error).__name__)) from error
             raise
         record(dict(state='CANDIDATE_SELECTED' if generated else 'FURNITURE_SELECTED', request_type=request_type,
                     furniture_id=point['furniture_id'], viewpoint_id=point['id'],
@@ -501,7 +518,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                     reason=point['selection_reason'], task_id=state.task_id))
         return point
 
-    if initial_camera_check and initial_observation is None:
+    if initial_camera_check and initial_observation is None and not (progress or {}).get('initial_complete'):
         health, _ = health_check()
         if not health.stopped or not health.motion_terminal:
             raise ExplorationStopped('initial camera check requires confirmed stop')
@@ -531,6 +548,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         observations = [o for o in scan_results if o.target_id == target_id]
         if len(observations) != 1 or observations[0].view_index != 0:
             raise ExplorationStopped('initial camera target result missing or invalid')
+        if progress is not None and all(o.status in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in scan_results):
+            progress['initial_complete'] = True
         detections = [o for o in observations if o.status == 'DETECTED']
         if detections:
             outcome = 'TARGET_FOUND' if detections[0].navigable else 'TARGET_DETECTED_UNLOCATED'
@@ -544,7 +563,15 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             raise ExplorationStopped('initial camera scan incomplete or inference failed')
 
     def approach_or_reject(observation):
+        if progress is not None:
+            progress['initial_complete'] = False
+            progress['pending_point'] = current.get('viewpoint_id')
         outcome = yield from approach_target(observation)
+        if progress is not None and isinstance(outcome,str) and outcome.startswith('APPROACH_FAILED'):
+            raise ExplorationStopped(outcome)
+        if progress is not None:
+            progress['initial_complete'] = True
+            progress.pop('pending_point', None)
         if robot_id != 'go2' or outcome != 'APPROACH_DISTANCE_FAILED':
             return outcome
         yield from stopped()
@@ -567,6 +594,15 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
     points = geometry.points if generated else catalog['points'] if semantic else measured_viewpoints(config, robot_id)
     policy = GeneratedCandidatesVLM(adapter.client) if generated else SemanticFurniture(adapter.client) if semantic else FixedViewpoints(points)
     state = SelectionState(points)
+    if progress is not None:
+        for pid, row in progress.get('records', {}).items():
+            if (pid in state.records and pid != progress.get('pending_point')
+                    and row['status'] in ('observed', 'covered', 'target_rejected')):
+                state.records[pid] = row
+        progress['records'] = state.records
+        if not semantic:
+            policy = FixedViewpoints([p for p in points if p['id'] not in progress.get('completed', set())
+                                     or p['id'] == progress.get('pending_point')])
     if generated:
         state.task_id = task_id
         if geometry is not None:
@@ -678,6 +714,9 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             observations=[o for o in observations if o.status=='DETECTED']
         emit('SCAN_RESULT', observations=[asdict(o) for o in scan_results], stop_confirmed=True,
              scan_complete=scan_complete)
+        if (progress is not None and scan_complete and not incomplete_abc
+                and all(o.status in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in scan_results)):
+            progress.setdefault('completed', set()).add(point['id'])
         if not observations or any(o.status not in ('DETECTED','NOT_DETECTED','UNCERTAIN') for o in observations):
             if semantic:
                 update('observation_failed', reason='image/API/validation error')

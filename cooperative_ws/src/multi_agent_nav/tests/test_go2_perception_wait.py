@@ -85,7 +85,10 @@ def test_standalone_initial_scan_wait_resumes_only_while_task_valid(waiting_scan
     next(steps);a.tick()
     pending=a.scan['reply']
     assert not stops and not a.motions
-    if interrupt=='deadline':now[0]=11.
+    if interrupt=='deadline':
+        now[0]=11.
+        a.odom_at=now[0]
+        a.node.external_gate_receipts=dict.fromkeys(a.node.external_gate_receipts,now[0])
     elif interrupt=='owner':owners.append('other')
     elif interrupt=='localization':a.node.tf_buffer.lookup_transform=lambda *args:(_ for _ in ()).throw(RuntimeError('no tf'))
     elif interrupt=='armed':a.node.control_armed=False
@@ -98,7 +101,14 @@ def test_standalone_initial_scan_wait_resumes_only_while_task_valid(waiting_scan
         assert result.value.value=='TARGET_FOUND'
         return
     if interrupt!='cancel':
-        with pytest.raises(ExplorationStopped):next(steps)
+        next(steps)
+        assert not a.motions
+        if interrupt=='deadline':
+            assert not pending.done(), 'camera pause must freeze the experiment run budget'
+        else:
+            assert any(e.get('state')=='WAITING' for e in events)
+            assert pending.cancelled()
+        steps.close()
     assert pending.cancelled() and not a.motions
 
 

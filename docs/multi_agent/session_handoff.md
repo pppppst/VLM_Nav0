@@ -4207,3 +4207,95 @@ Go2保存ranger-implementation.json及原文，从diff提取12项RECOVERABLE_PAU
 仅构建与安装验证，没有修改CoVLM_env/Cooperative_env/start_go2_vlm默认值；默认仍go2-local-scan-20261029。
 正式文档新增overlay状态和runbook构建命令已更新，文档同步进新安装share/docs。
 没有重启/切换运行中的进程、启动ROS现场节点、真实VLM、ARM/start或真机运动；新旧双端混用不等于恢复通过，现场验收待后续。
+
+### 2026-10-29 默认入口overlay选择修复
+
+当前分支go2-cooperative-task-layer，HEAD已由用户提交至bce9de1ee4e9d2dd3c4ac6288703335767bb9ae9（10.29），开始时工作树干净。
+用户报安装与源码不一致，实际复现scripts/cooperative.sh go2 preflight默认调用报相同stdin第23行错误，退出1；显式指定新recoverable-pause安装退出0，55模块一致，确认构建本身完好。
+已将CoVLM_env.bash、Cooperative_env.bash、start_go2_vlm.py默认值和README/正式文档命令切为build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash。
+Go2日志目录同步go2-recoverable-pause-20261029/ros-logs。显式COOP_SETUP_FILE仍优先；旧终端须用runbook所列export覆盖旧值。
+更新两个入口测试的期望安装：先3失败/46通过，改默认后49通过。默认预检退出0、installed全部匹配/live_gates=[]/motion_sent=false；默认source后从/tmp校验55模块路径及源码一致通过。
+Bash语法、正式文档23块脚本与文件链接、git diff --check通过；同步安装share的启动脚本及文档。
+无需重新构建Python/C++运行包，没有重启进程、ROS现场节点、ARM/start或运动。原731安装回归历史保留，本轮仅验证入口范围。
+证据build/go2-recoverable-pause-20261029/entry-fix/包括before、旧默认失败、新显式成功、默认修复后成功、red/green及安装检查。
+
+### 2026-10-29 NAV_READY启动等待调整
+
+用户要求将120秒改为240秒。已修改start_go2_vlm.py的启动就绪等待和start_go2_cooperative_task.py的restart就绪等待，正式文档对应说明与分步timeout命令同步240秒。prepare阶段原有10秒即时复核及整轮600秒期限保留。两份入口回归129项通过，未执行现场启动；脚本和文档同步新overlay的share副本。
+
+### 2026-11-03 Go2 RoboRSI / Codex CLI 可选接入（离线完成）
+
+按 `/home/isee-pst/Notes/Go2_RoboRSI_CodexCLI_Implementation_Plan.md` 执行。
+仍在 `go2-cooperative-task-layer`，HEAD `bce9de1ee4e9d2dd3c4ac6288703335767bb9ae9`；
+未切分支/worktree、提交或推送。原 staged 二进制 diff 完全一致，原12份 dirty 文件保留。
+仓库外完整 dirty 快照：`/home/isee-pst/unitree_ros2/go2-agent-baseline-20261103-205731/`；
+本轮证据：`build/go2-agent-adaptation-20261103-20261103-205731/`，含基线 argv、摘要、测试及仅本轮差异。
+
+新增 `tools/go2_agent` 单次会话管理器、RoboRSI runtime/config/一个静态搜索技能；新增
+`scripts/start_go2_agent_task.sh`、三份适配测试和 [Agent runbook](go2_agent_runbook.md)。
+只在当前 dirty `scripts/start_go2_vlm.py` 增加默认关闭的 `--agent-framework` 派发与宿主结果接收，
+原测试文件末尾追加12项，不重写原用例；本交接只追加。原入口日常使用不依赖框架或Codex。
+
+两入口共享 Launcher.check 构造的同一搜索 argv、原环境和同一安装，Agent仅追加证据目录；
+原搜索/接近/ABC/重试/停止参数不变，NAV_READY 240秒保留。
+管理器启动前原子消费机会，重复/并发/不同目标/旧会话不重放；目标原文 argv、shell=False。
+完成只采纳退出后可信原报告及SESSION_END；模型 finish 不构成成功。
+SIGINT/SIGTERM/框架异常/提前finish走一次SIGINT及30秒原收尾等待；搜索独立于Codex进程树。
+宿主不把通用TERM/KILL策略用于适配器或搜索，停止未知不自动DISARM、不删锁、不重启。
+原DISARM及读回仍决定整轮完成，框架结果与原任务结果分别保留。
+
+RoboRSI HEAD固定 `0208cd72ec7c885a7219040cd2be459d127e374e`，原`.venv` Python3.10.12；
+Codex绝对路径版本检查为0.166.0，原生二进制完整摘要见preflight.json；模型gpt-6-astra/high，
+max_turns/max_tokens=null，planner1200秒/action600秒。实际LocalToolSpec不受action timeout约束，取消靠管理器。
+未升级依赖，未更改CODEX_HOME/认证/原视觉提供方。框架与ROS环境分离，秘密仅由私密管道/环境继承。
+原生CLI只声明工具的权限限制尚未验证；read-only/ignore-rules和提示词不等于网络/机器人隔离证明。
+
+最终离线测试：新增44项适配测试在框架venv通过；原启动器129项+新增入口12项在co-nav-real通过（141项、11条既有第三方弃用警告）；
+原独立执行及接近parity106项通过。共291个不同用例：新增56、既有235，未将重复运行计为新增。
+曾用框架venv跑旧入口组，8项缺cv2失败；改回项目原定co-nav-real后全部通过，未增装视觉依赖。
+独立审查发现退出与最终事件读取竞态，已以fake poll写文件的失败用例复现，补退出后再次读取并验证通过。
+另补日志/持久化I/O失败不阻止SIGINT、启动前取消防迟到start。原有源/安装549文件摘要未变，55个Python源/安装副本及配置/launch逐字节一致。
+Python编译、shell语法、git diff --check通过。未修改ROS包，依方案未重建或改写overlay。
+
+阶段结论：离线通过；真实模型尚未验证；真机尚未验证；原adapter终态、物理停稳证明及异常崩溃停车缺口未解决。
+本轮/proc隔离，未核对宿主现有实验状态，不操作运行服务。未跑全库/C++/现场测试。
+后续需用户明确授权，先纯假机器人后端真实Codex调用/取消/权限，再原流程人工ARM单机搜索，最后两入口同目标配置对照。
+日常回退仅切回原入口；共享入口若需恢复，按完整接入前快照撤销本轮差异且保留原dirty和后续工作，不做Git回退。
+未来算法仍修改共同源码，按原runbook共同构建新overlay、核对两入口、确认旧轮停车后重启；不承诺源码热更新。
+
+### 2026-11-03 单机相机与冷启动预检自动继续
+
+用户要求运行入口后直接打开相机终端和预检，无需输入确认字符。
+在原dirty工作树上，仅移除共享Launcher.camera的CAMERA确认，将冷启动传感器预检前START确认改为状态提示。
+单机原入口和Agent入口共同生效；缺失相机才打开SSH窗口，已有发布者/底层仍复用，重复发布者和不完整底层仍拒绝。
+READY/CURRENT/ARM及故障RESET确认保留；SSH凭据提示不属于此次移除范围。共享协同硬件准备调用也使用此逻辑，协同任务start的START确认不变。
+两份启动器测试141通过、11条既有第三方弃用警告；修改前新期望2失败，修改后通过。Python编译和git diff --check通过。
+仅源码启动脚本及文档/测试修改，两种入口直接执行该源码脚本；未改ROS包、未重建或改写受保护overlay，未启动相机/预检/ROS/模型/运动，未提交。
+
+
+### 2026-11-04 单机等待恢复与诊断终端
+
+用户明确要求运行门槛等待恢复，运行/暂停分开累计，不增加门槛、不改入口文件，并确认保留1270秒宿主上限。
+分支go2-cooperative-task-layer，HEAD仍bce9de1；原未提交工作保留、不提交。
+新增experiment_recovery.py/experiment_status.py，修改go2_check.py与go2_exploration.py及定向测试。
+单机运行条件异常先停止，等待定位/Nav2/控制/控制权/代价地图/动作终态/停稳恢复后续行同task；不自动ARM/reset_fault。
+已完成观察保存，未完成目标重新观测；相机/旋转地图/视觉工作线程等待不消耗运行预算，独立窗口显示实时状态与三种时间，不打印配置或额外订阅ROS。
+人工取消、程序异常、无效静态配置与运行预算耗尽仍退出。启动器预检及Agent外层1200秒planner/1270秒宿主墙钟限制未改；双机协议和Ranger未改。
+新安装选择方式及构建命令见go2_runbook同日章节。入口不自动切换默认安装，需在原启动终端显式export COOP_SETUP_FILE；旧进程不热更新。
+证据目录build/go2-wait-recovery-20261104/evidence含修改前快照、红绿测试、审查回归、构建及安装验证；最终验证结果在该目录verification.md。
+本次没有真实模型、相机、机器人启动或运动。真实窗口显示及真机恢复待现场验证；不把离线通过称为现场通过。
+
+最终验证：双包新overlay-final构建23.7秒成功；57模块来源/字节及配置一致；源码广测1183通过/14项已记录历史失败，新增32项全通过。
+从/tmp加载新安装关键回归268通过（新增32、既有236）。入口/环境/Agent配置5文件与本轮前快照一致，git diff --check和新增Bash文档语法通过。
+历史失败逐项见上述verification.md；不宣称全库全绿，未进行现场恢复/真实模型验收或自动启动新安装。
+
+
+### 2026-11-04 启动安装检查清单静默
+
+用户反馈启动终端显示installed/arrival_config_files/config_dir大段JSON，要求丢弃。
+来源为scripts/start_go2_vlm.py的check_install成功报告；主shell预检及Launcher.window子终端预检直接继承stdout。
+仅在这两个调用处增加stdout到/dev/null的重定向，保留stderr、检查和失败退出码；直接--check-install仍可保存报告。
+57项入口回归通过；隔离执行主/子终端覆盖成功与退出7，清单不显示、失败信息保留且不继续启动；Bash语法通过。
+双包新构建build/go2-quiet-start-20261104/overlay于23.9秒成功，入口安装副本一致；既有CMake及消息包复用提示。
+构建命令沿用runbook等待恢复章节，仅GO2_RECOVERY_OUTPUT换为本次overlay路径；证据在build/go2-quiet-start-20261104/evidence。
+源码入口下次启动即生效，环境默认选择及1270秒宿主上限不变，旧安装不重建；未启动真机或重启现有终端。

@@ -6,5 +6,5 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
 fi
 # ROS setup files are not compatible with nounset.
 source "$repo/CoVLM_env.bash"
-/home/isee-pst/venv/co-nav-real/bin/python "$repo/scripts/start_go2_vlm.py" --check-install
+/home/isee-pst/venv/co-nav-real/bin/python "$repo/scripts/start_go2_vlm.py" --check-install > /dev/null
 exec /usr/bin/python3 "$repo/scripts/start_go2_vlm.py" "$@"

@@ -185,7 +185,7 @@ class TaskLauncher(Launcher):
                      '旧任务组件退出完成后继续；Ranger 随后由操作者在本机检查并重启任务 bridge/agent。')
         self.disarm_task()
         self.ros('topic','echo','/vlm_nav/nav_ready','std_msgs/msg/Bool','--once','--filter','m.data',
-                 '--no-daemon','--qos-reliability','reliable','--qos-durability','transient_local',timeout=120)
+                 '--no-daemon','--qos-reliability','reliable','--qos-durability','transient_local',timeout=240)
         self.inspect()
         self.prepare()
         self.start_task()

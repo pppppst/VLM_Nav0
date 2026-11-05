@@ -5212,3 +5212,81 @@ colcon --log-base "$GO2_RECOVERY_OUTPUT/log" build \
 55模块安装路径及源码字节一致检查通过；两包均来自本次overlay。安装scene/robot_go2配置一致，--offline三类gates均为空、motion_sent=false。
 以上为本次相关范围通过，不改写上一节广测14项及入口旧断言失败的历史记录，未重跑全库/C++测试或现场实验。
 证据沿用`build/go2-recoverable-pause-20261029/evidence/`，新增build.log/build.exit、installed.log/installed.xml/installed.exit、check-install.json、offline-config.json及对应执行脚本。
+
+### 2026-10-29 修正默认入口仍加载旧overlay
+
+用户报告scripts/cooperative.sh preflight第23行安装与源码不一致。当前HEAD=bce9de1ee4e9d2dd3c4ac6288703335767bb9ae9。
+实际复现：未设置COOP_SETUP_FILE时加载go2-local-scan-20261029并报同一错误；显式指定go2-recoverable-pause-20261029立即退出0，55模块一致性校验亦通过，故新构建无需重做。
+现已将CoVLM_env.bash、Cooperative_env.bash、scripts/start_go2_vlm.py默认路径及README、正式文档全部命令统一到go2-recoverable-pause-20261029；日志目录同步到该目录的ros-logs。
+保留显式COOP_SETUP_FILE优先级，所以已经加载旧环境的终端必须覆盖旧值。Go2主终端G0、Bash执行以下只读预检，结束后无需保持运行：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export COOP_SETUP_FILE="$PWD/build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash"
+bash scripts/cooperative.sh go2 preflight
+```
+
+成功判据：退出0、installed各项matches_source=true、live_gates=[]、motion_sent=false，路径指向新overlay。
+通过后按正式文档根据现有组件状态继续；失败则保存输出并排查，不叠加启动。该命令不会启动ROS节点或发起任务，旧进程不会因此更新。
+本轮入口回归先3失败/46通过，修复后49通过；默认实际预检、默认source后的55模块检查均通过，23个Bash文档块/链接/语法及git diff --check通过。
+同步安装share的启动脚本与文档，未重编运行包、重启组件或发起现场实验。证据build/go2-recoverable-pause-20261029/entry-fix/保留。
+
+
+### 2026-11-04 单机实验等待恢复与状态终端
+
+用户要求运行异常等待恢复、暂停不计运行时间，新增只显示状态的诊断终端，并明确入口文件不改、保留1270秒宿主上限。
+本轮仅修改单机搜索执行器及其恢复/显示逻辑；独立地图双机协议、Ranger、底层保护参数和启动脚本保持原样。
+
+执行器的初始停稳、NAV_READY/CONTROL_ARMED、定位、地图/TF/代价地图、控制权、动作终态门槛关闭时，先发送停止并等待现有条件恢复。
+规划/执行失败、视觉请求/验证失败和候选暂不可达进入等待/重试。恢复保持同一task，已完成的观察保留；未完成目标重新获取观测，取消的旧动作不会按迟到结果继续。
+相机、旋转地图和视觉工作线程等待也计入暂停。不会自动ARM、reset_fault、撤销人工取消；无效静态配置、程序异常、运行预算耗尽仍报告退出。
+源文件中的静态配置检查和启动器预检未改，不能把此次修改解释为入口所有错误均自动重试。
+
+运行计时排除暂停，另记录本次暂停和累计暂停；仍使用调用者原有运行预算。Agent外层planner原有1200秒、宿主1270秒墙钟上限保留。
+这是外层限制，长暂停仍可能被外层取消，取消后仍执行原停车收尾。默认原入口与Agent入口共享同一执行器。
+
+执行器自动打开“Go2 实验状态”独立终端，显示状态、阶段、等待原因、运行时间、本次/累计暂停、剩余运行时间、定位/导航/RGB-D/控制/停稳/动作终态/代价地图字段。
+不显示配置、坐标数组或密钥，不新增ROS订阅；仅读取该次输出目录的status.json，约0.5秒刷新。超过3秒未更新会冻结显示计时并标记过期；关闭窗口不影响任务。
+终态停留供检查。没有桌面/gnome-terminal启动失败时，状态文件仍可保留，显示故障不阻断任务或停车。
+
+构建输出：`build/go2-wait-recovery-20261104/overlay-final/install/local_setup.bash`。
+本次完整构建在Go2控制电脑仓库根目录Bash执行，终端无需保持运行；两包完成且退出0为成功判据，失败不得继续现场流程。下面是构建记录，已有输出不要重复覆盖：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_RECOVERY_OUTPUT="$PWD/build/go2-wait-recovery-20261104/overlay-final"
+test ! -e "$GO2_RECOVERY_OUTPUT"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_RECOVERY_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" --packages-select vlm_nav multi_agent_nav \
+  --build-base "$GO2_RECOVERY_OUTPUT/build" --install-base "$GO2_RECOVERY_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+入口和默认环境文件未改。后续使用新安装时，在运行原入口的同一Bash终端中先选择它；此命令不启动机器人，也不会改变已运行进程：
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export COOP_SETUP_FILE="$PWD/build/go2-wait-recovery-20261104/overlay-final/install/local_setup.bash"
+test -f "$COOP_SETUP_FILE"
+```
+
+`test`退出0后，按原现场退出/启动流程运行原有命令，保留终端直至收尾。未选择新安装时，旧默认安装与新源码不一致，原来源检查会拒绝启动；不绕过该检查。
+诊断窗口是新的进程行为，旧运行中的搜索和底层不会热更新。本轮不自动切换现场进程或发起运动。
+
+
+### 2026-11-04 启动安装清单静默补丁
+
+主入口与子终端启动前的--check-install成功输出丢弃；失败stderr和退出码保留。
+独立运行--check-install仍输出完整JSON，便于保存离线证据。
+本次按上节完整双包构建流程，令GO2_RECOVERY_OUTPUT为
+`$PWD/build/go2-quiet-start-20261104/overlay`（全新输出，不覆盖上节安装），两包23.9秒构建成功。
+安装脚本与源码一致；入口回归57项通过，隔离主/子终端成功及失败退出行为通过。
+此补丁在源码启动脚本中生效，现有COOP_SETUP_FILE选择与宿主1270秒限制保持原样；未启动现场流程。

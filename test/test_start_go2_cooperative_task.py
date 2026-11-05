@@ -220,7 +220,7 @@ def test_restart_preserves_hardware_and_stops_before_next_stage_on_failure(task,
     def ready(*args,**kwargs):
         assert args[:4]==('topic','echo','/vlm_nav/nav_ready','std_msgs/msg/Bool')
         assert '--filter' in args and 'm.data' in args
-        stage('nav-ready' if kwargs['timeout']==120 else 'prepare-ready')
+        stage('nav-ready' if kwargs['timeout']==240 else 'prepare-ready')
         return S(stdout='data: true')
     def inspect(args,**kwargs):
         assert '--action' in args and 'inspect' in args and '--require-ready' in args

@@ -90,13 +90,15 @@ def check_install(repo, setup, config):
 
 
 class Launcher:
-    def __init__(self, repo, prepare_only, target, cooperative_hardware=False):
+    def __init__(self, repo, prepare_only, target, cooperative_hardware=False, agent_framework=False):
         self.repo = repo
+        self.agent_framework = agent_framework
+        self.agent_directory = None
         self.cooperative_hardware = cooperative_hardware
         self.config = (Path(os.environ['COOP_CONFIG']) if cooperative_hardware
                        else Path(os.environ.get('GO2_EXPLORE_CONFIG', repo / 'cooperative_ws/src/multi_agent_nav/config')))
         self.setup = Path(os.environ.get('COOP_SETUP_FILE') or repo /
-            'build/go2-local-scan-20261029/overlay/install/local_setup.bash')
+            'build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash')
         self.prepare_only = prepare_only or cooperative_hardware
         self.target = target
         self.logs = None
@@ -144,7 +146,7 @@ class Launcher:
         parameters = [self.repo, self.setup, self.config]
         if self.cooperative_hardware:
             setup = 'export COOP_SETUP_FILE="$2"; source "$1/Cooperative_env.bash" go2 "$3" || exit; shift 3; '
-        shell = (setup + '"$1" "$2" --check-install --expected-setup "$3" --config-dir "$4" || exit; shift 4; '
+        shell = (setup + '"$1" "$2" --check-install --expected-setup "$3" --config-dir "$4" > /dev/null || exit; shift 4; '
                  '"$@"; status=$?; '
                  'echo "进程结束 exit=$status，请查看上方日志"; '
                  'read -r -p "按 Enter 关闭此终端……" _; exit "$status"')
@@ -173,7 +175,6 @@ class Launcher:
         if counts != [0, 0]:
             print(f'相机发布者暂不完整 {counts}；继续准备，在观察位置等待恢复，不叠加驱动。', flush=True)
             return
-        self.confirm('CAMERA', '没有相机发布者。确认旧相机进程/USB已释放，允许 SSH 启动相机。')
         self.window('Camera SSH', ['bash', self.repo / 'scripts/go2_camera_ssh.sh'])
         print('已打开 Camera SSH 终端；继续准备，相机未连接时在观察位置停稳等待。', flush=True)
 
@@ -234,7 +235,7 @@ class Launcher:
                 raise RuntimeError('已有不完整底层；请在原终端排障，不重复启动')
             if self.publishers('/lowstate') != 1:
                 raise RuntimeError('/lowstate 必须有唯一真实发布者')
-            self.confirm('START', '冷启动：确认 Go2 按原流程站稳、预检期间保持静止、急停人员在场。')
+            print('开始传感器预检；机器人须保持静止，急停人员在场。', flush=True)
             report = self.logs / 'preflight.json'
             if self.cooperative_hardware:
                 report = Path(os.environ.get('GO2_PREFLIGHT_REPORT', '/tmp/go2_costmap_preflight.json')).resolve()
@@ -276,7 +277,7 @@ class Launcher:
             raise RuntimeError('协同硬件准备要求 Sport 为 DISARMED；请从原终端核对状态')
         self.ros('topic', 'echo', '/vlm_nav/nav_ready', 'std_msgs/msg/Bool', '--once',
                  '--filter', 'm.data', '--no-daemon', '--qos-reliability', 'reliable',
-                 '--qos-durability', 'transient_local', timeout=120)
+                 '--qos-durability', 'transient_local', timeout=240)
         # System starts Nav2/supervisor only after AMCL is initialized.
         if keepout_mask:
             actual = self.ros('param', 'get', '/go2_nav_supervisor', 'keepout_mask', timeout=10).stdout.strip()
@@ -293,12 +294,68 @@ class Launcher:
                 raise RuntimeError(f'{node} {key} 应为 {expected}，实际：{text.strip()}')
         self.inspect()
 
+    def agent_preflight(self):
+        if str(self.repo) not in sys.path:
+            sys.path.insert(0, str(self.repo))
+        if self.agent_directory is not None:
+            return
+        from tools.go2_agent.runtime import FRAMEWORK_PYTHON, framework_environment
+        root = self.repo / 'build/go2-agent-runs'
+        root.mkdir(parents=True, exist_ok=True)
+        directory = Path(tempfile.mkdtemp(prefix='session-', dir=root))
+        runtime = self.repo / 'tools/go2_agent/runtime.py'
+        # This command can only check local versions; no task specification is supplied.
+        subprocess.run([str(FRAMEWORK_PYTHON), '-I', str(runtime), '--preflight', str(directory)],
+                       env=framework_environment(os.environ), check=True, timeout=30)
+        self.agent_directory = directory
+
+    def agent_search(self, argv):
+        from tools.go2_agent.runtime import FRAMEWORK_PYTHON, framework_environment
+        directory = self.agent_directory
+        spec = dict(session_id=directory.name, target=self.target, directory=str(directory),
+                    argv=argv, ros_env=dict(os.environ))
+        runtime = self.repo / 'tools/go2_agent/runtime.py'
+        with (directory / 'adapter.log').open('w') as log:
+            process = subprocess.Popen([str(FRAMEWORK_PYTHON), '-I', str(runtime)],
+                stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, text=True,
+                env=framework_environment(os.environ), start_new_session=True, shell=False)
+            try:
+                process.communicate(input=json.dumps(spec), timeout=1270)
+            except BaseException:
+                previous = {sig: signal.signal(sig, signal.SIG_IGN)
+                            for sig in (signal.SIGINT, signal.SIGTERM)}
+                try:
+                    if process.poll() is None:
+                        process.send_signal(signal.SIGINT)
+                    process.communicate(timeout=65)
+                except subprocess.TimeoutExpired:
+                    raise RuntimeError('STOP_UNCONFIRMED：Agent 收尾超时；不强杀、不 DISARM、不删除锁')
+                finally:
+                    for sig, handler in previous.items():
+                        signal.signal(sig, handler)
+        try:
+            result = json.loads((directory / 'agent-result.json').read_text())
+        except (OSError, ValueError) as error:
+            raise RuntimeError('STOP_UNCONFIRMED：缺失可信 Agent 最终报告；按现场流程处置') from error
+        if (result.get('session_id') != directory.name or result.get('target') != self.target
+                or result.get('task_id') != directory.name + '/find-target'):
+            raise RuntimeError('STOP_UNCONFIRMED：Agent 报告身份不匹配')
+        if process.returncode and not result.get('framework_error'):
+            result['framework_error'] = 'ADAPTER_EXIT_NONZERO'
+        return result
+
+    def agent_host_result(self, result):
+        from tools.go2_agent.session import write_json
+        write_json(self.agent_directory / 'host-result.json', result)
+
     def explore(self):
         env = os.environ
         if not ((env.get('DASHSCOPE_API_KEY') or env.get('OPENAI_API_KEY'))
                 and (env.get('DASHSCOPE_BASE_URL') or env.get('OPENAI_BASE_URL') or env.get('DASHSCOPE_WORKSPACE_ID'))
                 and (env.get('DASHSCOPE_MODEL') or env.get('OPENAI_MODEL'))):
             raise RuntimeError('缺少 API key / endpoint / model 环境变量；不打印或写入密钥')
+        if self.agent_framework:
+            self.agent_preflight()
         self.confirm('ARM', f'将执行一次最长300秒的探索并接近“{self.target}”。\n'
                      '确认已有运动授权、机器人停稳、急停人员在场、其他目标 owner 已退出，遥控静默至少2秒。')
         self.check_owners()
@@ -316,38 +373,54 @@ class Launcher:
             raise RuntimeError('未确认 ARMED，不发送探索请求')
         log = self.logs / 'explore.log'
         print(f'探索日志：{log}；Ctrl+C 请求取消并等待停车。', flush=True)
-        with log.open('w') as stream:
-            process = subprocess.Popen([str(x) for x in self.check('--action', 'explore', '--allow-motion',
-                '--target', self.target, '--approach-target', '--timeout', '300')],
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-            try:
-                for line in process.stdout:
-                    stream.write(line)
-                    stream.flush()
-                    print(line, end='', flush=True)
-                process.wait()
-            except KeyboardInterrupt:
-                # Forward one interrupt so repeated Ctrl+C cannot interrupt the child's stop handler.
-                previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        argv = [str(x) for x in self.check('--action', 'explore', '--allow-motion',
+            '--target', self.target, '--approach-target', '--timeout', '300')]
+        agent_result = None
+        if self.agent_framework:
+            agent_result = self.agent_search(argv)
+            self.agent_host_result(dict(agent_result, host_cleanup='PENDING'))
+            if agent_result.get('active_process') is not False or agent_result.get('state') == 'STOP_UNCONFIRMED':
+                raise RuntimeError('STOP_UNCONFIRMED：搜索未可信结束；不自动 DISARM 或重启')
+            report = agent_result.get('original_report') or {}
+            returncode = agent_result.get('exit_code')
+        else:
+            with log.open('w') as stream:
+                process = subprocess.Popen(argv,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
                 try:
-                    if process.poll() is None:
-                        os.killpg(process.pid, signal.SIGINT)
-                    tail, _ = process.communicate(timeout=30)
-                except subprocess.TimeoutExpired:
-                    raise RuntimeError('取消未完成；先现场急停，不终止底层或删除运动锁')
-                finally:
-                    signal.signal(signal.SIGINT, previous)
-                stream.write(tail)
-                print(tail, end='', flush=True)
-        report = parse_report(log.read_text())
+                    for line in process.stdout:
+                        stream.write(line)
+                        stream.flush()
+                        print(line, end='', flush=True)
+                    process.wait()
+                except KeyboardInterrupt:
+                    # Forward one interrupt so repeated Ctrl+C cannot interrupt the child's stop handler.
+                    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+                    try:
+                        if process.poll() is None:
+                            os.killpg(process.pid, signal.SIGINT)
+                        tail, _ = process.communicate(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        raise RuntimeError('取消未完成；先现场急停，不终止底层或删除运动锁')
+                    finally:
+                        signal.signal(signal.SIGINT, previous)
+                    stream.write(tail)
+                    print(tail, end='', flush=True)
+            report = parse_report(log.read_text())
+            returncode = process.returncode
         if report.get('stop_confirmed') is not True:
             raise RuntimeError('未确认动作终态及实际停车；先现场急停，按原流程排障，不自动 DISARM 或重启')
         self.service('disarm')
         if self.state() != 'DISARMED':
             raise RuntimeError('DISARM 未确认，请按原流程处理')
-        if (process.returncode or report.get('result') != 'TARGET_APPROACHED'
+        if agent_result is not None:
+            agent_result['host_cleanup'] = 'DISARMED'
+            self.agent_host_result(agent_result)
+        if (returncode != 0 or report.get('result') != 'TARGET_APPROACHED'
                 or report.get('evidence_write_failed') is not False
-                or report.get('vlm_evidence_pending') is not False):
+                or report.get('vlm_evidence_pending') is not False
+                or (agent_result is not None and (agent_result.get('state') != 'SUCCEEDED'
+                    or agent_result.get('framework_error') is not None))):
             raise RuntimeError('本次探索未完整成功；已确认停车并 DISARM，查看实验 result.json 和日志')
         print('TARGET_APPROACHED；停车已确认，Sport 已 DISARMED。', flush=True)
 
@@ -355,6 +428,7 @@ class Launcher:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', default='灭火器', help='A目标描述，默认灭火器')
+    parser.add_argument('--agent-framework', action='store_true', help='显式启用 RoboRSI/Codex 单次搜索后端')
     parser.add_argument('--prepare-only', action='store_true', help='仅启动并检查；不 ARM、不探索')
     parser.add_argument('--cooperative-hardware', action='store_true', help='协同环境下仅准备硬件，停在静止通信之前')
     parser.add_argument('--check-install', action='store_true', help='只读安装一致性检查；不初始化 ROS')
@@ -389,13 +463,15 @@ def main():
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             parser.error('已有一键启动入口运行')
-        app = Launcher(repo, args.prepare_only, args.target, args.cooperative_hardware)
+        app = Launcher(repo, args.prepare_only, args.target, args.cooperative_hardware, args.agent_framework)
         root = repo / 'build/go2-field'
         root.mkdir(parents=True, exist_ok=True)
         prefix = 'cooperative-hardware.' if args.cooperative_hardware else 'single-vlm.'
         app.logs = Path(tempfile.mkdtemp(prefix=prefix, dir=root))
         print(f'本次检查日志：{app.logs}', flush=True)
         try:
+            if app.agent_framework and not app.prepare_only:
+                app.agent_preflight()
             app.start()
             if not app.prepare_only:
                 app.explore()

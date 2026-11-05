@@ -247,7 +247,7 @@ def test_marker_coordinates_and_label_follow_latest_selection():
 
 
 @pytest.mark.parametrize('global_ready',[True,False])
-def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready,initial_status=None):
+def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready,initial_status=None,map_state=None):
     from types import SimpleNamespace as S
     import rclpy
     import rclpy.executors
@@ -269,8 +269,16 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
         assert not destroyed[0], 'publish after node destruction'
         published.append(markers)
     parameter_result=completed(S(values=[S(string_value=str(map_path))]))
+    map_queries=[];pending_map=[]
+    def map_query(request):
+        map_queries.append(now[0])
+        if map_state and now[0]<3.:
+            if map_state=='mismatch':return completed(S(values=[S(string_value='/wrong/map.yaml')]))
+            from concurrent.futures import Future
+            future=Future();pending_map.append(future);return future
+        return parameter_result
     node=S(nav_ready=True,control_armed=True,depth_units_verified=True,
-        create_client=lambda *args:S(call_async=lambda request:parameter_result),
+        create_client=lambda *args:S(call_async=map_query),
         vlm_input_ready=lambda t:True,get_node_names=lambda:[],
         create_publisher=lambda *args:S(publish=publish if args[1]=='/vlm_nav/go2_exploration/current_point' else lambda _:None),create_timer=lambda *args:None,
         get_clock=lambda:S(now=lambda:S(to_msg=lambda:Time())),
@@ -281,7 +289,7 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
             super().__init__();self.costmap=None;self.plans={}
             self.vision=S(poll=lambda:passive_polls.append(now[0]))
         def costmap_transform(self,global_goal=False):
-            return None if global_goal and not global_ready else super().costmap_transform(global_goal)
+            return None if global_goal and not global_ready and now[0]<3. else super().costmap_transform(global_goal)
         def tick(self):
             self.vision.poll()
             if self.active:
@@ -302,36 +310,53 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
     monkeypatch.setattr(go2,'make_observer',lambda *args,**kw:node)
     monkeypatch.setattr(go2,'Go2Adapter',Adapter)
     monkeypatch.setattr(go2,'ABCClient',lambda cfg:None)
-    def spin(**kw):now[0]+=.05
+    monkeypatch.setattr('multi_agent_nav.experiment_status.ExperimentStatus.launch',lambda self:True)
+    def spin(**kw):
+        now[0]+=.05
+        if now[0]>=3.:
+            for future in pending_map:
+                assert not future.cancelled(), 'slow map response must remain usable'
+                if not future.done():future.set_result(parameter_result.result())
     monkeypatch.setattr(rclpy.executors,'SingleThreadedExecutor',lambda:S(
         add_node=lambda node:None,spin_once=spin,shutdown=lambda:None))
     output=tmp_path/'evidence';output.mkdir()
     args=check.parser().parse_args(['--action','explore','--allow-motion','--target','灭火器',
         '--timeout','5','--output-dir',str(output)])
     with (output/'events.jsonl').open('x') as events:
-        assert check.run_ros(config,args,events)==(0 if global_ready else 1)
+        assert check.run_ros(config,args,events)==0
     rows=[json.loads(line) for line in (output/'events.jsonl').read_text().splitlines()]
     report=json.loads((output/'result.json').read_text())
+    if map_state:
+        if map_state=='pending':assert len(map_queries)==1
+        if map_state=='mismatch':assert len(map_queries)>=2
+        assert report['paused_total_s']>.5
+        assert report['active_map_matches'] is True
     if initial_status=='unlocated':
         assert report['result']=='EXHAUSTED'
         assert report['stop_confirmed']
         assert any(e['state']=='TARGET_DETECTED_UNLOCATED' for e in rows)
         assert any(e['state']=='NAVIGATING' for e in rows)
         return
-    assert report['goal_costmap_valid']==global_ready
+    assert report['goal_costmap_valid'] is True
     assert report['goal_costmap_topic']==config['robot_go2']['goal_costmap_topic']
     assert destroyed[0]
     assert passive_polls, 'first furniture request must be polled before motion starts'
     if not global_ready:
-        assert not report['motion_sent'] and 'fresh global goal costmap/TF required' in report['rejected']
-        assert not any(row['state']=='NAVIGATING' for row in rows)
-        return
+        assert report['paused_total_s']>=.9
+        assert any(row['state']=='WAITING' for row in rows)
+        assert not any(row['state']=='NAVIGATING' and row['wall_time']<3. for row in rows)
     assert rows[-1]['state']=='EXHAUSTED' and rows[-1]['stop_confirmed'] is True
     assert any(row['state']=='NAVIGATING' for row in rows)
     assert any(row['state']=='SCAN_RESULT' for row in rows)
     assert any(row.get('event')=='PATH_RECEIVED' and row['state']=='NAVIGATING' for row in rows)
     assert published[-1].markers[1].text.startswith('point_one | EXHAUSTED')
     assert destroyed[0]
+
+
+@pytest.mark.parametrize('map_state',['mismatch','pending'])
+def test_startup_map_query_is_refreshed_until_recovery(monkeypatch,tmp_path,map_state):
+    test_exploration_entry_publishes_and_logs_before_destroying_node(
+        monkeypatch,tmp_path,True,map_state=map_state)
 
 @pytest.mark.parametrize('mode', ['success', 'unlocated', 'no_path', 'blocked', 'cancel'])
 @pytest.mark.parametrize('scan_angles', [[0.], [0., 1., 2., 3., 4., 5., 6., 7.]])
