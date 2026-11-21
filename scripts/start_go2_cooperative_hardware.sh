@@ -12,5 +12,10 @@ HELP
   exit 0
 fi
 (( $# == 0 )) || { echo '不接受参数；使用 --help。' >&2; exit 2; }
-source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+if [[ -f "$repo/scripts/go2_experiment_status.sh" ]]; then
+  source "$repo/scripts/go2_experiment_status.sh"
+  go2_entry_environment "$repo" "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+else
+  source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+fi
 exec /usr/bin/python3 "$repo/scripts/start_go2_vlm.py" --cooperative-hardware

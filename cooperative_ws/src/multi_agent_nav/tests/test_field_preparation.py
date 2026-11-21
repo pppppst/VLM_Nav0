@@ -324,7 +324,13 @@ def test_full_gates_only_read_the_current_pcs_map_files():
     ('navigate',[],True,'path_finished',0),
     ('navigate',[],True,'path_timeout',1),
     ('navigate',[],True,'no_path_moving',1),
-    ('navigate',[],True,'evidence_error',0),
+    ('navigate',[],True,'evidence_error',1),
+    ('navigate',[],True,'events_only',1),('navigate',[],True,'result_only',1),
+    ('navigate',[],True,'events_value_error',1),('navigate',[],True,'session_end_error',1),
+    ('navigate',[],True,'stop_evidence_error',1),
+    ('navigate',[],True,'emit_broken_pipe',0),('navigate',[],True,'report_not_serializable',1),
+    ('navigate',[],True,'report_nan',1),
+    ('navigate',[],True,'stop_emit_broken_pipe',1),
     ('navigate',[],True,'rgbd_warmup',0),
     ('navigate',[],True,'rgbd_unavailable',1),
     ('navigate',[],True,'rgbd_deadline',1),
@@ -340,6 +346,20 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
     from multi_agent_nav.adapters.fake import FakeAdapter
     from dataclasses import replace
     now=[0.];calls=[]
+    evidence_modes=('evidence_error','events_only','result_only','events_value_error','session_end_error','stop_evidence_error','report_not_serializable','report_nan')
+    emit_modes=('emit_broken_pipe','report_not_serializable','report_nan','stop_emit_broken_pipe')
+    emitted=[]
+    if change in emit_modes:
+        original_emit=check.emit
+        def failed_emit(report):
+            emitted.append(report)
+            if change in ('emit_broken_pipe','stop_emit_broken_pipe'):raise BrokenPipeError('closed stdout')
+            original_emit(report)
+        monkeypatch.setattr(check,'emit',failed_emit)
+    if change in ('report_not_serializable','report_nan'):
+        original_report=check.config_report
+        monkeypatch.setattr(check,'config_report',lambda *a,**kw:dict(original_report(*a,**kw),
+            unserializable=float('nan') if change=='report_nan' else object()))
     monkeypatch.setenv('ROS_DOMAIN_ID','0');monkeypatch.setenv('RMW_IMPLEMENTATION','rmw_cyclonedds_cpp')
     monkeypatch.setenv('GO2_NET_IFACE','enp4s0')
     from ament_index_python.packages import get_package_share_directory
@@ -407,7 +427,7 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
             return super().cancel_navigation(goal_id)
         def stop_motion(self,reason):
             calls.append('stop')
-            if change=='stop_error':raise RuntimeError('unit transport failure')
+            if change in ('stop_error','stop_evidence_error','stop_emit_broken_pipe'):raise RuntimeError('unit transport failure')
             return super().stop_motion(reason)
         def close(self,stop=True):calls.append(('close',stop))
     monkeypatch.setattr(go2,'make_observer',lambda *args,**kw:node)
@@ -417,19 +437,41 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         add_node=lambda n:None,spin_once=spin,shutdown=lambda:None))
     args=check.parser().parse_args(['--action',action,'--timeout','12','--goal','1','0','0','--allow-motion'])
     events=None
-    if change=='evidence_error':
+    evidence_stream=None
+    if change in evidence_modes:
+        evidence_stream=(tmp_path/'events.jsonl').open('w')
         class BrokenEvidence:
-            def write(self,line):raise OSError('unit disk failure')
+            def write(self,line):
+                if change=='events_value_error':raise ValueError('closed stream')
+                if change in ('evidence_error','events_only','stop_evidence_error') or (
+                        change=='session_end_error' and json.loads(line).get('event')=='SESSION_END'):
+                    raise OSError('unit disk failure')
+                return evidence_stream.write(line)
+            def flush(self):evidence_stream.flush()
+            def fileno(self):return evidence_stream.fileno()
         events=BrokenEvidence();args.output_dir=str(tmp_path)
         write_text=check.Path.write_text
         def failed_result_write(path,*a,**kw):
-            if path.name=='result.json':raise OSError('unit disk failure')
+            if path.name=='result.json' and change in ('evidence_error','result_only','stop_evidence_error'):
+                raise OSError('unit disk failure')
             return write_text(path,*a,**kw)
         monkeypatch.setattr(check.Path,'write_text',failed_result_write)
-    if change in ('cleanup','stop_error'):
-        with pytest.raises(check.StopUnconfirmed):check.run_ros(c,args)
-    else:assert check.run_ros(c,args,events)==expected
-    report=json.loads(capsys.readouterr().out)
+    try:
+        from contextlib import nullcontext
+        guarded=change in evidence_modes or change in emit_modes
+        if guarded:monkeypatch.setattr(check,'MOTION_LOCK',str(tmp_path/'motion.lock'))
+        scope=check.motion_slot() if guarded else nullcontext()
+        if change in ('cleanup','stop_error','stop_evidence_error','stop_emit_broken_pipe'):
+            with pytest.raises(check.StopUnconfirmed):
+                with scope:check.run_ros(c,args,events)
+        else:
+            with scope:assert check.run_ros(c,args,events)==expected
+    finally:
+        if evidence_stream:evidence_stream.close()
+    if guarded:
+        assert (tmp_path/'motion.lock').read_text()==('STOP_UNCONFIRMED' if change in ('stop_evidence_error','stop_emit_broken_pipe') else '')
+    stdout=capsys.readouterr().out
+    report=emitted[-1] if emitted else json.loads(stdout)
     if action=='inspect':
         assert report['costmap_probe']['footprint_free'] is True
         assert report['health_window']['samples']>10
@@ -441,8 +483,12 @@ def test_independent_entry_runtime_with_one_stub_go2_no_ros_or_peer(monkeypatch,
         if change=='arm_stale':assert report['health_window']['failure_counts']['external_gates_fresh']>0
         if change=='odom_stale':assert report['health_window']['failure_counts']['odom_fresh']>0
     assert report['live_gates']  # Ranger/alignment remain incomplete, even for a local unit goal.
-    if change=='evidence_error':
-        assert report['evidence_write_failed'] and report['stop_confirmed']
+    if change in evidence_modes:
+        assert report['evidence_write_failed'] and not report['evidence_complete']
+        assert report['stop_confirmed'] == (change!='stop_evidence_error')
+        assert 'stop' in calls and ('close',False) in calls
+    elif change in emit_modes:
+        assert report['display_failed'] and report['stop_confirmed']==(change!='stop_emit_broken_pipe')
         assert 'stop' in calls and ('close',False) in calls
     elif action=='inspect' or owners or not terminal or change not in ('','cleanup','stop_error','path_finished','path_timeout','no_path_moving','no_path_stopped','rgbd_warmup','old_regions','no_regions'):
         assert 'navigate' not in calls and 'stop' not in calls and not report['motion_sent']
@@ -484,16 +530,18 @@ def test_rejected_motion_keeps_evidence_without_exploration_viewpoints(action,mo
     assert json.loads((output/'events.jsonl').read_text())['state']=='REJECTED'
     assert 'KeyError' not in capsys.readouterr().err
 
-def test_stop_observation_write_failure_does_not_interrupt_confirmation(monkeypatch):
+@pytest.mark.parametrize('error', [OSError('unit disk failure'), ValueError('closed stream')])
+def test_stop_observation_write_failure_does_not_interrupt_confirmation(monkeypatch,error):
     import multi_agent_nav.go2_check as check
     now=[0.];calls=[]
     adapter=S(stop_motion=lambda reason:calls.append('stop'),
         get_health=lambda:S(stopped=now[0]>=.2,motion_terminal=now[0]>=.2,pose=Pose2D()))
     monkeypatch.setattr(check.time,'monotonic',lambda:now[0])
     def spin():now[0]+=.1
-    def record(event):raise OSError('unit disk failure')
+    def record(event):raise error
     assert check.stop_owned(adapter,spin,1.,record)
     assert calls==['stop'] and now[0]>=.2 and adapter.evidence_write_failed
+    assert not getattr(adapter,'motion_fault',False)
 
 def test_independent_motion_lock_excludes_second_entry_and_releases_after_exit():
     from multi_agent_nav.go2_check import motion_slot

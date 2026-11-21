@@ -10,15 +10,16 @@ from test_go2_agent_session import finish, make_session
 
 
 @pytest.mark.parametrize('mode,expected', [('success','SUCCEEDED'),('no-execution','FAILED'),
-    ('failure','FAILED'),('early-finish','CANCELED'),('exception','CANCELED'),
-    ('sigterm','CANCELED'),('timeout','CANCELED')])
+    ('failure','FAILED'),('early-finish','SUCCEEDED'),('exception','SUCCEEDED'),
+    ('sigterm','CANCELED'),('timeout','SUCCEEDED')])
 def test_real_tool_dispatch_fake_planner(monkeypatch,tmp_path,mode,expected):
     signals=[]
     s,p,calls,spec=make_session(tmp_path,killpg=lambda *a:stop(*a))
     def stop(*args):
         signals.append(args);finish(s,p,code=1,result='operator interrupt')
     monkeypatch.setattr(runtime,'SearchSession',lambda spec:s)
-    monkeypatch.setattr(runtime,'preflight',lambda directory: {'offline_fake':True})
+    monkeypatch.setattr(runtime,'preflight',lambda directory: {
+        'cli': {'executable': '/offline/codex', 'version': 'codex-cli 0.167.0', 'sha256': 'a'*64}})
     seen={}
     class Planner:
         def preflight(self):pass
@@ -31,6 +32,8 @@ def test_real_tool_dispatch_fake_planner(monkeypatch,tmp_path,mode,expected):
             assert toolkit.execute_tool('get_task_status',{'task_id':s.task_id}).result['state']=='RUNNING'
             if mode=='success':finish(s,p)
             if mode=='failure':finish(s,p,result='NOT_FOUND')
+            if mode in ('early-finish','exception','timeout'):
+                monkeypatch.setattr(runtime.time,'sleep',lambda _:finish(s,p))
             if mode=='exception':raise RuntimeError('fake CLI crash')
             if mode=='timeout':raise TimeoutError('fake framework budget')
             if mode=='sigterm':signal.getsignal(signal.SIGTERM)(signal.SIGTERM,None)
@@ -46,6 +49,9 @@ def test_real_tool_dispatch_fake_planner(monkeypatch,tmp_path,mode,expected):
     assert seen['config']['max_tokens'] is None
     assert seen['config']['model']=='gpt-6-astra'
     assert seen['config']['reasoning_effort']=='high'
+    cli = seen['config']['codex_cli']
+    assert (cli.executable, cli.expected_version, cli.expected_sha256) == (
+        '/offline/codex', 'codex-cli 0.167.0', 'a'*64)
     tools={t['name']:t['input_schema'] for t in seen['schemas']}
     assert set(tools)=={'start_find_target','get_task_status','cancel_task','finish'}
     assert set(tools['start_find_target']['properties'])=={'target'}
@@ -74,9 +80,9 @@ def test_preflight_failure_never_starts_robot(monkeypatch,tmp_path):
 def test_fixed_config_and_framework_environment():
     config=runtime.load_config()
     assert config['codex_cli']['executable']=='/home/isee-pst/.local/bin/codex'
-    assert config['codex_cli']['expected_version']=='codex-cli 0.166.0'
+    assert config['codex_cli']['minimum_version']=='codex-cli 0.166.0'
     assert config['max_turns'] is None and config['max_tokens'] is None
-    assert config['planner_timeout_s']==1200 and config['action_timeout_s']==600
+    assert config['planner_timeout_s'] is None and config['action_timeout_s']==600
     original={'PATH':'/ros/bin:/old/venv/bin','PYTHONPATH':'/ros/python','PYTHONHOME':'bad',
               'VIRTUAL_ENV':'/old/venv','AMENT_PREFIX_PATH':'/ros','DASHSCOPE_API_KEY':'private',
               'HOME':'/unchanged','CODEX_HOME':'/unchanged-codex'}
@@ -98,4 +104,83 @@ def test_public_preflight_rejects_wrong_cli_version_before_search(monkeypatch,tm
     monkeypatch.setattr(runtime,'SearchSession',lambda spec:s)
     result=runtime.run_session(spec)
     assert result['state']=='FAILED' and result['framework_error']=='ValueError'
+    assert not calls
+
+
+@pytest.mark.parametrize('version', ['0.166.0', '0.167.0', '0.200.1', '1.0.0'])
+def test_preflight_accepts_compatible_cli_updates(monkeypatch, tmp_path, version):
+    executable = fake_cli(monkeypatch, tmp_path, 'codex-cli ' + version)
+    identity = runtime.preflight(tmp_path)
+    assert identity['cli']['version'] == 'codex-cli ' + version
+    assert identity['cli']['executable'] == str(executable)
+    assert identity['cli_compatibility']['minimum_version'] == 'codex-cli 0.166.0'
+    assert identity['cli_compatibility']['model_protocol'] == 'unverified'
+
+
+def fake_cli(monkeypatch, tmp_path, version, missing='', help_exit=0, global_only=''):
+    config = runtime.load_config()
+    executable = tmp_path / 'fake-codex'
+    options = '--ask-for-approval --config --model --json --color --sandbox --skip-git-repo-check --ignore-rules'
+    options = options.replace(missing, '') if missing else options
+    exec_options = options.replace(global_only, '') if global_only else options
+    executable.write_text('#!/usr/bin/python3\nimport sys\n'
+        f'if sys.argv[1:] == ["--version"]: print({version!r})\n'
+        f'elif "--help" in sys.argv: print({exec_options!r} if "exec" in sys.argv else {options!r}); sys.exit({help_exit})\n'
+        'else: raise AssertionError("preflight must not invoke a model")\n')
+    executable.chmod(0o755)
+    config['codex_cli']['executable'] = str(executable)
+    monkeypatch.setattr(runtime, 'load_config', lambda: config)
+    return executable
+
+
+@pytest.mark.parametrize('option', ['--json', '--color', '--model'])
+def test_exec_options_cannot_be_satisfied_by_global_help(monkeypatch, tmp_path, option):
+    fake_cli(monkeypatch, tmp_path, 'codex-cli 0.167.0', global_only=option)
+    with pytest.raises(ValueError, match='missing required options'):
+        runtime.preflight(tmp_path)
+
+
+def test_real_framework_rejects_cli_replacement_after_adapter_preflight(monkeypatch, tmp_path):
+    import roborsi.embodied_agent as framework
+    executable = fake_cli(monkeypatch, tmp_path, 'codex-cli 0.167.0')
+    session, _, calls, spec = make_session(tmp_path / 'session')
+    monkeypatch.setattr(runtime, 'SearchSession', lambda spec: session)
+    build = framework.build_planner
+    preflight_errors = []
+    def replace_cli(*args, **kwargs):
+        executable.write_text(executable.read_text() + '\n# replaced, same version\n')
+        planner = build(*args, **kwargs)
+        preflight = planner.preflight
+        def checked_preflight():
+            try:
+                return preflight()
+            except ValueError as error:
+                preflight_errors.append(str(error))
+                raise
+        planner.preflight = checked_preflight
+        return planner
+    monkeypatch.setattr(framework, 'build_planner', replace_cli)
+    result = runtime.run_session(spec)
+    assert result['state'] == 'FAILED'
+    assert result['framework_error'] is not None
+    assert len(preflight_errors) == 1 and 'SHA-256' in preflight_errors[0]
+    assert not calls
+
+
+@pytest.mark.parametrize('version,missing,help_exit', [
+    ('codex-cli 0.165.9', '', 0),
+    ('codex-cli 0.167.0-alpha.1', '', 0),
+    ('unknown', '', 0),
+    ('codex-cli 0.167.0', '--json', 0),
+    ('codex-cli 0.167.0', '--ask-for-approval', 0),
+    ('codex-cli 0.167.0', '--ignore-rules', 0),
+    ('codex-cli 0.167.0', '', 2),
+])
+def test_incompatible_cli_cannot_start_search(monkeypatch, tmp_path, version, missing, help_exit):
+    fake_cli(monkeypatch, tmp_path, version, missing, help_exit)
+    session, _, calls, spec = make_session(tmp_path / 'session')
+    monkeypatch.setattr(runtime, 'SearchSession', lambda spec: session)
+    result = runtime.run_session(spec)
+    assert result['state'] == 'FAILED'
+    assert result['framework_error'] is not None
     assert not calls

@@ -247,7 +247,7 @@ def test_marker_coordinates_and_label_follow_latest_selection():
 
 
 @pytest.mark.parametrize('global_ready',[True,False])
-def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready,initial_status=None,map_state=None):
+def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch,tmp_path,global_ready,initial_status=None,map_state=None,display_failure=False):
     from types import SimpleNamespace as S
     import rclpy
     import rclpy.executors
@@ -326,6 +326,10 @@ def test_exploration_entry_publishes_and_logs_before_destroying_node(monkeypatch
         assert check.run_ros(config,args,events)==0
     rows=[json.loads(line) for line in (output/'events.jsonl').read_text().splitlines()]
     report=json.loads((output/'result.json').read_text())
+    if display_failure:
+        assert report['display_failed'] and report['evidence_complete'] and report['stop_confirmed']
+        assert rows[-1]['event']=='SESSION_END' and report['result']=='EXHAUSTED' and destroyed[0]
+        return
     if map_state:
         if map_state=='pending':assert len(map_queries)==1
         if map_state=='mismatch':assert len(map_queries)>=2

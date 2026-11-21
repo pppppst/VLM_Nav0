@@ -42,6 +42,8 @@ nav2_index=-1
 rviz_index=-1
 bag_index=-1
 bridge_index=-1
+recovery_index=-1
+arm_confirmed=false
 evidence_initialized=false
 evidence_finished=false
 vlm_artifact_root="${VLM_NAV_ARTIFACT_ROOT:-${HOME}/unitree_ros2/log/VLM_feedback}"
@@ -147,6 +149,18 @@ if ! flock -n 9; then
   exit 1
 fi
 
+mkdir -p "${session_dir}"
+if [[ "${GO2_ENTRY_STDOUT_OPEN:-0}" != 1 ]]; then exec 3>&1 4>&2; fi
+echo "Experiment directory: ${run_dir}; log: ${session_dir}/entry.log" >&3
+if [[ -f "${script_dir}/go2_experiment_status.sh" ]]; then
+  source "${script_dir}/go2_experiment_status.sh"
+  go2_status_init "${project_dir}" "${run_dir}"
+else
+  go2_status() { :; }
+  go2_prompt_sound() { :; }
+fi
+exec >"${session_dir}/entry.log" 2>&1
+
 start_child() {
   local name="$1"
   shift
@@ -158,14 +172,29 @@ start_child() {
 
 require_child() {
   local index="$1"
-  if ! kill -0 "${children[index]}" 2>/dev/null; then
+  while ! kill -0 "${children[index]}" 2>/dev/null; do
     if (( index == bag_index )); then
-      echo "ERROR: evidence collection failed: rosbag recorder exited unexpectedly." >&2
+      go2_status FAILED '录包中断，已丢失的必要证据无法补回，本轮不能完整验收' NON_RESUMABLE bag "${session_dir}/bag.log"
+      return 1
     fi
-    echo "ERROR: ${child_names[index]} exited; log follows:" >&2
-    tail -40 "${session_dir}/${child_names[index]}.log" >&2
-    exit 1
-  fi
+    go2_status WAITING '组件退出，等待人工恢复；不自动重启或重发目标' MANUAL_REQUIRED "${child_names[index]}" "${session_dir}/${child_names[index]}.log"
+    case "${child_names[index]}" in
+      rviz) return 0 ;;
+      nav2)
+        if [[ "${arm_confirmed:-false}" != true ]] && nav2_available; then return 0; fi
+        if timeout 3 ros2 topic echo /vlm_nav/nav_ready --once --filter 'm.data' \
+          --qos-durability volatile >/dev/null 2>&1; then return 0; fi ;;
+      bridge)
+        if [[ "${arm_confirmed:-false}" != true ]] && timeout 3 ros2 topic echo /vlm_nav/go2_bridge_state \
+          --once --filter 'm.data == "DISARMED"' --qos-durability volatile >/dev/null 2>&1; then return 0; fi
+        if timeout 3 ros2 topic echo /vlm_nav/control_armed --once --filter 'm.data' \
+          --qos-durability volatile >/dev/null 2>&1; then return 0; fi ;;
+      vlm|recovery)
+        go2_status FAILED '任务执行/恢复进程退出，动作身份与内存状态丢失；本轮无法续接' NON_RESUMABLE "${child_names[index]}" "${session_dir}/${child_names[index]}.log"
+        return 1 ;;
+    esac
+    sleep 1
+  done
 }
 
 require_evidence() {
@@ -176,18 +205,18 @@ require_active_children() {
   (( nav2_index >= 0 )) && require_child "${nav2_index}"
   [[ "${bridge_started}" == true ]] && require_child "${bridge_index}"
   (( vlm_index >= 0 )) && require_child "${vlm_index}"
+  (( recovery_index >= 0 )) && require_child "${recovery_index}"
   require_evidence
 }
 
 wait_for_bag_ready() {
   local attempt
-  for attempt in {1..100}; do
+  while true; do
     grep -Fq "Listening for topics" "${session_dir}/bag.log" 2>/dev/null && return
     require_evidence
+    go2_status WAITING '等待录包就绪' WAIT_INPUT bag "${session_dir}/bag.log"
     sleep 0.1
   done
-  echo "ERROR: evidence collection failed: rosbag recorder did not become ready." >&2
-  exit 1
 }
 
 snapshot_core_parameters() {
@@ -262,21 +291,19 @@ finish_evidence() {
 
 wait_for_value() {
   local topic="$1" expected="$2" value attempt
-  for attempt in {1..120}; do
+  while true; do
     value="$(timeout 2 ros2 topic echo "${topic}" --once --field data 2>/dev/null || true)"
     if [[ "${value}" == *"${expected}"* ]]; then
       return
     fi
     require_active_children
+    go2_status WAITING "等待 ${topic}=${expected}" WAIT_INPUT
     sleep 0.5
   done
-  echo "ERROR: timed out waiting for ${topic}=${expected}" >&2
-  exit 1
 }
 
-wait_for_nav2() {
-  local controller planner navigator action attempt
-  for attempt in {1..120}; do
+nav2_available() {
+  local controller planner navigator action
     controller="$(timeout 2 ros2 lifecycle get /controller_server 2>/dev/null || true)"
     planner="$(timeout 2 ros2 lifecycle get /planner_server 2>/dev/null || true)"
     navigator="$(timeout 2 ros2 lifecycle get /bt_navigator 2>/dev/null || true)"
@@ -285,21 +312,26 @@ wait_for_nav2() {
           "${planner}" == *"active [3]"* &&
           "${navigator}" == *"active [3]"* &&
           "${action}" == *"Action servers: 1"* ]]; then
-      echo "Nav2 is ACTIVE and /navigate_to_pose is ready."
-      return
+      return 0
     fi
+    return 1
+}
+
+wait_for_nav2() {
+  while true; do
+    if nav2_available; then return; fi
     require_child "${nav2_index}"
     require_child "${rviz_index}"
     require_evidence
+    go2_status WAITING '等待Nav2和定位恢复；需要时在RViz设置真实初始位姿' WAIT_INPUT nav2 "${session_dir}/nav2.log"
     sleep 0.5
   done
-  echo "ERROR: Nav2 did not become ready; log: ${session_dir}/nav2.log" >&2
-  exit 1
 }
 
 confirm() {
   local expected="$1" prompt="$2" answer read_status
-  printf '%s Type %s: ' "${prompt}" "${expected}"
+  go2_prompt_sound
+  printf '%s Type %s: ' "${prompt}" "${expected}" >&3
   while true; do
     if read -r -t 1 answer; then
       break
@@ -334,21 +366,23 @@ wait_for_preflight_inputs() {
       return
     fi
     echo "Preflight requires exclusive sensor ownership; found /lidar_points=${lidar}, /body_imu=${imu}." >&2
-    ros2 topic info -v /lidar_points 2>/dev/null || true
-    ros2 topic info -v /body_imu 2>/dev/null || true
-    confirm RETRY_PREFLIGHT "Stop the existing sensor process in its original terminal, then"
+    go2_status WAITING '预检需要独占传感器；请在原终端结束旧预检/传感器进程' MANUAL_REQUIRED
+    sleep 1
   done
 }
 
 unset PYTHONHOME PYTHONPATH
 source "${script_dir}/common.sh"
+if declare -F go2_load_overlay >/dev/null; then go2_load_overlay; fi
 camera_tf_binary="$(ros2 pkg prefix vlm_nav)/lib/vlm_nav/go2_camera_tf"
 if [[ ! -x "${camera_tf_binary}" ]]; then
   echo "ERROR: Go2 camera TF owner missing from active overlay; include the updated root overlay in VLM_NAV_EXTRA_SETUP_FILES." >&2
   exit 1
 fi
-source "${script_dir}/go2_network_env.sh"
-export PYTHONPATH="${project_dir}:${PYTHONPATH:-}"
+until source "${script_dir}/go2_network_env.sh"; do
+  go2_status WAITING '等待Go2网卡/DDS环境，请修复原配置' MANUAL_REQUIRED
+  sleep 1
+done
 install_share="$(timeout 5 ros2 pkg prefix --share vlm_nav)"
 nav2_share="$(timeout 5 ros2 pkg prefix --share nav2_bringup)"
 source_dir="${VLM_NAV_SOURCE_DIR:-${project_dir}}"
@@ -403,7 +437,7 @@ if [[ "${localization_mode}" == amcl ]]; then
     --frame-id map --child-frame-id amcl_bootstrap \
     </dev/null >"${session_dir}/amcl_bootstrap.log" 2>&1 &
   bootstrap_pid=$!
-  echo "AMCL initialization: use RViz 2D Pose Estimate within 10 minutes."
+  echo "AMCL initialization: waiting for RViz 2D Pose Estimate."
 fi
 start_child rviz "${script_dir}/start_rviz.sh" \
   "${project_dir}/config/go2_costmaps.rviz"
@@ -471,6 +505,12 @@ if [[ "${arm_result}" != *"success=True"* || "${arm_result}" != *"message='ARMED
 fi
 wait_for_value /vlm_nav/go2_bridge_state ARMED
 wait_for_value /vlm_nav/control_armed True
+arm_confirmed=true
+
+if [[ "${vlm_mode}" != true ]]; then
+  start_child recovery python3 -m vlm_nav.go2_manual_recovery
+  recovery_index=$((${#children[@]} - 1))
+fi
 
 if [[ "${vlm_mode}" == true ]]; then
   wait_for_value /vlm_nav/system_ready True
@@ -492,7 +532,8 @@ if [[ "${vlm_mode}" == true ]]; then
   echo "Stop from another terminal: ${script_dir}/stopgo.sh"
   while true; do
     bridge_state="$(timeout 2 ros2 topic echo /vlm_nav/go2_bridge_state --once --field data 2>/dev/null || true)"
-    if [[ "${bridge_state}" == *"DISARMED"* ]]; then
+    vlm_enabled="$(timeout 2 ros2 topic echo /vlm_nav/vlm_enabled --once --field data 2>/dev/null || true)"
+    if [[ "${bridge_state}" == *"DISARMED"* && "${vlm_enabled}" == *"False"* ]]; then
       "${script_dir}/stopgo.sh"
       bridge_started=false
       break
@@ -507,10 +548,10 @@ if [[ "${vlm_mode}" == true ]]; then
   exit 0
 fi
 
-echo "ARMED: use RViz 2D Goal Pose for repeated tests."
-echo "Enter CANCEL to cancel the active goal; enter DISARM after all tests."
+echo "ARMED: use RViz 2D Goal Pose for repeated tests." >&3
+echo "Enter CANCEL to cancel the active goal; enter DISARM after all tests." >&3
 echo "Emergency stop from another terminal: ${script_dir}/stopnav2.sh"
-printf 'manualnav2> '
+printf 'manualnav2> ' >&3
 while true; do
   if read -r -t 1 command; then
     :
@@ -524,6 +565,7 @@ while true; do
   fi
   case "${command}" in
     CANCEL)
+      touch "${GO2_EXPERIMENT_STATUS_FILE%.json}.cancel"
       ros2 service call /navigate_to_pose/_action/cancel_goal \
         action_msgs/srv/CancelGoal \
         "{goal_info: {goal_id: {uuid: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}, stamp: {sec: 0, nanosec: 0}}}"
@@ -538,7 +580,7 @@ while true; do
       ;;
     *) echo "Enter CANCEL or DISARM." ;;
   esac
-  printf 'manualnav2> '
+  printf 'manualnav2> ' >&3
 done
 if [[ "${bridge_started}" == true ]]; then
   echo "ERROR: input ended before DISARM; stopping before the end snapshot." >&2

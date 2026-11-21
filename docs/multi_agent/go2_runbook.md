@@ -5290,3 +5290,764 @@ test -f "$COOP_SETUP_FILE"
 `$PWD/build/go2-quiet-start-20261104/overlay`（全新输出，不覆盖上节安装），两包23.9秒构建成功。
 安装脚本与源码一致；入口回归57项通过，隔离主/子终端成功及失败退出行为通过。
 此补丁在源码启动脚本中生效，现有COOP_SETUP_FILE选择与宿主1270秒限制保持原样；未启动现场流程。
+
+
+### 2026-11-05 全流程等待恢复与三包构建
+
+本轮覆盖 Go2 单机搜索、Agent 宿主、协同任务、旧 VLM 和 manualnav2/VLMNav-go。设计见[实施计划](../superpowers/plans/2026-11-05-go2-resilient-experiments.md)。源码开启 `robot_go2.wait_recovery` 和当前 Go2 scene 的 `wait_recovery`；共享代码缺省关闭，Ranger profile 不变。部署到另一端须单独核对开关、原因白名单和有效任务时钟。
+
+| 原因类 | 行为与恢复条件 |
+|---|---|
+| WAIT_INPUT | 硬件断流、TF/定位/Nav2暂失、心跳暂失、已分类的图像/API错误：停止动作，保留任务，等待原新鲜度与健康检查恢复；无限等待不消耗有效运行预算 |
+| MANUAL_REQUIRED | 组件退出等待人工修复，不自动重启；人工停止、接管、非法指令、所有权冲突不自动解除。Bridge重建需要显式ARM及新任务，旧恢复授权不能迁移 |
+| NON_RESUMABLE / STOP_UNCONFIRMED | 执行器进程退出导致内存进度丢失、原生动作身份/终态不可确认、静态地图/身份变化、未知程序异常、必要证据断档、恢复取消未确认：本轮不能可信续接或完整验收，明确报告原因 |
+
+Sport 的 `RecoverGo2Control` 使用实例ID、故障代次和 PREPARE/RESUME/CANCEL；首次仍显式ARM。只有原已ARM实例的系统就绪/端点/指令超时等软FAULT可恢复。PREPARE回DISARMED，等停稳、旧动作终态和原健康条件后RESUME。人工操作撤销旧代次；取消独立发送固定来源代次，能撤销该RESUME的直接后继，退出前有界确认。普通Twist没有任务时间戳，无法辨认DDS中所有迟到速度包，仍依赖原动作终态、所有权与清缓存；本次离线验证不证明真机时序。
+
+任务预算在等待、STOPPING和恢复握手期间冻结；心跳/TF新鲜度、单次RPC/动作/取消期限仍使用真实单调时钟。手动RViz目标取消后恢复待命，不自动重发目标。Agent框架错误/提前结束不取消已独立运行的搜索，框架错误仍保留，不能把框架失败改写成整体成功。SIGKILL、断电、内存任务丢失不能靠本策略续接。
+
+总入口先开启文件型诊断窗口，字段包含状态、原因类、自动恢复资格、组件与日志路径；主入口只显示必要提示/路径。数据检查复用现有输入，不新增常驻完整点云、RGB或对齐深度诊断订阅。组件窗口与原日志保留。诊断文件写入失败本身不阻断停车；必要实验记录失败会保留证据缺口，不能标为完整成功。
+
+构建在 Go2 控制电脑仓库根目录的普通 Bash 终端执行，无需保持终端，也不启动 ROS 节点。以下路径为本轮专用输出，可在本轮修复期间增量构建；以后新改动另选新输出，不原地覆盖已验收旧版本。构建包含根目录与 cooperative_ws/src 三包，接口新增后不能只构建两包。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_RESILIENT_OUTPUT="$PWD/build/go2-resilient-experiments-20261105/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_RESILIENT_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$GO2_RESILIENT_OUTPUT/build" --install-base "$GO2_RESILIENT_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+```
+
+成功判据是退出0、三个包均完成。失败先查本输出的log，不切换入口。成功后才从同一输出source/test/result；不能最后source旧overlay。入口默认路径为该输出的 `install/local_setup.bash`，显式COOP_SETUP_FILE仍优先。旧终端和进程不会热更新；本轮没有启动新实验。后续有现场授权时按[正式入口](../10.22双机协同启动与验收.md)依赖顺序执行，不能为了试恢复而直接断开运动中的硬件。
+
+离线证据：`build/go2-resilient-experiments-20261105/evidence/`。测试分项及最终安装核对见[会话交接](session_handoff.md#2026-11-05-全流程等待恢复交付)。协同扩大回归的11个失败已在原HEAD包/配置上同名复现，未修改旧参数掩盖失败。没有双真机恢复、运动、DDS桥接或真实模型验收。
+
+
+### 2026-11-05 双端恢复同步与证据完整性
+
+本轮在上一恢复实现之上修复必要事件归档与最终结果的完整性报告。运行中的可恢复输入故障继续等待；显示、Marker和路径展示错误独立记录，不妨碍停车。必要事件曾写入失败会保留缺口，即使磁盘恢复也不能把本轮改为完整验收。物理结果与证据质量分别报告：物理SUCCEEDED仍保留，诊断显示INCOMPLETE/EVIDENCE_INCOMPLETE；单机最终结果文件写入失败返回非0，停止未确认仍优先报告。
+
+新输出使用 `build/go2-dual-recovery-sync-20261105/overlay`，不重建上一已验证安装。构建环境、包范围和命令沿用上节，仅将 `GO2_RESILIENT_OUTPUT` 设为该绝对路径。构建成功后切换环境/启动入口默认值，最后source本输出；既有运行进程不会热更新。完整验证结果与Ranger来源见[会话交接](session_handoff.md)。
+
+信箱任务为 `go2-resilient-experiments-20261105`，快照和回放证据继续保存在 `build/go2-resilient-experiments-20261105/evidence/`，本次构建日志位于新输出。回放使用双方实际纯状态机源码及逐文件哈希，以合成任务/坐标离线传递真实消息结构，不初始化ROS、不连接硬件。旧Ranger缺少新增原因和冻结有效任务钟，混合版本不能用于长暂停自动恢复；两端必须核对实际安装版本和参数。异步链路仍存在远端新故障尚未传达的窗口，本实现不提供零延迟全局原子恢复。
+
+
+双端契约已按实际Ranger final2纯状态机快照核对：三条新增软原因一致；等待、STOPPING和对端恢复确认冻结任务有效预算，输入新鲜度与单次动作/取消继续真实计时；硬停止收到后撤销待执行效果，迟到active状态不能解锁；同task/command成功进度保留。Go2 Sport恢复服务与Ranger原生Nav2检查点各自保留，未把平台接口或新wire字段跨端照搬。本机实际双新17项状态序列和3项同周期硬停止反例通过；Ranger执行器、安装和最终回归状态以[最新交接](session_handoff.md#2026-11-05-双端恢复同步实际final2互验)的对端报告为准。现场DDS/RPC、物理停车和恢复运动仍未验收。
+
+### 2026-11-06 Piper 开机 CAN 初始化与关节使能
+
+用户授权开机自动初始化和使能，首次 Go2 行动由开机完成后的遥控或导航触发。服务运行在 `unitree-go` 上位机，不在本项目笔记本；不依赖 ROS。设计与实施边界见[实施计划](../superpowers/plans/2026-11-06-piper-boot.md)。
+
+`piper-boot.service` 以 unitree 身份、仅 CAP_NET_ADMIN 能力运行，按实测 USB VID/PID/序列号识别 Piper 模块，不按 can0 名字盲选设备。关闭的接口设置为 1 Mbps 后启用；已打开且速率不符或 BUS-OFF 时报告并等待，不重配正在使用的总线。按每个电机及总状态报文独立检查 1 秒新鲜度，沿用故障/示教反馈，仅调用 `EnableArm(7)`；发送后清空确认缓存，并按内核接收时间戳排除发送前排队旧帧，须收到六关节新的使能反馈才 READY。无夹爪、回位、失能、清错或重置命令。首次全使能后退出，避免后续人工失能/抓取时被常驻服务反复使能。
+
+设备晚到、未上电、故障或 SDK 异常均保留原因并等待重试。后台 Type=simple 不阻塞其他启动服务；`active(running)` 不代表使能成功，`active(exited)` 且日志 READY 才代表本次启动已经完成，不代替之后的实时机械臂状态。服务不控制 Go2 行走，也不承诺领先于固件自动动作。停止服务不发送关节失能。没有图形登录的开机阶段由 journal 承担诊断终端输出（state/reason_class/reason），人工可使用下面的独立诊断终端。
+
+**本机构建：**在控制电脑仓库根目录的 Bash 终端执行，退出后不需保持运行；构建不启动现场。三包使用新输出，不重建旧 overlay。Piper 服务是独立上位机入口，因此不切换无关导航环境默认安装；部署包必须取本次新安装中的 scripts/config，服务 ExecStart 指向上位机本次安装位置。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_PIPER_OUTPUT="$PWD/build/go2-piper-boot-20261106/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_PIPER_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$GO2_PIPER_OUTPUT/build" --install-base "$GO2_PIPER_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$GO2_PIPER_OUTPUT/install/local_setup.bash"
+colcon --log-base "$GO2_PIPER_OUTPUT/test-log" test \
+  --build-base "$GO2_PIPER_OUTPUT/build" --install-base "$GO2_PIPER_OUTPUT/install" \
+  --packages-select vlm_nav --ctest-args -R '^test_piper_boot$' --output-on-failure
+colcon test-result --test-result-base "$GO2_PIPER_OUTPUT/build/vlm_nav" --verbose
+```
+
+成功判据：构建退出 0、三包完成，定向测试通过。失败不部署不完整产物。检查与打包证据目录 `build/go2-piper-boot-20261106/evidence/`。定向测试不等同于全库回归或真实冷启动验收。
+
+**部署与用户最后一步：**安装器、Python 入口、配置和 service 从构建安装产物上传到上位机 `/home/unitree/piper-boot-20261106/`。文件清单 `SHA256SUMS`；安装需要本机 sudo 密码，不收集或保存密码。以下仅在上传与只读验证完成后执行。
+
+1. 在 Go2 上位机 Bash 终端、目录 `/home/unitree/piper-boot-20261106` 先执行 `sha256sum -c SHA256SUMS`，全部 OK 后执行 `sudo bash scripts/install_go2_piper_boot.sh`。日志 `/var/log/piper-boot-install.log`；安装器不停止已有运行服务，不使用 --now、不发送使能，不重启上位机。成功打印“已配置下次开机启动”；拒绝覆盖既有部署，安装失败时撤销本次新建文件；实际入口安装到 `/opt/piper-boot/`，unit 安装到 `/etc/systemd/system/piper-boot.service`。失败先查看该日志，不继续重启。
+2. 同一终端执行 `systemctl is-enabled piper-boot.service`，预期 enabled。此结果仅证明开机配置完成，不证明本次已执行使能。
+3. 下次用户安排正常开机后，在上位机独立 Bash 诊断终端执行 `bash /opt/piper-boot/piper_boot_status.sh` 并保持运行。日志 READY 与 systemd active(exited) 表示该次初始化使能已完成；等待或错误时查看 reason_class/reason。Ctrl+C 只结束日志查看，不停止服务。
+4. 需要检查当前真实状态时，在上位机另一个 Bash 终端、任意目录执行下面的只读命令，几秒后自动退出。READY 退出 0；未就绪/失能/错误退出 2，结合日志处理，不把 systemd 历史 READY 当实时反馈。
+
+```bash
+/home/unitree/piper-venv/bin/python -I /opt/piper-boot/go2_piper_boot.py \
+  --config /opt/piper-boot/piper.json --inspect
+```
+
+`--inspect` 不配置 CAN，也不发送使能。需要撤销自动启动时，在上位机终端执行 `sudo systemctl disable --now piper-boot.service`；仅停止/禁用程序，不使机械臂失能、不删除 SDK。维修期间应由操作者明确处理机械臂支撑与供电。没有配置自动回到已记录角度。
+
+### 2026-11-06 Piper 独立夹爪调试入口
+
+用户确认杯子宽度可用，要求开始调试；本入口不重新验收杯宽。只控制夹爪，不移动六关节/Go2，不更改开机服务、行程限制或零位，不清错。`inspect` 完全被动接收；`set` 查询驱动已有行程上限（0x477查询→0x47E），核对现有正常/使能反馈后，以显式开口 mm、力矩上限 N·m 调用一次 `GripperCtrl(..., 0x01, 0x00)`。参数不是夹持力牛顿值，SDK默认范围不是杯子尺寸判据。
+
+工具持续等待和显示状态，遇到故障/断流可恢复监测；命令一旦尝试发送，异常或重连也不重发。Ctrl+C/SIGTERM 只退出监测与关闭连接，不撤销已发目标、不停止夹爪、不释放、不失能。不得在夹爪尚可能闭合时因退出了脚本就把手伸入。新的 set 是操作者主动发起的新动作，不能把反复启动当自动故障恢复。开机服务的六关节使能与夹爪电机使能不同。
+
+**本机构建与检查：**控制电脑仓库根目录 Bash，退出后不需保持。沿用已验证依赖，仅新建本轮输出；不重建旧 overlay，不切换无关导航默认环境。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_GRIPPER_OUTPUT="$PWD/build/go2-piper-gripper-20261106/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_GRIPPER_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$GO2_GRIPPER_OUTPUT/build" --install-base "$GO2_GRIPPER_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$GO2_GRIPPER_OUTPUT/install/local_setup.bash"
+colcon --log-base "$GO2_GRIPPER_OUTPUT/test-log" test \
+  --build-base "$GO2_GRIPPER_OUTPUT/build" --install-base "$GO2_GRIPPER_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper)$' --output-on-failure
+colcon test-result --test-result-base "$GO2_GRIPPER_OUTPUT/build/vlm_nav" --verbose
+```
+
+成功判据：三包构建退出0，两项ctest包装内实际 pytest 全部通过；新增与基线用例数见交接。不把包装条目计为新增用例。本次包仅从上述安装 share 的 scripts 取 `go2_piper_gripper.py`、`piper_gripper_debug.sh`、`go2_piper_boot.py`，附 `SHA256SUMS`。Python 入口使用同目录 helper；Bash 入口固定 `/home/unitree/piper-venv/bin/python -I`，默认身份配置仍使用 `/opt/piper-boot/piper.json`，不覆盖 `/opt/piper-boot/` 服务文件。
+
+**部署（用户执行，不代表已经上传）：**控制电脑 Bash，仓库根目录，先确认新上位机目录不存在。若检查非0，先检查是目录已有还是SSH失败，不覆盖已有目录。
+
+```bash
+ssh unitree-go 'test ! -e "$HOME/piper-gripper-debug-20261106"'
+```
+
+仅上一条退出0后上传（退出后无需保持）：
+
+```bash
+scp -r build/go2-piper-gripper-20261106/package unitree-go:~/piper-gripper-debug-20261106
+```
+
+上位机 Bash 操作终端 G，目录 `/home/unitree/piper-gripper-debug-20261106`，无需 ROS 或 sudo；先检查文件，全为 OK 后继续：
+
+```bash
+cd /home/unitree/piper-gripper-debug-20261106
+sha256sum -c SHA256SUMS
+```
+
+**操作顺序：**Go2保持静止，六关节处于已确认能保持的姿态；本入口不启动导航。工具默认持续运行，不自动闭合或抬升机械臂。
+
+1. 在 G 运行只读监测，并保持终端运行：
+
+   ```bash
+   bash piper_gripper_debug.sh inspect
+   ```
+
+   G只显示日志路径。有图形会话且 gnome-terminal 可用时自动打开诊断终端。普通 SSH 无图形时，另开上位机 Bash 诊断终端 D，执行以下命令并保持；它自动跟踪此工具最新一轮日志，不需要每个动作重新填写文件名：
+
+   ```bash
+   cd /home/unitree/piper-gripper-debug-20261106
+   bash piper_gripper_debug.sh diagnostics
+   ```
+
+   D应出现 `OBSERVING` 和新鲜的 `width_mm`、`torque_nm`、`gripper_enabled`；夹爪尚未使能时false不等于关节未使能。若等待，查看 `state/reason_class/reason`，处理来源后继续等待。G按Ctrl+C退出只读监测，不影响关节或夹爪。D保持运行。
+
+2. **空载目标位置调试示例**：杯子和手离开夹爪活动区，G执行下面一条。70mm/0.2N·m只是明确的首次调试设定，未经本机现场动作验证，不是杯子参数或已验收夹持力。目标大于当前有效反馈才是打开，小于当前反馈则是闭合；前提是零位与实物一致。2026-11-06 实机出现夹指基本合拢而反馈108.1mm，当前应先按文末排障记录核对零位，不能继续套用此动作及后续夹持/释放步骤。
+
+   ```bash
+   bash piper_gripper_debug.sh set --width-mm 70 --effort-nm 0.2
+   ```
+
+   G保持运行，D查看 `COMMAND_ATTEMPTED` 后的新反馈。`AT_TARGET`仅表示已使能且反馈位置距目标不超过1mm，不代表抓取、命令应答或空间安全。应结合实际开合观察；未到位先根据反馈排障，不自动提高力矩。观察结束在G按Ctrl+C，D继续保留。等待/断流恢复不会重新发送该目标。
+
+3. 空载动作正常后，先在夹爪远离杯子时准备姿态；如需人工调整，使用前述支撑、临时停止服务、失能、手动调整与重新使能流程。确认姿态保持后，再将杯子放在地面上的候选夹持位置，移开手。**夹持调试按小步改变目标开口，逐次观察，不直接盲目闭到0。**例如从70mm开始的下一小步：
+
+   ```bash
+   bash piper_gripper_debug.sh set --width-mm 68 --effort-nm 0.2
+   ```
+
+   这是试探步骤，不保证已接触杯子；杯子仍落地、不抬升、不增加力矩。若杯子变形/倾倒或需要释放，退出G监测后由操作者发起已验证的打开目标；70mm只有在零位有效且现场确认能释放时才可使用。不要把退出监测当作释放。下一步是否减小开口取决于实物和反馈，不连续粘贴多个动作命令。
+
+4. 释放复用第2步已验证的打开命令，确认杯子已落稳、双指确实分离。结束后Ctrl+C关闭G和D，不停止使能服务。只有真实夹持、释放验证完成后才安排小幅抬起，当前入口不提供机械臂抬升或自动抓取。
+
+诊断字段：`WAIT_FEEDBACK`缺失/陈旧反馈；`WAIT_ARM`关节未就绪；`WAIT_GRIPPER/WAIT_FAULT`夹爪故障；`WAIT_RANGE/WAIT_COMMAND`命令超驱动已有范围或需操作者处理；`WAIT_IO`连接/SDK异常；`command_attempted=true`表示本进程已经尝试过一次，不会再发。`grasp_confirmed`始终false，实物结果单独记录。日志位于上位机 `~/.local/state/go2-piper-gripper/`。
+
+### 2026-11-06 Piper 固件升级兼容性评估（未刷写）
+
+用户要求核对兼容性，若不影响现项目再考虑升级；尚无厂家固件包/候选版本，用户准备询问曾使用此设备的人。本节是升级选型与验证依据，不是刷写步骤或已验证兼容声明。现有夹爪位置不响应仍未确定为固件故障。
+
+**实际基线。**上位机查询0x4AF于1793969824.350返回主控 `S-V1.8-2`、硬件 `H-V1.2-1`、标识 `ARM_MC`；尾随251121意义未确认，不并入版本。夹爪电机固件、其硬件版本和内部节点ID尚未读到，不从主控版本或回复中的数字推定。铭牌记录机械臂S/N `MA100101000019005Y03487`。Python3.8.10、piper_sdk0.6.2、python-can4.5.0；当前SDK没有C_PiperInterface_V3。开机服务active/exited且enabled，固定独立venv `/home/unitree/piper-venv` 和 `/opt/piper-boot/go2_piper_boot.py`，入口/配置/unit哈希已记录。此次只有一条版本查询，无使能/运动/刷写；TX391→392。证据位于 `build/go2-piper-gripper-20261106/evidence/firmware-fresh-query.jsonl`、`firmware-installed-baseline.txt`。
+
+**项目受影响范围。**实际直接调用Piper SDK的产品代码为 `scripts/go2_piper_boot.py`、`scripts/go2_piper_gripper.py`；安装器 `scripts/install_go2_piper_boot.sh` 显式要求SDK==0.6.2。当前单机导航入口/ROS传感器/Nav2未调用Piper SDK，抓取也尚未接入，因此保持这些模块与独立venv隔离时，软件适配主要集中在Piper入口/安装器及其测试，不应重构导航栈。这是依赖范围判断，不承诺更新硬件固件后整机行为无变化。
+
+| 候选方案 | 对当前项目的判断 | 尚需证据 |
+| --- | --- | --- |
+| 仅升级夹爪电机，保留主控S-V1.8-2和SDK0.6.2 | 优先询问厂家是否有配套修复包；若主控可配套、内部ID及上位协议/单位不变，推测软件改动最小 | 夹爪型号/当前与目标电机固件、支持主控版本、内部ID、参数保留及回退说明；尚无候选包，不能判兼容 |
+| 主控升到S-V1.8-3～1.8-7 | 官方新SDK版本矩阵显示MIT力矩折算有变化；现入口未使用MIT，但仍不能仅凭V2编码认定某个包可刷 | 指定硬件对应版本、修复是否涉及当前夹爪、驱动兼容说明、参数和启动行为变化 |
+| 主控升到S-V1.8-8或以后 | 官方要求V3接口；当前0.6.2/V2不作为已验收组合。基本宽度命令可兼容不等于全部语义兼容，需要Piper侧适配/回归 | 厂家型号支持、配套SDK正式版本/驱动选择、宽度模式检查、安装器版本要求、Python3.8/aarch64与真机验证 |
+
+依据：[官方固定版README](https://github.com/agilexrobotics/piper_sdk/blob/0.7.0a1/README.MD)、[V3协议变更](https://github.com/agilexrobotics/piper_sdk/blob/0.7.0a1/assets/V3/CHANGELOG-V3.MD)、[官方新SDK固件矩阵](https://github.com/agilexrobotics/pyAgxArm/blob/master/docs/piper/firmware_reference.md)。新SDK的矩阵不能当作旧piper_sdk0.6.2对所有固件的兼容保证。SDK0.7.0a1是预发布版，只用于本次分析，不自动采用。
+
+**内部节点ID是另一条兼容条件。**[厂家公告](https://github.com/agilexrobotics/pyAgxArm/discussions/40)说明Piper旧ID7夹爪可继续使用，新ID10夹爪需要主控至少1.8-8。不能下载Nero改号包直接套用本机，也不能把主控版本回复里的数字10、SDK EnableArm(7)的“全部关节”参数或0x159上位命令ID当作已经读出的夹爪内部节点ID。
+
+**离线比对实际结果。**在控制电脑Python3.10.12中从PyPI wheel隔离加载SDK0.6.2/V2和0.7.0a1/V3，以采集报文回放，禁止创建任何CAN socket，用内存替身捕获发送；没有在上位机安装新版。两组都能解析当前使能/故障反馈，EnableArm(7)编码均0x471/0702000000000000，10mm/0.5N·m宽度命令编码均0x159/0000271001f40100；宽度10000反馈由当前Command判AT_TARGET。但构造V3角度模式mode=1、数值10000（10度），现脚本也错误判为10mm AT_TARGET，新V3接口可识别mode=1。这是升级前应修正的模式语义，不是对当前旧固件出现角度模式的认定。故不能仅换import或升级pip后直接接入新版固件。两份wheel的Python3.8 AST语法检查通过，仅说明语法，不是上位机Python3.8运行/硬件验收。候选包、SHA256、回放脚本与结果在 `build/go2-piper-gripper-20261106/evidence/sdk-compatibility/`；其中依赖wheel含控制电脑cp310/x86_64产物，不能当上位机aarch64离线安装包。未重跑产品66项测试，也未修改产品代码或构建。
+
+**向曾使用者/厂家索取的组合。**优先取得同一台设备曾正常开合时的证据；未知项写未知，截图或完整版本字符串优于只报“最新版”。
+
+1. 机械臂与夹爪各自型号/硬件版本、设备序列号，是否更换过夹爪。
+2. 正常时及现在的机械臂主控S版本；夹爪电机的独立固件版本、内部节点ID；若涉及整套电机升级，列出哪些电机被刷写。
+3. 正常时的软件准确版本：piper_sdk或pyAgxArm、实际用V2/V3接口、厂家示教软件名称/版本。提供能开合的脚本/操作顺序，尤其是否先复位、回零、模式切换；历史操作不是本次执行授权。
+4. 候选包的目标部件、适配型号/硬件、目标版本、修复说明、文件名与SHA256、官方来源。询问能否只修复夹爪电机并继续配套S-V1.8-2+SDK0.6.2。
+5. 升级是否改内部节点ID、清零/行程/关节标定、限位、负载、安装方向或开机行为；提供原版固件及回退/恢复流程。备份Python环境不能回退硬件固件。
+
+可转给厂家的问题摘要（仅草稿，未代发）：本机Piper主控S-V1.8-2、回复硬件H-V1.2-1、S/N MA100101000019005Y03487，SDK0.6.2/V2、Python3.8.10。夹爪使能/失能与手动合拢后的校零可生效，现反馈0mm；10mm目标在0.2及0.5N·m单次发送和0.5N·m约187Hz持续2秒均不动作，无故障位，主控ctrl_mode=0，已配置最大行程100mm。请核实独立夹爪电机固件/内部ID的读取方法及与本机配套的修复版本，优先保留主控和V2协议，并提供包校验、参数保留及回退说明。类似[issue40](https://github.com/agilexrobotics/piper_sdk/issues/40)只作为参考，不作为本机故障定论。官方公告提供联系地址support@agilex.ai；当前未获发送消息授权，不代发。
+
+收到具体候选包后先审查上述条件；若需改SDK/入口，先在隔离环境完成接口/模式/新鲜度/退出与不重发等验证，并按runbook构建，之后才评估刷写。现场刷写方案还须按厂家要求处理电源、姿态支撑、参数备份及开机自动使能服务的维护状态；本轮不停止服务或改变自启动。刷后按只读身份/版本与反馈、使能保持、小开口及释放、开机服务逐步验收；每一步通过才继续，不能把版本字符串变化当抓取修复。固件目标未确定前不提供猜测性刷写命令。
+
+
+### 2026-11-11 Codex CLI 版本兼容
+
+Go2 可选 Agent 改为最低稳定版本 `codex-cli 0.166.0`，逐轮读取当前 CLI 并分别检查顶层/exec 必要参数。通过后把真实路径、实际版本和 SHA-256 交给原框架复核，避免会话中静默切换二进制；不修改外部 RoboRSI、不自动升级或回退。模型协议与工具隔离仍未验收，不能保证未来破坏性接口变化自动兼容。接口与离线预检见 [Agent runbook](go2_agent_runbook.md)。
+
+新安装是 `build/go2-codex-compat-20261111/overlay/install/local_setup.bash`。三包构建成功后同步 CoVLM_env、Cooperative_env、Launcher 与公共诊断入口默认路径，并在同一本轮输出增量安装；显式 COOP_SETUP_FILE 仍优先。启动脚本和 launch 安装副本已核对，launch 通过当前 ament prefix 加载，无需增加独立路径参数。Agent runtime/config 继续由源码入口加载。旧进程不会热更新。
+
+以下为本轮实际构建命令，在 Go2 控制电脑仓库根目录 Bash 执行，完成后无需保持终端，不启动 ROS 节点或硬件。以后修改须选择新输出，不覆盖本次已验证安装。退出 0 且三包完成才可切换入口；失败先保留日志并修复。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export GO2_COMPAT_OUTPUT="$PWD/build/go2-codex-compat-20261111/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+colcon --log-base "$GO2_COMPAT_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$GO2_COMPAT_OUTPUT/build" --install-base "$GO2_COMPAT_OUTPUT/install" \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$GO2_COMPAT_OUTPUT/install/local_setup.bash"
+```
+
+验证证据位于 `build/go2-codex-compat-20261111/evidence/`：适配基线44项，最终59项（新增15）；入口/环境原149项及扩大至155项均通过，保留11条既有第三方弃用警告。实际CLI0.167.0无模型预检退出0；完整--check-install通过，59个Python模块及三包prefix均取本轮安装，6份脚本/launch安装副本与源码一致。构建仅有既有CMake提示。未跑全库/现场/真实模型测试，无SSH、桥接、录包或运动。
+
+### 2026-11-11 Piper独立入口部署到Go2上位机
+
+独立源码位于控制电脑 `/home/isee-pst/unitree_ros2/piper`，本轮已部署到 `unitree-go:/home/unitree/piper-standalone-20261111`。具体检查结果见[会话交接](session_handoff.md#2026-11-11-piper部署go2上位机并通过ssh启动)。沿相机SSH方式运行，使用机载既有Python3.8环境，不加载ROS或启动导航；原piper-boot.service未改。
+
+控制电脑Bash终端A进入 `/home/isee-pst/unitree_ros2/piper`，执行 `bash piper_go2.sh check`，无需保持运行。退出0且远端日志CHECK_OK后，执行 `bash piper_go2.sh inspect` 并保持；终端B在相同目录运行 `bash piper_go2.sh diagnostics` 并保持，以查看上位机日志。退出监测用Ctrl+C，日志应EXITED；不等同于物理停止。后续关节/夹爪动作尚未执行。
+
+本轮check通过、SSH只读监测及退出通过，但上位机当前无匹配USB-CAN/无CAN接口；inspect为WAIT_IO，开机服务为WAIT_CAN。恢复真实连接后应观察OBSERVING与新鲜反馈，不能以软件check成功代替设备验收。既有开机服务在USB恢复后会继续原初始化/使能流程。本机piper.sh仍仅本机运行；远端程序和日志须经piper_go2.sh访问。
+
+### 2026-11-14 独立 Piper 蓝色积木视觉抓取：构建与离线验证
+
+功能入口、机器分工与现场步骤见 [独立视觉抓取手册](piper_vision_grasp_runbook.md)。本节是完整构建命令的唯一维护位置。
+源码位于本仓库 `tools/piper_vision_grasp`，安装后仍保留 `tools/`、`scripts/`、`config/` 相对布局；不加载外部 Piper 源码，不改导航环境默认 overlay。
+
+以下命令在**开发机 Bash 终端、仓库根目录**执行；全部为构建或离线/fake检查，不连接CAN、相机或ROS节点。每段退出0后才执行下一段；失败保留日志并修复，不替换入口。命令完成后无需保持终端。`build/piper-vision-semantic-20261114/overlay` 是包含context、重复帧修复及语义抓取的当前独立输出（首版输出仍保留），未来修改选用新输出，不覆盖已验证外部 overlay。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+python3 -m pytest -q test/test_piper_vision_grasp.py test/test_piper_semantic.py
+python3 -m pytest -q test/test_piper_boot.py test/test_piper_gripper.py
+bash -n scripts/piper_vision_grasp.sh
+```
+
+成功判据：新增功能用例全部通过；原Piper基线66项全部通过；Bash语法退出0。Python3.8语法检查覆盖新增模块与测试，兼容旧SciPy旋转API的用例也必须通过；这些不是机载解释器或实机验收。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-vision-semantic-20261114/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+export CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential \
+  --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+成功判据：三包构建完成且退出0，三项ctest包装内的实际pytest全部通过；不把包装条目数当用例数。
+
+开发机 `/usr/bin/python3` 有 NumPy/SciPy/OpenCV，但缺少硬件SDK；本次仅在 `build/piper-vision-grasp-20261114/check-venv` 建立带system-site-packages的隔离检查环境，安装 piper-sdk==0.6.2、python-can==4.5.0、pyrealsense2==2.55.1.6486。该环境仅用于开发机离线入口检查，不打包或复制至Go2，不改动导航或原Piper虚拟环境。安装记录在同目录 `evidence/dependency-install.log`。
+
+同一开发机终端，构建成功后核对安装入口（每次选择新的run-id；重复ID必须被拒绝）：
+
+```bash
+export PIPER_VISION_GRASP_PYTHON="$PWD/build/piper-vision-grasp-20261114/check-venv/bin/python"
+export PIPER_VISION_SHARE="$PIPER_VISION_OUTPUT/install/vlm_nav/share/vlm_nav"
+env -u DISPLAY -u WAYLAND_DISPLAY bash "$PIPER_VISION_SHARE/scripts/piper_vision_grasp.sh" check \
+  --output-root "$PWD/build/piper-vision-semantic-20261114/evidence/install-cli" --run-id check01
+env -u DISPLAY -u WAYLAND_DISPLAY bash "$PIPER_VISION_SHARE/scripts/piper_vision_grasp.sh" preview \
+  --input "$PWD/test/fixtures/piper_vision_grasp/blue-block-after-retreat-rgbd01" \
+  --output-root "$PWD/build/piper-vision-semantic-20261114/evidence/install-cli" --run-id preview01
+```
+
+诊断终端查看对应 `events.jsonl`，结果文件应分别为 `CHECK_OK`、`PREVIEW_READY`，配置和模块路径均在本次安装share下，解释器为上述隔离环境；离线preview的 `can_transmit_count=0`。输入目录是只读测试样本，运行代码和配置不能回落至外部 `/home/isee-pst/unitree_ros2/piper`。
+
+本次最终结果：新增56项、基线66项pytest通过；3个ctest包装通过。colcon汇总125包含包装，不是新增125项。安装check与存档preview均退出0，23个运行文件逐字节匹配；具体证据和分发包哈希见session_handoff末条。未跑全库或现场测试，不代表机载部署与自主抓取验收完成。
+
+2026-11-14用户机载observe报告 `global config-file/context: expecting an object; got ""`。独立采集入口已恢复原手眼入口的 `rs.context('{"inherit":false}')`，只忽略本进程的Viewer全局context，不改机载配置。上面的输出路径已同步到修复版；开发机check解释器仍复用首版隔离环境。修复版57项视觉测试（其中新增1项context回归）及66项boot/gripper基线的最终结果见交接，不启动硬件验证。
+
+2026-11-14帧序号修复的当前输出为上述 `build/piper-vision-semantic-20261114/overlay`，保留context版输出。针对同步帧组复用，采集等待双路均递增后才存档，倒退/停滞仍报错。新增7个参数化场景覆盖单/双路重复及两路各自倒退/停滞，视觉测试64项，原boot/gripper66项；当前验证结果见session_handoff末条，部署步骤见独立手册末节。
+
+### 2026-11-14 Piper语义识别及绝对抓取接入
+
+当前独立输出为 `build/piper-vision-semantic-20261114/overlay`，包含新增test_piper_semantic；上节命令已指向该输出，首版/context/frames输出均保留。仍构建根包和cooperative_ws/src三包，不改导航默认环境。配置semantic.json新增颜色/描述→Qwen框/关键点→SAM→RGB-D绝对位姿，默认config.json继续原蓝色参考路径。部署和现场授权见独立手册及session_handoff末条。
+
+开发机模型服务复用已有co-nav-real的Torch/NumPy/OpenCV及既有SAM权重，独立环境建立命令如下（首次执行；当前环境已经建立，无需重复安装）。只有segment-anything是本次新增依赖，不修改机载依赖或原Python环境。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+python3 -m venv --system-site-packages build/piper-vision-semantic-20261114/model-venv
+python3 - <<'PY'
+from pathlib import Path
+p=next(Path('build/piper-vision-semantic-20261114/model-venv/lib').glob('python*/site-packages'))
+(p/'piper-model-existing.pth').write_text('/home/isee-pst/venv/co-nav-real/lib/python3.10/site-packages\n'+str(Path('build/piper-vision-grasp-20261114/check-venv/lib/python3.10/site-packages').resolve())+'\n')
+PY
+build/piper-vision-semantic-20261114/model-venv/bin/python -m pip install --no-deps segment-anything==1.0
+```
+
+服务端需要PIPER_VLM_API_KEY或DASHSCOPE_API_KEY，不打印或写入分发包；PIPER_SAM_CHECKPOINT指定已有sam_vit_b权重。当前CUDA不可用，实测CPU可加载模型；不修驱动。本轮调用provider /models核实旧快照ID不可用，改用列出的qwen3-vl-plus，已真实完成三张存档图的定位/分割，不能当作现场绿色盒子抓取通过。服务HTTP仅绑定127.0.0.1，通过SSH反向隧道供Go2使用。
+
+
+## 2026-11-17 Piper手眼重新标定离线复算
+
+本轮结果与限制见[piper_handeye_recalib_20261117.md](piper_handeye_recalib_20261117.md)。仅当dataset已具有人工确认的10train/5validation且安装关系在批次内保持不变时复算。开发机单个Bash终端，无需ROS环境，命令结束后不需保持；不连接相机或CAN，不部署。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+/home/isee-pst/unitree_ros2/piper/.handeye-venv/bin/python -I \
+  /home/isee-pst/unitree_ros2/piper/handeye/core.py solve \
+  --dataset build/piper-handeye-recalib-20261117/dataset \
+  --output build/piper-handeye-recalib-20261117/result-recomputed.json
+```
+
+输出文件名必须尚未使用；程序以独占方式创建，已有文件不会覆盖。退出0并生成完整JSON表示求解完成，须核对training.count=10、validation.count=5及独立验证残差；physical_validation仍NOT_PERFORMED，不代表真实抓取通过。失败时查看异常并保留原数据，不把验证样本改为训练来降低误差。已有原件result.json及docs归档均保留。
+
+## 2026-11-17 新手眼外参应用构建
+
+复用上文“独立Piper蓝色积木视觉抓取：构建与离线验证”的三包构建、ctest环境与命令，本轮将`PIPER_VISION_OUTPUT`设为`$PWD/build/piper-handeye-applied-20261117/overlay`，不覆盖历史输出。86项视觉/语义测试、66项底层基线通过；三包构建成功，4项ctest包装通过（colcon汇总156含包装，不是156个不同用例）。新安装入口check改用`--config "$PIPER_VISION_SHARE/config/piper_vision_grasp/semantic.json" --color 红色 --description 方块 --approach-pitch-deg 25`，已得到CHECK_OK。新标定安装状态不能复用旧蓝色参考图证明现场精度，本轮未做旧参考离线preview。
+
+新增来源文件`config/piper_vision_grasp/provenance/handeye-recalib-20261117-result.json`与原结果逐字节一致；旧人工平移/旋转测试改为读取历史来源，新增测试验证当前配置完整加载新矩阵、不叠加旧偏移。先前一项旧参数断言失败的日志保留在`build/piper-handeye-applied-20261117/evidence/pytest-vision.log`，最终通过日志为`pytest-vision-final.log`，构建/ctest/机载加载证据在同目录。实际部署及尚待确认的现场状态见[抓取手册](piper_vision_grasp_runbook.md#2026-11-17-应用重新标定外参)。
+
+## 2026-11-17 相机避让路径构建
+
+三包构建/ctest仍使用上文独立视觉抓取章节的完整命令及环境，本次输出改为`PIPER_VISION_OUTPUT="$PWD/build/piper-camera-avoid-20261117/overlay"`，source/test/result均使用该输出。新增5项先失败后通过：基座Z方向预抓/入口与固定XY下降、四类无效几何配置；视觉/语义共91项、原底层基线66项通过，4项ctest包装通过。colcon汇总161含包装，不是161个不同用例。
+
+安装入口使用`--config "$PIPER_VISION_SHARE/config/piper_vision_grasp/semantic-camera-avoid.json"`，不要沿用旧CLI的`--approach-pitch-deg 25`覆盖新配置。默认红色方块/60°，新配置独立保存，主semantic.json与height0试验文件未覆盖。安装/source的34个文件逐字节一致，开发端和机载离线检查均CHECK_OK。构建证据与新旧路径外形审计位于`build/piper-camera-avoid-20261117/evidence`，图片`camera-avoid-paths.png`只展示旧采样目标和起点，不代表当前真机状态。
+
+
+### 2026-11-17 人工对齐平移候选应用
+
+用户明确授权应用记录中的平移候选并回零。沿用上文完整三包构建/ctest命令，独立输出改为`PIPER_VISION_OUTPUT="$PWD/build/piper-translation-applied-20261117/overlay"`，build/test/source/result使用此输出。新来源为`config/piper_vision_grasp/provenance/handeye-manual-translation-20261117.json`，保存原标定、候选记录和授权；外参平移增量base=[77.816491,5.641927,33.324299]mm，旋转不变。旧候选JSON保留其形成时未应用状态，当前应用状态看本节与session_handoff。
+
+构建成功后安装入口仍使用`--config "$PIPER_VISION_SHARE/config/piper_vision_grasp/semantic-camera-avoid.json"`。机载保持原部署目录与解释器，更新外参及来源文件、SOURCE_MANIFEST和SHA256SUMS，先核对清单再check。默认避让配置仍60°；上轮较远物体使用40°CLI，不代表新摆放必然同角度可达。后续须待用户摆好物体再重新识别/规划，不能执行旧目标。该人工平移候选包含TCP误差、未经过独立抓取精度验证，physical_validation继续NOT_PERFORMED。
+
+本轮结果：92项视觉/语义与66项基线通过，4项ctest包装通过（汇总162含包装），三包构建成功。35文件安装/source匹配；安装check01与机载translation-applied-check-20261117-01均CHECK_OK。机载清单与实际加载外参SHA核对通过；回零成功不代表新位置抓取验证通过。
+
+### 2026-11-17 GraspNet 接入构建与离线验收
+
+入口和模型环境见 [GraspNet 运行手册](piper_graspnet_runbook.md)。本次独立输出为 `build/piper-graspnet-20261117/overlay`，不覆盖先前已部署产物。开发机 Bash 终端、仓库根目录，依次执行；各段退出 0 后继续，不连接硬件，完成后不用保持终端。
+
+```bash
+cd /home/isee-pst/unitree_ros2/VLM_Nav
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+python3 -m pytest -q test/test_piper_graspnet.py test/test_piper_vision_grasp.py test/test_piper_semantic.py test/test_piper_boot.py test/test_piper_gripper.py
+bash -n scripts/piper_vision_grasp.sh
+```
+
+```bash
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-graspnet-20261117/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic|test_piper_graspnet)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+五项 ctest 是包装数，不是新增用例数。安装检查须使用上述输出的 `share/vlm_nav/scripts/piper_vision_grasp.sh` 和同一 share 下的 `semantic-graspnet.json`；旧部署与导航环境不切换。真实离线结果、模型来源限制及最终测试计数见 session_handoff 最新 GraspNet 条目。
+
+### 2026-11-18 Piper 六轴抓取提速构建
+
+四个抓取配置的 `motion.speed_percent` 从5提高到30，统一作用于J1–J6；配置加载和SDK下发均校验0–100整数。历史来源中的5%保持原记录。没有改固件逐轴速度上限、加速度、力矩、限位或路径。源码/安装包更新不等于机载已部署。
+
+开发机 Bash 终端，仓库根目录执行下面命令；每步失败即停止，构建成功后才加载该输出。全程离线，不连接机械臂，结束无需保持终端。测试成功判据为退出0；ctest项是包装数。
+
+```bash
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-speed-20261118/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic|test_piper_graspnet)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+安装入口为 `build/piper-speed-20261118/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh`，其相对路径直接使用同一安装share下的tools和config；不需要更改导航环境/ROS launch。安装check必须显式选择同一share下的抓取配置，结果须为CHECK_OK。
+
+### 2026-11-18 恢复启发式默认入口并部署30%速度
+
+用户授权部署和恢复旧启发式方法。main默认配置切为semantic-camera-avoid.json：Qwen选物标签/框、SAM分割、RGB-D可见区域中心与夹取轴、物块上方100mm预抓、60°接近，J1–J6统一30%。该配置不调用GraspNet，保留原外参/TCP及避让参数；历史GraspNet包保留但不作为当前入口。源码入口及安装入口使用相同默认值；旧HSV参考实验须显式选择config.json。
+
+开发机Bash终端、仓库根目录，执行以下离线构建和测试；命令失败即停止，成功后才进入部署，终端无需保持。
+
+```bash
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-heuristic-20261118/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic|test_piper_graspnet)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+当前部署目标为unitree-go:/home/unitree/piper-vision-heuristic-20261118；稳定入口/home/unitree/piper-vision-current指向此包，脚本为scripts/piper_vision_grasp.sh。使用PIPER_VISION_GRASP_PYTHON=/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python。文件来源只取本节成功安装share/vlm_nav，核对SHA256SUMS和SOURCE_MANIFEST.json；机载check为离线校验，不发送CAN、不采图。旧导航环境和ROS launch无需切换。部署后尚须现场授权才运行抓取，30%运动效果不能由CHECK_OK证明。
+
+### 2026-11-18 抓取过程证据与可视化
+
+用户授权一次红色方块抓取并保存RGB/3D候选、坐标变换和IK/实际角度。新增每次捕获的planning.json（包含失败结果与冻结配置）、根目录config_snapshot.json，复用已有events反馈；visualize默认调用离线报告，输出独立HTML/PNG/CSV/JSON，不发送CAN或调用模型。
+
+开发机Bash终端、仓库根目录，下面构建/测试各步退出0后继续；结束无需保持终端。
+
+```bash
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-evidence-20261118/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic|test_piper_graspnet|test_piper_report)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+绘图使用已有build/piper-graspnet-20261117/model-venv（仅复用Matplotlib/Plotly环境，不调用GraspNet），本次安装入口scripts/piper_vision_grasp.sh visualize --input RUN_DIR --output-root RUN_DIR --run-id visualization。RUN_DIR为取回本地的真实运行目录；原始捕获子目录一并保留。报告index.html包含同图物块/抓取点、相机/基座坐标、关节角曲线及CSV；没有执行反馈的阶段留空。机载Python仍为/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python，不安装绘图依赖到机器人。
+
+本轮现场尾段发现standby开爪遗漏CAN模式选择，最新本地piper_io已在持久receipt后补齐，失败仍不自动重发；此修复和报告改进经过最终构建，但尚未热更新到机载运行包。2026-11-18用户手动整机重启中，SSH断线早于停止请求送达；当前机载状态未知，禁止自动恢复抓取。重连后先读旧进程/boot状态、取回red-evidence-grasp-20261118-01全目录，再核对版本和新反馈。最后已知WAIT_OPEN、实物最大张开但CAN/SDK均6.7mm，六轴目标未发送。详情、原始CAN、包身份及最新证据缺口见session_handoff同日可视化条目；该项并非完整抓取验收。
+
+后续用户明确重新授权抓取，已从上述最终成功安装输出部署r2：current现指向/home/unitree/piper-vision-evidence-20261118-r2，41文件哈希及evidence-r2-check-20261118-01通过，standby修复已实际部署。解释器和脚本调用方式不变；旧包保留。新red-evidence-grasp-20261118-02目前等待CAN反馈恢复，不能据部署检查视为运动通过。旧run01断电损坏的日志尾记录原样保留，完整可解析证据报告位于build/piper-evidence-20261118/results/red-evidence-grasp-20261118-01/visualization-complete/index.html，派生输入recovered-input/recovery.json说明数据缺口。当前进程、恢复操作和授权见session_handoff最新条目。
+
+最终现场结果：USB-CAN重绑恢复后，run02开爪正常，后因固定60°全路径边界进入等待；用户要求复查后结束。IK/FK/规划函数及关节限位与旧部署一致，历史实际参数是40°，不能把固定姿态/高入口的失败当作整体工作空间缩小。对新摆位完成40°只读预览与相机区域采样，用户明确授权后，run03使用现有CLI参数`--approach-pitch-deg 40`，37段关节全部到位，用户确认红块悬空稳定。当前源码/部署默认仍60°，该参数属于此次实际运行条件；不自动复用本次授权进行新实验。
+
+最终统一报告为build/piper-evidence-20261118/results/index.html，run03完整结果位于同目录red-evidence-grasp-20261118-03/visualization-final/index.html。自动视觉验证因遮挡/部分出画未通过，之后模型服务中断；独立operator-verification.json保存现场确认，原result.json保持EXITED/自动grasp_confirmed=false。监测已结束，机械臂保持夹持，12次只读反馈稳定；未自动释放或回零。后续模型退出143的来源仍待查，服务和隧道已结束。未改产品代码，本轮不重复构建。
+
+
+### 2026-11-18 六关节回零脚本构建
+
+入口和现场顺序见[回零说明](piper_vision_grasp_runbook.md#六关节回零脚本2026-11-18)。
+复用下节完整三包构建与ctest命令、依赖环境，只将输出改为
+`PIPER_VISION_OUTPUT="$PWD/build/piper-zero-20261118/overlay"`；build/test/source/result均使用该输出，
+不覆盖旧安装。源码定向测试为 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /usr/bin/python3 -m pytest -q test/test_piper_vision_grasp.py test/test_piper_boot.py test/test_piper_gripper.py`。
+基线161项通过；新增9项后170项通过，涵盖分段/夹爪保持、等待恢复、命令不确定不重发、存储/诊断错误恢复、未到位不继续和CLI重复run拒绝。
+独立证据目录为 `build/piper-zero-20261118/evidence/`。构建/安装最终核对结果见session_handoff同日回零脚本条目。
+
+### 2026-11-18 追加点云报告的本地安装
+
+用户要求补充全场景深度点云与真实启发式输入点云。当前本地新安装为build/piper-pointcloud-20261118/overlay/install/vlm_nav/share/vlm_nav；机载current仍r2，本轮未重新部署。完整构建及相关检查命令（开发机终端，仓库根目录，运行结束即可关闭）：
+
+```bash
+set -eo pipefail
+unset PYTHONHOME PYTHONPATH
+source /opt/ros/humble/setup.bash
+source /home/isee-pst/Documents/liang/hesai_xt16_ws/install/local_setup.bash
+source /home/isee-pst/unitree_ros2/go2_ws/install/local_setup.bash
+source "$PWD/build/go2-coop/install/local_setup.bash"
+export PIPER_VISION_OUTPUT="$PWD/build/piper-pointcloud-20261118/overlay"
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 CMAKE_BUILD_PARALLEL_LEVEL=2
+colcon --log-base "$PIPER_VISION_OUTPUT/log" build \
+  --base-paths "$PWD" "$PWD/cooperative_ws/src" \
+  --packages-select multi_agent_task_msgs vlm_nav multi_agent_nav \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --executor sequential --cmake-args -DBUILD_TESTING=ON -DPython3_EXECUTABLE=/usr/bin/python3 \
+  -DCOOPERATIVE_RUNTIME_PYTHON=/home/isee-pst/venv/co-nav-real/bin/python
+source "$PIPER_VISION_OUTPUT/install/local_setup.bash"
+colcon --log-base "$PIPER_VISION_OUTPUT/test-log" test \
+  --build-base "$PIPER_VISION_OUTPUT/build" --install-base "$PIPER_VISION_OUTPUT/install" \
+  --packages-select vlm_nav \
+  --ctest-args -R '^(test_piper_boot|test_piper_gripper|test_piper_vision_grasp|test_piper_semantic|test_piper_graspnet|test_piper_report)$' --output-on-failure
+colcon test-result --test-result-base "$PIPER_VISION_OUTPUT/build/vlm_nav" --verbose
+```
+
+三个包构建成功后，安装入口使用自身同目录tools/config；已核对脚本、main/report/cloud_report/semantic及semantic-camera-avoid配置6个哈希与源码一致。现有launch/env未硬编码旧Piper报告路径，无需修改机器人启动链。
+
+离线报告入口（开发机，仓库根目录，使用已有绘图环境，不连接机器人，完成即退出）：
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY MPLCONFIGDIR=/tmp/piper-report-mpl \
+  bash build/piper-pointcloud-20261118/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh visualize \
+  --input "$PWD/build/piper-evidence-20261118/results/red-evidence-grasp-20261118-05" \
+  --output-root "$PWD/build/piper-evidence-20261118/results/red-evidence-grasp-20261118-05" \
+  --run-id visualization-pointcloud-final
+```
+
+此run-id已用于本次交付，复跑时须换未存在的报告目录名，不能覆盖历史。报告中每个候选的clouds.html并列显示全场景及实际目标输入，可切换3帧；clouds.png预览最后一帧。全场景显示最多30000点并报告抽样/总数，目标点全部显示；每帧两份PLY保留完整彩色点，坐标为基座系、单位米，clouds.json保存冻结内参/外参/筛选定义及点数。现场人工确认单独展示，不能等同自动成功。
+
+### 2026-11-18 夹爪角度搜索构建
+
+复用上节“追加点云报告的本地安装”的完整三包build/test/source/result命令和环境，只将输出改为`PIPER_VISION_OUTPUT="$PWD/build/piper-angle-search-20261118/overlay"`，不覆盖已验证的zero或pointcloud安装。源码定向验证：
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 /usr/bin/python3 -m pytest -q \
+  test/test_piper_vision_grasp.py test/test_piper_semantic.py \
+  test/test_piper_graspnet.py test/test_piper_report.py
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 build/piper-graspnet-20261117/model-venv/bin/python -m pytest -q \
+  test/test_piper_semantic.py test/test_piper_report.py
+```
+
+开发机Bash、仓库根目录，完成即退出。第二条复用已有绘图依赖补验系统环境缺Plotly跳过的用例，不调用GraspNet。成功判据是测试通过、三包构建成功、ctest无错误失败，再核对实际安装入口及默认配置包含`angle_search`；失败先修复，不能部署未完成产物。本轮Go2已关机，不执行SSH或真机命令。
+
+已存四场景离线数据在`build/piper-angle-search-20261118/results/offline-replay-final`。用成功安装的报告入口生成新目录（开发机、仓库根目录）：
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY MPLCONFIGDIR=/tmp/piper-report-mpl \
+  bash build/piper-angle-search-20261118/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh visualize \
+  --input "$PWD/build/piper-angle-search-20261118/results/offline-replay-final" \
+  --output-root "$PWD/build/piper-angle-search-20261118/results/offline-replay-final" \
+  --run-id visualization
+```
+
+报告生成后该run-id不重复使用；重新生成须换新名称。成功判据`VISUALIZED/offline/CAN发送0`，没有真实执行角，不能把离线候选图当实际抓取到位。证据在`build/piper-angle-search-20261118/evidence/`，使用语义见[角度搜索说明](piper_vision_grasp_runbook.md#俯仰与水平朝向枚举2026-11-18本地实现)。
+
+### 2026-11-19 用户指定IK位置阈值8mm
+
+用户在现场尝试中明确将IK位置通过阈值从1mm放宽到8mm。两份启发式semantic配置增加`semantic.ik_position_tolerance_m: 0.008`；1°姿态阈值、关节限位与速度不变，未配置此参数的旧参考/GraspNet仍为1mm。参数仅注入本次规划模型副本，端点及完整路径均使用它，报告显示冻结配置的实际阈值。
+
+沿用前节完整三包构建环境/命令，将build/test/source/result统一设为`PIPER_VISION_OUTPUT="$PWD/build/piper-ik8-20261119/overlay"`，保留旧安装。新增8项阈值边界、姿态限制、参数传递与非法值测试；240项基线基础上，最终246通过/2绘图跳过，colcon254含6包装，0错误/0失败；绘图环境semantic+report56项通过（补验2项跳过）。源代码与分发44项一致，机载CHECK_OK后切换current至`/home/unitree/piper-angle-search-20261119-ik8`，旧角度版回退链接`/home/unitree/piper-vision-current.before-ik8-20261119`。归档及证据位于`build/piper-ik8-20261119`。
+
+8mm是模型数值接受范围，不表示真实抓取精度或已抓取成功。当前现场预览/运动结果见session_handoff最新记录；原已保存运行仍按其冻结的1mm阈值解释。实际入口/解释器沿用上一部署节，不传固定pitch即可保持默认角度搜索。
+
+
+### 2026-11-19 关节角数字列表报告
+
+报告删除候选关节柱状图和逐轴时间图，直接列出J1～J6角度（度、三位小数）。候选表区分IK、采图反馈与抓取到位反馈；执行表逐阶段显示目标、最后有效实测、带符号误差（实测−目标）及反馈状态。未执行/无新鲜反馈不填零，CSV与JSON保留原始精度。RGB、三维点云和坐标变换图继续保留。
+
+沿用“追加点云报告的本地安装”完整三包build/test/source/result命令与环境，输出统一替换为`PIPER_VISION_OUTPUT="$PWD/build/piper-joint-table-20261119/overlay"`。报告仅在开发机离线生成，无需切换机载运动程序。构建成功后，在仓库根目录的普通开发终端执行以下命令；使用既有绘图环境，不需ROS，不需保持终端：
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY MPLCONFIGDIR=/tmp/piper-report-mpl \
+  bash build/piper-joint-table-20261119/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh visualize \
+  --input "$PWD/build/piper-angle-live-20261119/results/angle-red-grasp-20261119-01" \
+  --output-root "$PWD/build/piper-angle-live-20261119/results/angle-red-grasp-20261119-01" \
+  --run-id visualization-numeric
+```
+
+成功判据：新目录的`result.json`为`VISUALIZED`、`offline=true`、`can_transmit_count=0`，HTML直接展示数字且没有关节角PNG引用。已使用的run-id不重复；后续重生成换新名。旧报告/原始数据保留，不将历史抓取失败改为成功。
+
+
+### 2026-11-19 空间图标注反馈FK夹爪TCP
+
+三维场景（静态/交互）及全场景/启发式输入点云图增加橙色菱形，表示对应抓取阶段最后有效实测关节角按冻结URDF链换算后，加工具系TCP偏移得到的位置。场景图连接候选与反馈TCP，页面列基座系毫米坐标及ΔX/ΔY/ΔZ；summary.json和点云元数据保留原始关节值、时间、反馈状态及米制坐标。只有对应执行捕获存在有效反馈才显示；WAIT_TARGET不标成到位，采图角不冒充抓取反馈。关节角仍是数字表。
+
+该点是历史反馈的模型换算结果，不是当前零位、独立空间测量或碰撞验证。测量角不按规划限位裁剪，运动规划限位保持原样。无新增依赖，不需机载部署或运动。
+
+构建沿用“追加点云报告的本地安装”三包完整命令与环境，将build/test/source/result输出统一改为`PIPER_VISION_OUTPUT="$PWD/build/piper-feedback-fk-20261119/overlay"`。开发机仓库根目录普通终端离线生成新报告，使用既有绘图环境，结束即可关闭：
+
+```bash
+env -u DISPLAY -u WAYLAND_DISPLAY MPLCONFIGDIR=/tmp/piper-report-mpl \
+  bash build/piper-feedback-fk-20261119/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh visualize \
+  --input "$PWD/build/piper-angle-live-20261119/results/angle-red-grasp-20261119-01" \
+  --output-root "$PWD/build/piper-angle-live-20261119/results/angle-red-grasp-20261119-01" \
+  --run-id visualization-feedback-fk
+```
+
+成功判据为新报告`VISUALIZED/offline=true/CAN发送0`，对应执行捕获有`grasp_feedback_fk`及橙色标记，无对应反馈的捕获该字段为null。旧报告保留，已使用run-id不重复。源码测试和构建证据在`build/piper-feedback-fk-20261119/evidence`。
+
+
+### 2026-11-19 四停靠点机械臂轮廓与闭爪回零（本地待现场验证）
+
+两份启发式配置`semantic.json`/`semantic-camera-avoid.json`默认启用`motion.record_arm_outline`和`motion.return_zero_after_grasp`（布尔值）。旧参考/GraspNet配置未启用，保持原流程。下一次使用新安装入口执行`run`时，沿已通过的路径在预抓、接近中间路点、抓取到位、合爪后抬升四处记录；没有增加四个新朝向。接近中点选现有grasp-N中间路点，计划保存`arm_capture_stages`。
+
+每处采3帧RGB、原始/对齐深度，逐帧记录接收前后的新鲜关节/夹爪反馈。检查采集期间六轴变化≤0.3°、夹爪变化≤1mm；跨反馈中断整批重采，逐帧图像接收时间须处于前后反馈读取窗口内，窗口≤4秒（原3秒相机等待加1秒反馈新鲜窗口）。原始窗口时间/span保存到metadata和报告；这是停靠采集稳定性与主机时间配对检查，不是硬件同步采样。机械臂分割对该组三帧的最后一帧调用既有Qwen/SAM，只发送RGB和机械臂描述，不发送FK投影。原始三帧与全部配对反馈均保留；`arm-mask.png`/`arm-observation.json`对应最后一帧。采集/分割失败写`WAIT_ARM_CAPTURE`，在同一停靠点等待并重采，不重发关节动作。分割质量需目视RGB叠加，模型可能漏分/误分。
+
+抓取流程保留原接触候选、抬升和视觉确认；确认通过后从实测抬升姿态按最大单轴名义步长10°分段回零，沿用30%速度和0.3°到位容差，只发六轴命令，保持原闭爪目标与力矩。未通过原检查则继续等待，不自动松爪或重抓。`return-plan.json`保存回零起点/目标，root plan追加回零段供数字表对照；完成状态`GRASP_RETURNED_ZERO`。`grasp_confirmed_at=after_lift`、`holding_at_zero_verified=false`明确视觉确认发生在抬升时，回零后持物仍需现场核验。分段回零不是携物碰撞规划，现场执行前仍须按当前摆位核验通路。
+
+离线`visualize`自动读取`arm-*/arm-observation.json`，以相机有效深度反投影分割轮廓内侧1像素边界，不填补零深度、遮挡面或背景。Piper完整STL表面由实测六轴和实测夹爪开口驱动，按URDF joint7=开口/2、joint8=−开口/2。关节测量值不裁剪；指爪几何/开口仍待实物标定。模型URDF SHA必须匹配冻结运动学来源（允许仅CRLF/LF与文件末尾换行差异，原始及LF标准化SHA均保存）；模型及各mesh哈希保存。报告三维叠加蓝色模型与橙色实测轮廓点，四姿势下拉切换，附RGB mask叠加、原始像素/点NPZ、全轮廓PLY、关节数字表和有效深度数量。没有自动配准或用模型生成观测点。报告不访问网络/机器人；分割已在采集阶段保存。
+
+按“追加点云报告的本地安装”完整三包构建命令/环境，把build/test/source/result统一改为`PIPER_VISION_OUTPUT="$PWD/build/piper-arm-outline-20261119/overlay"`。新安装入口为该输出下`install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh`，使用同安装tools/config。`--urdf`沿用既有默认外部Piper URDF和同包mesh目录；拷贝报告到另一开发机时须提供与冻结SHA相同的URDF及mesh，不能只拷贝provenance URDF而缺mesh。
+
+本节是下一次抓取的代码行为说明，不授权现在运动。本轮不切换机载current。完成采集并同步运行目录后，在开发机仓库根目录的普通终端用上述安装入口`visualize --input RUN_DIR --output-root RUN_DIR --run-id 新名称`生成报告；无需ROS，结束后无需保持终端。成功判据VISUALIZED/offline/CAN=0，报告有四个对应停靠点；若有中止只显示已采数据，不补造其余姿态。错误记录在运行目录events.jsonl/runtime.log，按原因修复数据/模型路径后换新run-id重生成，原证据不覆盖。
+
+
+#### 本次现场补充：局部可见夹爪与观测用途
+
+预抓点机械臂仅很小部分在视野顶部，原“整台机械臂”描述导致持续not found；明确未检测现记录NOT_DETECTED/空mask，保留原图及配对关节，不将诊断不可见作为新的运动门槛。其他网络/相机错误继续等待。抓取图中夹爪明显可见，提示词已修为“黑色及金属色、画面中可见的机械夹爪或机械臂局部”，不要求整台入镜。机载current已更新至`/home/unitree/piper-arm-outline-20261119-r3`，45SHA+CHECK_OK通过；本地安装仍为本节arm-outline输出。
+
+用户现场确认抓空后，又明确要求即使无物块也补采合爪抬升用于观测。已通过一次性续行脚本，仅执行未发生的lift阶段、采第四组、保持夹爪回零，原周期回执不重放；结果OBSERVATION_RETURNED_ZERO/grasp_confirmed=false。该临时现场授权不修改普通抓取入口的接触/视觉确认条件，也不授权下一轮自动空夹爪抬升。
+
+四姿态均有3帧RGB-D及逐帧配对关节。原始数据在`build/piper-arm-outline-20261119/results/live/arm-red-grasp-20261119-01`；修正局部描述后仅读取保存图像重新分割，派生目录`results/arm-red-grasp-20261119-01-outline-reprocessed`保留original-arm-mask/observation及reprocessing.json，未覆盖原证据。报告入口`results/index.html`。三个姿态提取到轮廓深度点，预抓依旧未检测；目视复核有背景线缆/椅背误分，报告已注明，不能将这些点直接当作已验证机械臂外表面或标定样本。尚未完成物理标定。
+
+### 2026-11-19 四姿态空间图去除掩膜点
+
+四姿态 `arm-overlay.html` 仅显示灰色场景深度点云（原抽样规则）和蓝色反馈FK模型，移除橙色分割边界点图层。RGB遮罩、轮廓PLY/NPZ、原始采集及关节数字表保留；抓取场景中的实测FK橙色菱形不属于掩膜点，保持原义。沿用本节 arm-outline 本地安装和上述三包构建环境/命令，入口自动加载同安装 tools；没有改动机载部署。新离线报告为 `build/piper-arm-outline-20261119/results/arm-red-grasp-20261119-01-outline-reprocessed/visualization-no-mask/index.html`，旧 visualization 保留，results/index.html 已指向新版。
+
+### 2026-11-19 四姿态点云以基座为中心限制1米
+
+四姿态空间图原本已使用冻结外参转换到 Piper 基座系；现在明确标出基座原点 (0,0,0)，三轴固定为 [-1,1] 米。场景深度点先转换到基座系，再保留欧氏距离 ≤1米的点，最后按原规则抽样至最多5000点；不是以相机为中心裁剪，也不是仅限制单轴或相机深度。arm-overlay.json 保存显示坐标系/原点/半径及各姿态的过滤前、过滤后、显示点数。原始RGB-D与轮廓导出不变。沿用上一节本地安装和三包构建命令；新版独立报告为同一数据目录下 visualization-base-1m/index.html，results/index.html 指向新版，旧报告保留。未部署到机载。
+
+### 2026-11-19 两帧夹爪点云配准离线实验
+
+人工观察入口：`build/piper-gripper-registration-20261119/spatial-roi/inspection.html`，仅绿色拟合模型和灰色完整截取点云，可切换抓取/抬升，无橙色标注、无原FK/单帧候选叠加。坐标仍为Piper基座，视角仅放大夹爪附近。完整说明、RGB反投影轮廓和候选在同目录index.html/registration.json，D-fk-to-observed.txt为列向量 `p_observed_base = D @ p_fk_base`，平移米。局部gripper模型PLY和匹配后基座系PLY均可下载。
+
+用户指定只用抓取与抬升两帧frame02；截取规则为原冻结外参变换后 `z > -0.03 m AND x < 0.66 m AND norm(p) <= 1 m`，不使用RGB掩膜，不按FK距离截取。frame00/01只验证。原始截取PLY保留全部点；配准输入用2mm体素抽样。模型提取gripper_base/link7/link8，以实测开口建模，仅两夹指表面参与拟合。近FK多初值刚体ICP在有限候选内择优，不保证全局最大值；预抓及接近中点截取区域主要为红块，没有用于最终矩阵。
+
+实验脚本仅在上述build证据目录，使用既有 `build/piper-graspnet-20261117/model-venv/bin/python`，没有新增依赖或产品代码修改，不更改正式入口/机载部署。复现时使用新证据输出目录保存脚本和输入，避免覆盖既有报告。该矩阵仍有明显RGB轮廓及模型→观测覆盖偏差，未通过实物标定；不能直接将其作为相机外参或控制补偿。原始标定未改，候选外参只在JSON内记录。
+
+### 2026-11-19 可见下侧外表面加权优化（离线）
+
+用户确认“相机看到的下侧外表面”，并指定1°旋转、3mm平移、3mm贴合为相近影响尺度。本轮实验位于 `build/piper-weighted-surface-fit-20261119`，入口 `index.html` 可切换权重1:1:1、1:1:10、1:1:100；默认等权，其他仅对照，全部保持该归一化尺度。每个图仅绿色拟合夹爪+灰色完整空间截取点云，抓取/抬升frame02联合优化同一D，frame00/01仅验证。各矩阵TXT/JSON在页面内提供，未写入标定/控制。
+
+目标函数为SO(3)角差平方、两姿态夹爪原点相对原FK位置差平方、相机可见外表面距离损失三项加权。下侧外表面由相机射线首交定义；未命中时沿最近点方向取首交提供引导。贴合项内含“落在首交面后超过1mm”的3倍单边平方惩罚，10mm以上Huber减小背景影响。原STL不封闭，不用有符号体距离/occupancy声称实体内外。射线命中率和表面后点比例需一起解释，低命中时不能以低穿后比例判成功。
+
+等权解仍未贴合：抓取/抬升可见表面中位距离22.80/24.29mm，旋转1.17°、位移7.42/7.28mm。贴合权重10时距离13.12/15.21mm、旋转3.57°、位移26.08/25.60mm；权重100时距离5.69/6.65mm、旋转10.27°、位移62.13/65.15mm，表面后>2mm点比例仍30.4%/3.0%。不存在“已完全贴合/消除穿入”的验证结论。三组保留完整目标分项、候选、留出帧和搜索参数。
+
+开发机仓库根目录、既有绘图环境可运行一次性脚本 `build/piper-graspnet-20261117/model-venv/bin/python build/piper-weighted-surface-fit-20261119/weighted_fit.py --check-only` 做合成检查；运行完即可关闭，无ROS/硬件访问。其 `--weights R T F --tag 新标签` 用于多初值局部优化；additional search脚本记录差分进化/Powell离线复算，日志与结果保留。仅新增build证据脚本/文档，没有产品模块修改，未运行colcon、部署或启动机器人。
+
+### 2026-11-19 RPY / XYZ滑杆人工拟合
+
+打开自包含页面 `build/piper-manual-fit-20261119/index.html`，无需模型服务/ROS/网络。按用户最后要求以原始FK实际RPY/XYZ值起步，D初始单位阵，不采用自动拟合结果。六个滑杆及数字框：RPY单位度，XYZ毫米，矩阵平移米；旋转约定为基座系主动旋转 `R=Rz(yaw)Ry(pitch)Rx(roll)`。滑杆显示当前姿态绝对位姿，不是零起点偏移；可展开查看相对初始值。
+
+当前帧输入组成T_manual，并计算共同修正 `D=T_manual*inverse(T_FK_current)`；另一帧为D*T_FK_other。切换抓取/抬升保留D并更新滑杆为对应帧位姿；旋转滑杆保持当前帧XYZ不变。拖动只更新绿色夹爪，灰色完整截取点云不动；无橙色点。图例可隐藏模型/点云，适配视角可找回模型，恢复原始FK会将两帧D均恢复单位阵。滑杆步长0.1°/0.1mm，数字框支持更精细值。
+
+“导出矩阵JSON”保存当前输入、共同D及逆矩阵、两帧原始/人工位姿、坐标约定和来源。不会写相机标定或机械臂；刷新恢复初始值，需保留调整时先导出。页面内嵌Plotly/点云/模型；生成器与JS源在同目录，旧自动拟合报告保留。Node数学/事件检查和真实Firefox临时配置下WebGL加载、滑杆更新渲染顶点、两帧联动、重置与导出对象检查通过；截图/测试JSON在同目录。无产品代码修改，无colcon或机载部署。
+
+### 2026-11-20 Piper 同一彩色流摆姿预览与正式采样
+
+控制电脑图形桌面、交互式 Bash，无需 ROS 环境。确认 D435 已由其他相机驱动释放、相机固定且 142 mm ArUco ORIGINAL/25 板刚性固定在末端后，保持以下终端运行。使用已有 SSH 别名 unitree-go 与机载手眼环境。客户端经 SSH 启动本次采集进程，进程内执行与本机配套的 worker，无需手动拷贝脚本或切换机载安装。
+
+```bash
+cd /home/isee-pst/unitree_ros2/piper
+bash piper_handeye_loop.sh --session recalib20_20261120 --train-count 20 --board-attached --live-preview
+```
+
+成功启动后，本地浏览器显示 320×240 缩略图、帧号和控制电脑时间；若未自动打开，使用采样终端给出的临时页面路径。正常摆姿期间约两秒更新一次。请求到图像显示超过五秒时隐藏过期画面；正式保存与网络重试期间可能暂时显示等待。查看问题时使用入口打印的诊断日志；PREVIEW_FRAME_GAPS 是摆姿期间读取到的相机帧号跳变数，不能直接作为 USB 丢包率。若设备被占用，退出对应的相机驱动后按采样提示重试。
+
+每个姿态静止后在采样终端按回车，同一 D435 进程在请求后继续读取约两秒，使用随后一张新的 640×480 原图和既有 CAN 静止窗口配对。检查弹出的本次原图和质量提示再输入 OK 或 NO。会话保持一条 640×480@15 彩色流；缩图和 JPEG 编码在另一线程，前一张传完才请求下一张。远端采集成功但回传失败时沿用该编号重传。Q 退出并释放设备，用同一完整命令恢复。20 个 train、5 个 validation 全部确认后退出，再按手眼离线求解步骤读取本批 handeye-data/recalib20_20261120。
+
+### 2026-11-20 Piper 重采过程中的质量诊断
+
+本轮批次 recalib20_20261120_r2，控制电脑交互 Bash 进入 /home/isee-pst/unitree_ros2/piper。固定板、确认相机空闲后执行，保持终端以便摆姿和逐张确认。无需 ROS 环境。
+
+```bash
+bash piper_handeye_loop.sh --session recalib20_20261120_r2 --train-count 20 --board-attached --live-preview
+```
+
+第一张看重投影和静止窗口。后续训练候选在按 OK 前与所有已收录训练姿态比较相对转角，屏幕显示差值的中位数、最差对及两侧转角。差异属于一对姿态。若偏差突然增大，先核对当前和对照原图、安装与姿态；单项差值不能确定责任样本。已有图像/反馈质量检查、人工 OK/NO 与 Q 暂停继续有效。若因失焦、遮挡等明确采样问题重拍，使用新编号；安装发生变化时另开新批次。
+
+每 5 个已收录训练姿态显示累计闭环 RMS/最大误差及旋转激励；姿态近单轴时可能无法求解，换方向补充姿态。自第 10 组起，用此前所有训练姿态单独拟合，预测最近 5 组的闭环。若累计拟合误差低但预测偏差大，先核查姿态覆盖和安装稳定性，不据此发布 TF。5 个 validation 逐张只看采样质量，全部确认后报告其对训练外参的独立残差。诊断从本地元数据重算；原始图像正式复算仍使用 core.py solve。详细读数在本机采样入口打印的日志中搜索 SAMPLING_QUALITY。
+
+### 从 r2 的 25 个样本续采至 30 训练、5 验证
+
+控制电脑新批次 recalib30_20261120_r2_ext 已从 recalib20_20261120_r2 的全部 25 个已收录样本准备好。新批次的 seed_manifest.json 保存原始角色、来源文件哈希和原结果哈希。原 r2 的数据与结果独立保留。只有 r2 以来相机相对基座、标定板相对末端均保持固定，才可跨批合并；若中途安装改变，应使用单独的新批次。
+
+在控制电脑交互 Bash，目录 /home/isee-pst/unitree_ros2/piper，确认装配与相机可用后执行并保持终端。首次应为训练 25/30、验证 0/5，下一张 pose33。逐张检查后 OK 或 NO，确认满 30 组训练后仅新增的最后 5 组进入验证，直至 COLLECTION_COMPLETE。Q 暂停后用同一命令续采。诊断与最终独立求解同上一节。
+
+```bash
+bash piper_handeye_loop.sh --session recalib30_20261120_r2_ext --train-count 30 --board-attached --live-preview
+```
+
+### r3 独立重采 20+8
+
+控制电脑交互 Bash 进入 /home/isee-pst/unitree_ros2/piper，沿用机载单流预览与本地标定环境。确认板已固定且相机空闲，在专用窗口打开预览。需恢复时用相同批次和数量：
+
+```bash
+bash piper_handeye_loop.sh --session recalib20v8_20261120_r3 --train-count 20 --validation-count 8 --board-attached --live-preview
+```
+
+保持终端运行，前 20 个 OK 训练，之后 8 个 OK 独立验证；NO 不计数。每 5 个训练样本给出阶段诊断。Q 暂停后按相同命令恢复；达到 20/20、8/8 并显示 COLLECTION_COMPLETE 后才正式求解。初始数据与既有批次独立。
+
+### r3 黑框实测 100 mm：从已批准的五组续采
+
+用户确认 r3 前五张使用同一块黑框外沿 100×100 mm 的 ID25 板，测量时安装不动。原 r3 按 142 mm 的记录留作来源。控制机新批次 recalib20v8_20261120_r3_100mm 包含按实测边长从原图重做 PnP 的五组训练数据及对应出处；该批次目录内的 board.json 同时供实时单流采样和离线求解读取。完成选用的 r2 原始结果仍按其原记录保存。
+
+先在旧 r3 交互终端输入 Q 回车，待其退出并释放相机。新桌面窗口按回车，预期初始显示训练 5/20、验证 0/8、下一张 pose06。续采时在控制电脑 /home/isee-pst/unitree_ros2/piper 的交互 Bash 运行并保持：
+
+```bash
+bash piper_handeye_loop.sh --session recalib20v8_20261120_r3_100mm --train-count 20 --validation-count 8 --board-attached --live-preview
+```
+
+收齐后用 solve 指定此数据集，自动读取同目录 board.json；结果文件另取新名。若安装改变需单独起批。样本板参数与批次配置不匹配时根据诊断核实入口和实物。
+
+### 2026-11-20 采用 r3 实测 100 mm 手眼外参（本地）
+
+本轮沿用“追加点云报告的本地安装”的完整三包构建和相关测试命令，输出统一为 `PIPER_VISION_OUTPUT="$PWD/build/piper-r3-applied/overlay"`。本地启动入口为 `$PIPER_VISION_OUTPUT/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh`。入口按自身路径读取同安装的默认 semantic-camera-avoid.json 和共享 extrinsics.json；使用旧安装路径会加载对应旧参数。四个配置的加载矩阵已核对，默认入口离线 check 的实际快照在 build/piper-r3-applied/evidence/installed-check/config_snapshot.json。本次未部署到机载。

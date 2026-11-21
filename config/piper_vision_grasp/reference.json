@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "reference_id": "blue-block-supervised-20261114-v1",
+  "status": "ready",
+  "phase": "before_close",
+  "detector_version": "blue-face-v1",
+  "camera_serial": "151222077264",
+  "usb_serial": "0046002F5246570520323934",
+  "joints_deg": [
+    4.296,
+    124.232,
+    -78.909,
+    -28.32,
+    -19.013,
+    29.113
+  ],
+  "sdk_pose_mm_xyz": [
+    476.249,
+    49.884,
+    153.501
+  ],
+  "sdk_pose_euler_deg_xyz": [
+    166.373,
+    66.138,
+    179.126
+  ],
+  "pregrasp_joints_deg": [
+    4.354,
+    118.214,
+    -78.53,
+    -38.515,
+    -14.2,
+    39.829
+  ],
+  "pregrasp_offset_base_m": [
+    -0.009962000000000045,
+    -0.00043299999999999985,
+    0.039651999999999986
+  ],
+  "transition_joints_deg": [
+    [
+      0.921,
+      10.029,
+      -7.044,
+      -2.295,
+      1.262,
+      2.934
+    ],
+    [
+      3.561,
+      39.965,
+      -28.222,
+      -9.019,
+      5.18,
+      11.813
+    ],
+    [
+      7.244,
+      79.961,
+      -56.538,
+      -18.114,
+      10.299,
+      23.571
+    ]
+  ],
+  "zero_sdk_pose_mm_xyz": [
+    56.127,
+    0.0,
+    213.266
+  ],
+  "timestamps": {
+    "rgbd": [
+      1794631988.0715744,
+      1794631988.6281495,
+      1794631989.1508071
+    ],
+    "grasp_pose": 1794632870.0802066,
+    "close": 1794633035.0166128,
+    "lift": 1794633083.5147426
+  },
+  "source_files": {
+    "provenance/blue-block-lower03-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-lower03-runtime.jsonl",
+    "provenance/blue-block-right-extra01-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-right-extra01-runtime.jsonl",
+    "provenance/blue-block-approach01-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-approach01-runtime.jsonl",
+    "provenance/blue-block-approach02-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-approach02-runtime.jsonl",
+    "provenance/blue-block-approach03-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-approach03-runtime.jsonl",
+    "provenance/blue-block-grasp-effort05-01-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-grasp-effort05-01-runtime.jsonl",
+    "provenance/blue-block-loaded-lift01-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-loaded-lift01-runtime.jsonl",
+    "provenance/blue-block-return04-runtime.jsonl": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-return04-runtime.jsonl",
+    "provenance/blue-block-supervised-grasp-result.json": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-supervised-grasp-result.json",
+    "provenance/reference-rgbd-metadata.json": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-bottle-ground-20261113/blue-block-after-retreat-rgbd01/metadata.json",
+    "provenance/manual04-result.json": "/home/isee-pst/unitree_ros2/piper/handeye-data/manual04-result.json",
+    "provenance/piper_description.urdf": "/home/isee-pst/unitree_ros2/VLM_Nav/build/piper-reachability-20261106/piper_description.urdf"
+  },
+  "source_sha256": {
+    "provenance/blue-block-lower03-runtime.jsonl": "4f578c6346cd88534dfe8f16941685c1727e203947bf48bc1c791fea957e8e39",
+    "provenance/blue-block-right-extra01-runtime.jsonl": "cbb732126d0694fc598369c6e2cd59478717d291bb4a9843759c4cb765459f62",
+    "provenance/blue-block-approach01-runtime.jsonl": "72ada37325c92f38f60aa41bbcc41bb250dd2f55382ab667a88ccd84ba20d2d7",
+    "provenance/blue-block-approach02-runtime.jsonl": "2687719394ae0d77bb57d7719cd97b8303ee259c66ee85920cc0d3be53dcadc0",
+    "provenance/blue-block-approach03-runtime.jsonl": "73b9086dbc20b30da02eab693988ebd948894eea2b93d5f98c15ef5d8e83a86b",
+    "provenance/blue-block-grasp-effort05-01-runtime.jsonl": "7e89d1f55b8cc9ea6f67750038ab8d6350905805c7a176638d4c0991a04f14e9",
+    "provenance/blue-block-loaded-lift01-runtime.jsonl": "16dd33a9bb9a44dc29d8251e06c4a2cabdd73c7d566ffa16bf46ab8e04a1ef47",
+    "provenance/blue-block-return04-runtime.jsonl": "7c6388c7fed56555a8f01131cb9e9893f29b33724755377c07fd424588095f43",
+    "provenance/blue-block-supervised-grasp-result.json": "9ee448800060e27eb615abebbe737d2eab5ff5ab6378c89d8acbb62aab2342d7",
+    "provenance/reference-rgbd-metadata.json": "12012191601783722a99b621f39f7e9c6891074282c4db07f80412c1b33a8d2c",
+    "provenance/manual04-result.json": "b8f843b4aee21b530e53c642d1ceaa16868c7680b16610504157135596433151",
+    "provenance/piper_description.urdf": "884c6536abe861105205cc58681fb069ba408e0673ab6b6222f4f06cdbc9dc9e"
+  },
+  "point_color_m": [
+    0.008213696095298966,
+    0.0003750868401495664,
+    0.1943128170202631
+  ],
+  "T_base_flange": [
+    [
+      -0.4045387066466641,
+      -0.20059515198825506,
+      0.8922499760848707,
+      0.47624035511011575
+    ],
+    [
+      0.006164353260276756,
+      0.9750271916138187,
+      0.22199994676249737,
+      0.04983600716758736
+    ],
+    [
+      -0.9145001014617361,
+      0.09530771538798954,
+      -0.3931996996616288,
+      0.15338968923044421
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "fixture_manifest_sha256": "d6cd6ce4b3d3ff77e6f760a86f52055a8f5c29c8254bae0bf8a8fe9f97a4b44b",
+  "physical_validation": "LOCAL_REFERENCE_ONLY",
+  "observation": {
+    "status": "DETECTED",
+    "reason": "complete blue planar face",
+    "point_color_m": [
+      0.008213696095298966,
+      0.0003750868401495664,
+      0.1943128170202631
+    ],
+    "boundary_px": [
+      [
+        407,
+        80
+      ],
+      [
+        441,
+        434
+      ],
+      [
+        287,
+        442
+      ],
+      [
+        280,
+        86
+      ]
+    ],
+    "width_m": 0.044748466042584076,
+    "height_m": 0.11822873512490606,
+    "normal_color": [
+      0.0066439018689593956,
+      0.292309446633667,
+      0.9563007089700786
+    ],
+    "long_axis_color": [
+      0.039729153154165406,
+      0.9554895922420414,
+      -0.2923375335238189
+    ],
+    "depth_valid_ratio": 0.9926856053542198,
+    "plane_residual_m": 0.0004108247350092557,
+    "detector_version": "blue-face-v1",
+    "host_unix": 1794631989.1508071,
+    "frame_count": 3,
+    "samples_color_m": [
+      [
+        0.00818874013589566,
+        0.0006025284460846568,
+        0.19423213721113902
+      ],
+      [
+        0.008213696095298966,
+        0.0003478718141954832,
+        0.1943184304677868
+      ],
+      [
+        0.008461767664947604,
+        0.0003750868401495664,
+        0.1943128170202631
+      ]
+    ]
+  },
+  "crosscheck": {
+    "status": "DETECTED",
+    "reason": "complete blue planar face",
+    "point_color_m": [
+      0.008318058013348829,
+      0.0003846512678431224,
+      0.19428211338843354
+    ],
+    "boundary_px": [
+      [
+        405,
+        79
+      ],
+      [
+        441,
+        434
+      ],
+      [
+        288,
+        442
+      ],
+      [
+        280,
+        86
+      ]
+    ],
+    "width_m": 0.044262429796317726,
+    "height_m": 0.11840962677198681,
+    "normal_color": [
+      0.005215022596709056,
+      0.2922232131361807,
+      0.9563359228031132
+    ],
+    "long_axis_color": [
+      0.050911512788161195,
+      0.9550310812002061,
+      -0.29210212564647015
+    ],
+    "depth_valid_ratio": 0.9915591687751462,
+    "plane_residual_m": 0.00040378585353413306,
+    "detector_version": "blue-face-v1",
+    "host_unix": 1794632318.8649426,
+    "frame_count": 3,
+    "samples_color_m": [
+      [
+        0.008218102056802394,
+        0.0005340429543493723,
+        0.1942033624704068
+      ],
+      [
+        0.008318058013348829,
+        0.0003846512678431224,
+        0.19438108220871952
+      ],
+      [
+        0.008365247493224587,
+        0.0002818067693149146,
+        0.19428211338843354
+      ]
+    ]
+  },
+  "local_limit_m": [
+    0.03,
+    0.03,
+    0.01
+  ],
+  "lift_m": 0.02,
+  "orientation_tolerance_deg": 5,
+  "grasp_pose_source": "provenance/blue-block-lower03-runtime.jsonl",
+  "rgbd_metadata_source": "provenance/reference-rgbd-metadata.json",
+  "detector_parameters": {
+    "version": "blue-face-v1",
+    "hsv_low": [
+      95,
+      160,
+      30
+    ],
+    "hsv_high": [
+      130,
+      255,
+      255
+    ],
+    "min_area_px": 120,
+    "min_fill": 0.85,
+    "min_depth_ratio": 0.8,
+    "width_m": [
+      0.032,
+      0.052
+    ],
+    "height_m": [
+      0.1,
+      0.13
+    ],
+    "max_plane_residual_m": 0.002,
+    "stability_m": 0.003,
+    "orientation_tolerance_deg": 5
+  },
+  "sample_spacing_m": 0.01
+}

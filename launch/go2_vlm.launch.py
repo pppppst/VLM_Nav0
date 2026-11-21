@@ -51,7 +51,7 @@ def _build(context):
                     "map->camera_depth_optical_frame",
                 ],
                 "localization_mode": LaunchConfiguration("localization_mode"),
-                "timeout": 30.0,
+                "timeout": 0.0,
                 "stable_samples": 3,
             }
         ],

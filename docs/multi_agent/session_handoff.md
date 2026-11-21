@@ -1,6 +1,6 @@
 # Go2 控制电脑会话交接（2026-10-08）
 
-> 最新修改及安装见文末2026-10-29到点局部旋转空间检查章节；任务模式仍为独立C。此前资源许可与顺序退出记录属于历史版本。
+> 最新修改及安装见文末2026-11-05全流程等待恢复交付；任务模式仍为独立C。此前资源许可与顺序退出记录属于历史版本。
 
 
 最新实施范围见本文末尾 **2026-10-20 空地候选及家具可选**；本轮私有C要求覆盖前文共享位置/共同C/跨地图对齐的任务要求，历史证据不改写。
@@ -4299,3 +4299,1838 @@ READY/CURRENT/ARM及故障RESET确认保留；SSH凭据提示不属于此次移�
 双包新构建build/go2-quiet-start-20261104/overlay于23.9秒成功，入口安装副本一致；既有CMake及消息包复用提示。
 构建命令沿用runbook等待恢复章节，仅GO2_RECOVERY_OUTPUT换为本次overlay路径；证据在build/go2-quiet-start-20261104/evidence。
 源码入口下次启动即生效，环境默认选择及1270秒宿主上限不变，旧安装不重建；未启动真机或重启现有终端。
+
+
+### 2026-11-05 全流程等待恢复交付
+
+用户批准全流程方案并要求实现；需要用户答复时提示音、完成代码修改播放5秒提示音乐。起始工作树干净；分支go2-cooperative-task-layer，HEAD仍为323d5c52737477962a874ae012db117be5a93f34，未提交。实现、故障分类、完整三包构建命令见[runbook](go2_runbook.md#2026-11-05-全流程等待恢复与三包构建)及[计划](../superpowers/plans/2026-11-05-go2-resilient-experiments.md)。
+
+已实现：Go2单机/协同/旧VLM软故障保持任务等待，等待/STOPPING/恢复握手冻结有效任务钟；输入新鲜度、单次动作和取消仍用真实钟。Sport新增有实例和代次保护的本地恢复服务，部分软FAULT可PREPARE/RESUME；首次显式ARM、人工停止/接管/硬错误保留。取消无需等待在途RESUME，服务端只允许撤销该恢复直接后继，不能碰后来的人工ARM。旧VLM保留扫描/接近阶段与完成进度，跟踪真实native request/result而非清空句柄当终态。单机与协同共用精确软错误分类，地图/身份变化及未知异常不可续接。
+
+入口动态检查无限等待、不重复ARM/start、不自动重启退出组件；手动RViz目标不重放。总入口早期开诊断、主终端仅必要提示和日志路径；manual/VLMNav-go/preflight会最后加载同一新overlay并传给子进程，不再用源码PYTHONPATH覆盖安装。Agent移除1200/1270秒总墙钟限制，框架失败后守护已启动搜索，原任务/框架结果分别记录。必要证据断档或原生动作/恢复取消不确定，明确不能完整验收。
+
+新安装：`/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-resilient-experiments-20261105/overlay/install/local_setup.bash`。接口multi_agent_task_msgs、根vlm_nav及multi_agent_nav共同构建；CoVLM_env.bash、Cooperative_env.bash、Launcher和Go2旧入口已切换默认，显式COOP_SETUP_FILE仍优先。历史overlay未重建，旧终端/进程不会热更新。最后从/tmp核对59个Python模块与三包prefix、新srv及98个脚本/launch/config字节；证据check-install.json、installed-paths.txt。
+
+验证分开报告（以下分组有重叠，不相加当唯一用例总数）：
+
+- C++ bridge 35项通过：原19项、本轮新增16项（包括CANCEL/RESUME乱序和人工代次隔离）。
+- 新恢复客户端14项、手动ActionStop 4项、shell恢复6项、旧VLM新增35项通过；连同C++在本输出CTest为94项通过，0失败。首次CTest默认系统Python缺httpx，已复用runbook指定的现有运行venv，未安装新依赖；复跑依据为colcon-targeted-final.log与colcon-results.log。
+- 旧VLM纯离线广集222通过（新增35、既有187），1项会初始化ROS的测试排除。协同最初定向147通过（新增37、既有110），后续共同异常分类及parity定向111通过，含精确已终态的Nav2软失败和未知异常硬失败。
+- Agent runtime/session33通过。入口/环境/恢复/诊断组合186通过；后补Go2旧入口overlay加载用例与相关脚本/客户端23通过。配置/脚本25通过，2项ROS初始化测试排除。Bash语法10文件及git diff --check通过。
+- 协同最初广集1071通过、11失败、7排除；11个失败用原HEAD包和原配置同名复现，详情task2-report.md及task2-baseline-failures.log。安装广集首次额外暴露7个parity失败，已修复3个精确软原因并将软故障夹具对齐真实Adapter错误；未知RuntimeError/TypeError新增硬失败用例，不将未知异常泛化为软错误。最终安装广集结果附后。
+
+证据根目录 `build/go2-resilient-experiments-20261105/evidence/`，保留所有中途红灯、基线和最终日志，不删除。审查报告task1-review.md、task2-review.md、task-final-root-review.md；最后两处CANCEL新故障代次与manual信号处理问题已修复，并有客户端回归。legacy同样在退出前保留ROS context完成有限取消确认。
+
+信箱TASK_ID=`go2-resilient-experiments-20261105`，本机go2/对端ranger，doctor通过。方案/原因/计时及最终实现消息均送达；最后实施消息ID=51dee2e993864b529e6287c05c922df5，基线更正消息ID=6eaeaeb1b556405186e2c55b2157294d。连续三次45秒无回复后停止主动等待，最终receive仍空；未把未回复当兼容通过。Ranger需核对三条新增软原因、wait_recovery显式开关、有效任务钟和同task恢复握手，保留自身硬件差异。
+
+未执行真机、Domain0节点、SSH硬件操作、桥接、录包、真实模型或双端恢复验收；仅信箱通信获授权。普通Twist不能识别所有DDS迟到包，依赖原生终态/所有权/清缓存；未知native send可能已送到服务端但无可取消handle，必须人工确认原动作/实体停止。断电、执行器进程退出、内存进度或必要证据丢失不能可信续接。本轮不自动部署、重启现场组件或提交。
+
+最终安装广集：1089通过、11失败、7排除，日志installed-cooperative-final.log；11个失败ID与原HEAD/config基线集合逐项完全相等（baseline-comparison.txt），新增parity失败已消除。三包最终构建退出0（build-delivery.exit）；必要定向CTest真实用例数94，非CTest条目数5。最后补手动待命/人工取消后的诊断持续刷新，避免窗口停在旧启动状态；随后同步构建及安装检查，未启动ROS现场。
+
+
+### 2026-11-05 Ranger信箱回信与兼容性核查
+
+此前“尚无回复”为历史状态。现已收到Ranger报告45d470f327c84ce49082295bbe49e9d9及协商请求c2313f2c7e8849e78a2335053c544a5d；Ranger报告基线a1c1b4c136b285b98732570a63ef2f1c3548eff3，工作树有既有未提交内容，仅只读核查。对端报告当前没有wait_recovery、新三条软原因被判hard、协同STOPPING/PAUSED/awaiting_peer_resume仍消耗总预算。Ranger报告80项离线通过，但本机未读取Ranger实际代码或独立重跑，不能当成本机验证。当前组合明确尚不兼容长暂停自动恢复。
+
+Go2已逐项核对实际models/agent/coordinator/runner/exploration及mock构造入口，复跑相关四文件116项纯离线通过，未初始化ROS。通过信箱回复0fc3bf26ebbf4ac18b04c03583b1747d，delivered=true，原五条消息已确认处理。来信及回复正文保存于build/go2-resilient-experiments-20261105/evidence/ranger-contract-incoming.json、go2-contract-reply.txt；验证日志mailbox-contract-check.log。
+
+约定方向：精确软原因与cause分类、有效任务钟、硬故障优先、同task停稳/原生终态及peer恢复握手、保留成功command和平台各自检查点。任务消息schema未改，Sport新srv只Go2本地。Ranger同步不能仅加配置，须核对实际构造入口及Nav2恢复计时消费者，不能整体覆盖有平台差异的adapter。
+
+明确待解决/待验证：双方实际混合版本状态序列回放尚未完成；远端新hard尚未送达时，本机可能仍按上次有效状态行动，现协议不提供全局原子恢复或零延迟同步停车。已收到的hard会锁存、撤销待发恢复，但不能宣称感知尚未收到的消息。必要证据定义也待对齐：Go2 runner.start_local_execution.record在single_robot_mode下吞掉events.jsonl/展示异常并仅warning，外层_motion_event无法据此标记缺口；若events.jsonl为必要验收证据，该路径尚需补缺口记录/最终验收拒绝。选点/图像必要证据失败已有硬错误路径，普通诊断窗口写失败不应妨碍停车。该缺项已如实告知Ranger，不能声称所有记录异常均已被最终验收捕获。
+
+本轮只做信箱通信、代码核查、离线复验及本交接追加；未修改运行代码/配置，未构建、部署、连接机器人、启动桥接或运动。等待Ranger确认约定边界；其本轮只读授权不因收到消息扩大。
+
+
+### 2026-11-05 双端恢复同步：Go2本地完成、等待Ranger新版本
+
+用户新增要求为“协商完成同步，使双机实验不会出现协同矛盾”，随后确认Ranger继续处理。继续原授权范围内的代码/离线工作，不启动现场。计划见[双端同步](../superpowers/plans/2026-11-05-dual-recovery-sync.md)。Ranger消息978b36515c6846b68e64c21e216d9ec8明确其本机用户已授权最小同步及前后七文件源码交换，实际旧工作树快照整体SHA256为82ff9d28795a69a3571fe3ae35d3efb4d07fb8356e17d40bd4d19ddb312d52d2，七文件逐项校验保存ranger-old-manifest.json，未当成HEAD导出。
+
+本机证据缺口已修：runner先归档必要events，写/序列化失败锁存adapter.evidence_write_failed，后续补写不能清除；on_event、path/marker、最终stdout独立捕获，仅记录展示异常。物理SUCCEEDED继续保留，诊断独立INCOMPLETE/EVIDENCE_INCOMPLETE；单机finally的result失败返回非0，已停稳正常释放motion_slot，停车未确认仍抛StopUnconfirmed并保留对应标记，不被展示错误遮盖。未加wire字段或运动门槛。独立审查dual-sync-evidence-review.md中的最终emit问题已修复，无未处理重要项。
+
+新安装为 `/home/isee-pst/unitree_ros2/VLM_Nav/build/go2-dual-recovery-sync-20261105/overlay/install/local_setup.bash`，完整命令见[runbook](go2_runbook.md#2026-11-05-双端恢复同步与证据完整性)。三包首次26.4秒构建成功，默认环境/Launcher/旧总入口切换后增量三包0.92秒成功；上一安装未重建。核对59模块、98脚本/launch/config、三包prefix、srv及bridge二进制。首次手动安装检查未设置COOP_SETUP_FILE被父子终端一致性检查拒绝；补齐与expected-setup相同的显式环境后通过，未为绕过检查修改代码。
+
+定向源码和/tmp加载新安装分别328通过、3排除，分组为本轮新增19与既有309（不把两次相加）。排除1项实际ROS初始化测试及2项已有基线断言失败；安装日志installed-targeted.log。入口/环境71项通过。此次未重跑全库，上一全库11项基线失败未宣称修复。构建/安装日志在build/go2-dual-recovery-sync-20261105/evidence/；源码故障注入、审查与信箱/回放证据继续在build/go2-resilient-experiments-20261105/evidence/。
+
+实际Go2新+Ranger旧回放11场景：5通过、6不兼容。软恢复navigation/single_link/delayed_cancel在旧Ranger约601秒触发task timeout；localization/compound被旧定位原因判hard；execution因不认新原因判peer paused during task。三hard交错与两native迟到/已完成场景通过。单向丢包1300 tick保持暂停/等待确认，无运动推进effect。Go2+Go2同源码11通过仅是驱动自检，不能当双新。全部wire字段严格比较，内部API仅桥接构造及receive_peer签名，未改快照。详情dual-version-replay-report.md及dual-version-ranger-old.json。
+
+驱动发送首次被自动审批拒绝，理由为缺少针对源码文件/接收方的明确授权；已提示音询问，用户明确“允许发送给Ranger”后重送成功，消息77eb3f4afa6342b99a08ec885fc597be。包dual-version-replay-driver-transfer.json约8KB，仅测试代码/说明，SHA256=9248100331ee8e2d5cea9665d8f287a3d647e15827efe5ec9a3f68c0e4cba1f6。此授权不扩展到启动机器人。
+
+当前待Ranger实际新快照、本地构建/验证和同驱动双新回放，尚不能声明同步闭环。没有启动ROS现场、Domain0/40桥接、录包、ARM或运动；没有提交。异步通信的远端新hard尚未送达窗口仍存在，不能承诺零延迟全局原子停车或绝不冲突。必要历史证据丢失也无法靠恢复磁盘后补成完整验收。
+
+
+同步过程续记：用户随后明确“Ranger正在本地执行相关任务，不要因此断联”，因此按最新指示保持信箱协作，不因此前三次无回复结束任务。离线驱动独立审查发现v1遗漏LOCAL_EXECUTION统计、成功command内部重跑、旧active被新状态覆盖及部分暂停仅终点检查；修订v2已逐项关闭，六场景各1300tick检查、硬故障按各端实际接收时刻保护，旧active实际参与一次决策。v2自检仍11/11、实际新旧仍5/11；额外10项内存错误effect注入均被断言捕获。两个native结果场景仅覆盖Go2状态机，未扩大为Ranger原生执行器验证。v2包SHA256=547729f82ffdbe0e7c67dabc5231df472bb82e0c37b1665e0cad26c5c33dcea3，消息2307ca01fae34fe2b3fa587d279b347e送达，替代先前v1；源码/旧证据保留。审查报告dual-version-replay-review.md。本轮新增文档链接无缺失；历史文档中指向旧文件名“../双机协同启动与验收.md”的31处链接在原HEAD已缺失，未以本轮检查掩盖，详情新证据目录document-links.txt。
+
+
+为核对Ranger本端软故障路径，驱动v3增加同六类故障的Ranger侧镜像，共17场景；本机同源码自检17/17，实际新旧5/17（12不兼容），16项内存错误effect注入均被捕获，独立复核无新增问题。v3代码外发被自动审批拒绝，理由为新增场景超出此前具体源码发送授权；采用安全替代方案，v3仅本机执行，对端仍用已授权送达的v2复验，通过信箱只报告新增检查结果（消息140b2ee54bd64e60b4a2b99825a4672b）。没有绕过拒绝外发v3，也不因此中断等待新快照。v3包SHA256=c360a26d0f3796fca5d33dd77c6cbcb86420ca4afecce00228b6e6f6c1fe7069，实际结果/回放代码继续保存在原证据目录。
+
+
+### 2026-11-05 双端恢复同步：实际final2互验
+
+收到Ranger候选1（消息a13eff3c0cbf4b7c9c97f84b875171cd）后，本机对实际七文件完成17项双新回放。独立审查随后发现首EXECUTE排队与同周期hard交错：Ranger状态已PAUSED，tick仍可返回LOCAL_EXECUTE、STOP。三个真实快照反例均复现；不据此推断实体已运动，Ranger报告runner已有paused分派拦截。问题经消息2c0071e4fc224a288462f4c6268d632e反馈，Ranger新增三参数红绿测试并修复stop清队列，以及soft→hard以携带pause_goal_id的hard STOP替换旧队列，不改变停稳/原生终态或检查点条件。
+
+Ranger最终候选2来自消息57aa269b6f5247aab589e67dbe852038，整体SHA256=3c9eefcc29ee5b61f3258f1e7bbe38631f3fdbc56ae0abfc73243224f5e658ae，agent.py SHA256=caaf2ac403335e2be6ac4ec4dcb1cb080f9973c03d33bc50ccbd3117256b2ff7，其他六文件与候选1相同。原始内容和逐文件来源在ranger-final2-source.json、ranger-final2-manifest.json。本机实际Go2新+Ranger final2七文件：冻结v3的17/17通过，独立三个首EXECUTE+hard反例3/3通过，三例输出仅STOP。两个native场景仍仅Go2状态机，不能代替Ranger原生动作执行器验证。运行前后hash不变、未导入ROS；独立最终限定审查无剩余重要项。汇总ranger-final2-local-verification.json，场景dual-version-ranger-final2-v3.json与ranger-hard-queue-final2.json，原红灯与候选1证据保留。
+
+本机load_config(当前源码config)→新安装make_machine(go2,False)另确认wait_recovery=True、scene=True、share_c_coordinates=False、simulation=False，actual-constructor.json记录。Ranger报告actual current-acceptance/config→make_machine(ranger,False)及coordinator开启wait_recovery且private=True；source build/ranger-local/install/setup.bash后7个有关模块resolve到本仓库源码，无旧overlay，Python安装使用symlink，未重启现场进程。该安装与执行器证据为对端报告，本机独立运行的范围是收到的七个纯状态文件。
+
+Ranger本机报告runner/adapter恢复事务性、取消RPC异常仍发零速、同task固定目标/三次旋转预算保持、必要证据与展示隔离专项通过；扩回归704通过、8个field配置断言失败已用其HEAD配置/实现复现，另排除1实际ROS初始化项。这些数字不是Go2本机运行结果。对端v2候选1实际双新11/11、旧混合5/11；final2最终回归与冻结确认仍待其回复。Go2已发送final2的17+3结果与hash（182ecdc8b923447a984874d33fd7481c），持续信箱协作。
+
+
+### 2026-11-05 双端恢复同步最终闭环
+
+Ranger最终确认消息2ae972e901194063a8dbeed43e7f650a：final2七文件与前述整体及agent hash完全不变，不需等待新快照。本机已实际复验17/17双端状态场景及3/3同周期hard队列反例，独立审查关闭已发现窗口；Ranger报告独立审读v2、使用实际Go2模块与arrival.py复验final2 11/11通过（旧实际混合5/11），额外soft→hard派发前后、重复hard及完成标记保留断言通过。双方确认本轮“规则协商、最小实现同步及限定离线互验闭环完成”。
+
+最终Ranger数字以该确认替代前述阶段报告：27文件定向707通过、8个原基线失败、1项现场接口初始化旧测试排除；8项用其HEAD config/exploration/check独立进程同名复现。新增兼容21、runner停车优先10、恢复安全20、必要证据20为对端专项分组，不与707相加。runner恢复事务/取消RPC失败零速、固定目标和三次旋转预算跨同task保持、记录完整性专项由Ranger本机完成；Go2未运行Ranger实体adapter。对端证据在build/ranger-local/diagnostics/go2-wait-compatibility-20261105/validation-manifest.json。
+
+Ranger最终报告实际current-acceptance-run配置→make_machine(ranger,False)/make_coordinator的wait_recovery均True、private=True；source build/ranger-local/install/setup.bash后模块和share/scene.yaml、robot_ranger.yaml均resolve当前源码。其prefix为build/ranger-local/install，纯Python/配置链接安装，无新overlay、无运行进程重启。Go2本机新安装及328定向（新增19/既有309）/71入口验证、59模块/98文件来源核对见前述节及新输出evidence；本轮未重跑Go2全库，历史11项基线失败未宣称修复。两端数据来源明确分开，不把回执当成测试。
+
+Go2已回复最终确认并ack，双方本轮停止等待新快照。默认安装为build/go2-dual-recovery-sync-20261105/overlay/install，原已验证overlay未重建；最终启动文档和安装内文档同步。v3源码外发拒绝未被绕过：本机完成新增测试，仅共享结果，对端独立使用已授权v2。
+
+本轮未部署或重启现场、未初始化现场ROS、未桥接/录包/ARM/运动，未提交，保留既有dirty工作。现场DDS/RPC、物理停车和恢复运动仍须实际验收；收到hard后的锁存已验证，但远端新hard尚未传播时不能保证全局原子停车。人工停止/接管须人工处理；进程/内存任务丢失、身份或地图变化、原生动作终态无法确认不能可信自动续接；必要历史证据丢失即使恢复写盘也不能补成完整验收。
+
+最终收尾：5秒WAV完成提示已播放成功；git diff --check与修改Bash语法通过，59安装模块hash未变，新增链接无缺失。最终信箱回复cd43bb1d4087470c8a007e257799605c送达，Ranger最终确认已ack。
+
+
+### 2026-11-05 Agent入口文档旧安装路径更正
+
+用户按正式启动文档Agent示例显式export了build/go2-wait-recovery-20261104/overlay-final/install，安装校验报No module named 'vlm_nav.go2_control_recovery'。根因是此前更新最新入口时漏改该示例一行；CoVLM_env.bash保留显式COOP_SETUP_FILE优先，因而覆盖了新默认安装。旧安装确实没有该模块。未启动实验，以同一--check-install只读调用复现旧安装退出1/同错误；改为build/go2-dual-recovery-sync-20261105/overlay/install后退出0，59模块安装来源/源码校验通过。
+
+本轮仅更正docs/10.22双机协同启动与验收.md的Agent示例并说明覆盖旧export，记录本交接；同步这两份文档到当前安装share副本，不改运行代码、不重建旧或新overlay。原错误命令停在安装校验前置，不需安装pip包或绕过检查。用户需在原终端显式export新安装后再按原Agent入口运行。仅检查命令格式和diff；未启动ROS、模型、ARM或运动。
+
+### 2026-11-06 Piper 机械臂使能与导航保持记录
+
+**来源与结论：**用户在 Go2 上位机执行本会话提供的命令并回传终端输出；使能后用户确认“机械臂能保持姿态”，随后确认当前姿态可行、行走中的保持效果良好。本轮“通过关节使能改善导航时机械臂被动摆动”的目标据此完成。现场保持与行走效果为用户报告，本机未通过 SSH 连接、独立采样或执行运动；不能扩大为高速度、长时间或携带物体后的稳定性验收。本次“记录”仅授权保存交接，不产生新的现场操作授权。
+
+**设备与环境（用户回传）：**
+
+- 机械臂 AGILEX Piper，铭牌 S/N：`MA100101000019005Y03487`；硬件版本回复 `H-V1.2-1`，软件固件 `S-V1.8-2`。版本后的 `251121` 未确定其含义，不并入软件版本。
+- USB-CAN 接 Go2 上位机，不接本项目所在的笔记本。上位机登录提示 `unitree@ubuntu`，用户使用 SSH 别名 `unitree-go`；未由别名推断实际 IP。
+- 上位机 Python `3.8.10`、架构 `aarch64`，安装目录 `/opt/ros` 中有 `foxy`、`noetic`；本次采用独立 Python SDK，不套用 Humble ROS 驱动。
+- USB ID `1d50:606f`，驱动 `gs_usb`，接口 `can0`，速率 `1000000`；启用后为 `UP` / `ERROR-ACTIVE`，用户回传的总线错误及 bus-off 计数为 0。收到 Piper 状态、位姿、关节、夹爪及电机反馈，`0x4AF` 固件查询也收到真实回复。早期 RX dropped 较高，未据此计算物理链路丢包率，亦未完成专门丢包分析。
+- Python 环境 `/home/unitree/piper-venv`；使用 `/home/unitree/piper-venv/bin/python -I` 隔离 ROS 的外部 Python 路径。普通 pip check 曾出现 `launch-ros` 缺 `pyyaml`，加 `-I` 后为 `No broken requirements found.`，未为此修改 ROS 或补装其依赖。
+- 在线安装失败的明确证据是 `Temporary failure in name resolution`，不是已证实的 SDK/CPU 不兼容。按 `piper_sdk==0.6.2` 离线方案安装；用户随后成功运行 `C_PiperInterface_V2` 查询及使能代码，但未单独回传最终 pip 版本清单。
+- 本机会话曾准备 SDK 及依赖共 6 个 wheel：`piper_sdk 0.6.2`、`python-can 4.5.0`、`msgpack 1.1.1`、`packaging 26.2`、`typing_extensions 4.13.2`、`wrapt 1.17.3`，核对 Python 3.8 元数据、aarch64 wheel、离线依赖解析及文件完整性。历史离线包 `/tmp/piper-offline-0.6.2-py38-aarch64.tar.gz`，SHA256 `c2d84584f80a6e2feceb8dd6056269d71864a10a79758dc73824d4f33491816e`；临时文件不作为长期可用安装源，后续检查时原缓存 wheel 已不存在。
+
+**使能前后证据（用户粘贴输出）：**
+
+1. 使能前，两次采样六关节均 `enabled=False`、`faults=[]`；状态 `STANDBY` / `NORMAL`、错误码 0、示教关闭，关节限位及通信异常标志均 False。电压反馈关节 1～5 为 24 V，关节 6 为 23 V；未报告欠压，不代表负载下供电已验收。
+2. 使用 V2 接口 `ConnectPort(piper_init=False)` 建立连接，单次调用 `EnableArm(7)`；该操作未附带夹爪、归零或目标角度命令。使能反馈时间戳 `1793951722.3950057`，六关节均 True，输出 `ENABLE_CONFIRMED: all six joints report enabled.`，状态正常、错误码 0。
+3. 使能脚本以 `DisconnectPort()` 结束，不发送失能。退出后重新运行查询，反馈时间戳 `1793951820.684835`、`1793951821.6904502` 持续更新；两次采样六关节均 True、`faults=[]`，状态正常。无需让本次一次性使能脚本持续运行；该结论不等同于掉电或所有故障情况下仍保持姿态。
+4. 用户明确说明中途 CAN 接口关闭是上位机重启所致，重新启用后恢复；无须重装 SDK。CAN 初始化与机械臂电机使能是两个不同步骤，重启/重新连接后须重新检查实际接口状态。
+
+**姿态采样记录：**以下为上述退出后两次查询中相同的关节反馈，原始单位为 0.001 度；是本会话已有采样，不是本次记录时重新读取的角度。用户后续认可当前姿态与行走保持效果，但未提供行走后的关节快照，不把下表直接写成自动回位或导航默认配置。
+
+| 关节 | 原始反馈（0.001 度） | 换算角度（度） |
+| --- | ---: | ---: |
+| J1 | -4307 | -4.307 |
+| J2 | -7802 | -7.802 |
+| J3 | 279 | 0.279 |
+| J4 | 20856 | 20.856 |
+| J5 | 31922 | 31.922 |
+| J6 | -67391 | -67.391 |
+
+**后续待办与边界：**尚未创建长期启动脚本、开机自动使能或持久姿态配置，未修改导航入口、参数、固件或电机增益。下一步可在明确范围内整理 CAN 初始化、状态读取、按需使能及反馈核验入口；需要回到上述姿态时仍须确认安装、限位及路径，不能将角度表直接作为未经验证的运动命令。抓取所需机身到机械臂基座/相机外参、TCP、夹爪、负载及碰撞模型尚未配置或验收。本次仅追加文档，保留已有未提交工作，不构建、不部署、不启动 ROS 或真机验证。
+
+### 2026-11-06 Piper 开机初始化与使能实现（待 sudo 安装及冷启动验收）
+
+用户明确要求实现 CAN 开机初始化和开机使能，并确认 Go2 首次运动是开机完成后由用户遥控或启动导航。本轮授权范围内已通过 `unitree-go` SSH 只读核对环境并上传服务候选，没有发送使能、运动或重启命令。当前源码仍为分支 `go2-cooperative-task-layer`、HEAD `323d5c5`，保留已有 dirty 工作，不提交。
+
+上位机实查 systemd 245、SDK 0.6.2、python-can 4.5.0；Piper USB-CAN 唯一序列号 `0046002F5246570520323934`、VID/PID `1d50:606f`。新脚本 `scripts/go2_piper_boot.py` 按该身份寻找接口，对关闭接口设置 1 Mbps；已启用且速率错误或 BUS-OFF 时等待处理。逐个核对状态帧和六关节反馈新鲜度、已有故障/示教状态，正常且未全使能时调用 `EnableArm(7)`，清空确认缓存后等待完整新反馈；成功退出，不后台反复干涉后续抓取或人工失能。`--inspect` 不配置 CAN、不发送使能。停止/退出不发送失能、回位、夹爪、复位或清错。
+
+独立服务 `config/piper_boot/piper-boot.service` 使用 Type=simple、RemainAfterExit=yes，避免故障等待阻塞 multi-user.target；以 unitree 和 CAP_NET_ADMIN 运行，上位机实际入口为 `/home/unitree/piper-venv/bin/python -I -u /opt/piper-boot/go2_piper_boot.py --config /opt/piper-boot/piper.json`。状态与原因类写入 journal；人工独立诊断入口 `/opt/piper-boot/piper_boot_status.sh`。active(running) 可能仍等待，active(exited) 与 READY 仅证明该次开机流程完成，不是持续健康承诺。不改变 Go2 导航/底盘启动，不添加导航运动门槛。
+
+安装器 `scripts/install_go2_piper_boot.sh` 预验证 SDK、Python/JSON/unit，拒绝覆盖既有部署并加安装锁；首次安装失败撤销本次新建内容，安装日志 `/var/log/piper-boot-install.log`。仅 enable，不 --now、不重启。上位机 sudo -n 明确需要密码，故服务尚未安装到系统目录或启用；最终安装必须由用户在上位机 Bash 终端输入 sudo 密码完成，不收集密码。候选目录 `/home/unitree/piper-boot-20261106/`，最终从本次构建产物打包并校验 SHA256SUMS；步骤见 [runbook](go2_runbook.md#2026-11-06-piper-开机-can-初始化与关节使能)。
+
+验证：新增 `test/test_piper_boot.py` 24 项通过，覆盖身份选择、逐关节新鲜度、故障与控制状态、只读、使能后新反馈确认、只读超时后重连、畸形帧、设备晚到及 main 退出。独立审查提出的 oneshot 阻塞启动、失败覆盖旧部署两项已修复，复核无剩余重要静态缺陷。真实上位机 Python3.8 双次只读 session 均 READY，发送计数前后均 3，未发送 CAN 控制报文；证据 `build/go2-piper-boot-20261106/evidence/upper-readonly.log`。systemd245 unit 校验仅出现宿主已有 netplan/snapd/varlink 警告，不能据此宣称真实 service 已启动。
+
+按 runbook 已完成本轮新输出 `build/go2-piper-boot-20261106/overlay` 的三包首次构建（27.2 秒），原 overlay 未重建。最终增量构建、定向 ctest 及部署清单见后续收尾记录；独立上位机服务使用本轮安装产物，不切换无关导航 CoVLM 默认 overlay。未跑全库、未做安装器实际失败注入、未做系统安装/冷启动或异常恢复真机验收。历史姿态表仍不是自动运动配置。
+
+收尾补充：新增 socket 排队旧帧反例，先复现错误 READY，再按内核接收时间戳过滤本次连接/使能之前的报文，最终 24 项通过（均为本轮新增，不含既有测试）；不把 colcon 的 pytest 包装条目计作额外用例。
+
+最终交付：三包增量构建0.95秒成功；同一输出定向ctest通过，实际pytest为24项（colcon汇总25含包装条目）。本轮仅新增测试，未重跑既有全库。五个服务资产由新安装share复制打包，源码/安装/上传SHA256逐项一致，清单build/go2-piper-boot-20261106/evidence/deployment-SHA256SUMS。最终上位机脚本Python3.8语法、两次无线程只读连接和重连均通过，六关节READY，TX前后仍为3；upper-readonly-final.log及upper-package-check.log记录。独立最终审查复现排队旧帧红灯并确认修复，24项复核通过，无剩余重要静态项。系统目录尚无本次服务，需用户在/home/unitree/piper-boot-20261106运行sudo bash scripts/install_go2_piper_boot.sh后确认is-enabled；不把上传或unit静态校验当成安装/冷启动成功。
+
+### 2026-11-06 Piper 开机服务已安装并启用（待冷启动验收）
+
+用户随后报告 sudo 安装成功、显示 enabled。本机通过 `unitree-go` 仅做只读核验：`UnitFileState=enabled`、`ActiveState=inactive`、`SubState=dead`，ExecStart 未运行，unit 来源 `/etc/systemd/system/piper-boot.service`。实际 ExecStart 使用 `/home/unitree/piper-venv/bin/python -I -u /opt/piper-boot/go2_piper_boot.py --config /opt/piper-boot/piper.json`。已安装 Python 入口、诊断脚本、JSON、systemd unit，以及保留在上传目录的安装器，均与部署 SHA256SUMS 一致。
+
+本条更新此前“待 sudo 安装”的状态：系统安装和开机启用已完成；当前 inactive 符合仅 enable、未 --now 的安装设计，不是启动失败。下次用户安排正常开机后，按 runbook 在上位机独立诊断终端运行 `bash /opt/piper-boot/piper_boot_status.sh`，检查该次开机日志 READY 与 active(exited)；需要核对当前真实状态时再运行只读 --inspect。尚未执行自动服务首次启动或冷启动验收，本次没有发送使能、运动或重启命令。仅追加文档，不重建代码。
+
+### 2026-11-06 Piper 姿态调整完成、重新使能及自启动保留
+
+用户要求暂时失能以手动调整姿态，随后重新使能并保留开机自启动；本会话提供了上位机操作步骤，本机未通过 SSH 执行。用户最终确认“已经调整好姿态”。未提供调整后的关节角度，因此前文历史角度表不代表当前姿态，也未保存为自动回位配置。
+
+用户回传 `systemctl show piper-boot.service -p ActiveState -p SubState -p UnitFileState -p Result` 输出：`Result=success`、`ActiveState=active`、`SubState=exited`、`UnitFileState=enabled`。上位机 `/home/unitree/piper-venv/bin/python -I /opt/piper-boot/go2_piper_boot.py --config /opt/piper-boot/piper.json --inspect` 随后由初始 `WAIT_FEEDBACK` 转为 `READY`，六关节反馈全部 True。用户粘贴的 journal 还记录了 17:18:05 `ENABLING`、17:18:06 `READY`。这些证据确认该次服务已执行成功、检查时六关节已使能且开机启用配置保留；更新此前“服务尚未执行”的状态，不等同于冷启动验收。
+
+诊断脚本使用 `journalctl -f` 持续显示日志，不自动退出属于预期；开头 systemd 状态仅为启动查看时的快照。Ctrl+C 只结束日志查看。服务仅初始化 CAN 并使能，不记录或恢复指定关节角度；掉电后姿态若改变，下次开机不会自动回到本次姿态。
+
+后续目标为 Go2 单机发现地面物体后抓取，用户候选为水杯或积木，具体物体、尺寸和重量未定。当前仍待确认站姿下地面可达性、调整后姿态的保持及行走效果、机械臂外参/TCP/夹爪和实际抓取；单机入口尚未接入抓取。本轮仅追加交接，不修改代码、不构建、不部署、不启动 ROS 或真机验证。
+
+### 2026-11-06 17:24 调整后姿态只读实测
+
+用户明确要求“读取”当前姿态，本机通过 `unitree-go` SSH 使用上位机 `/home/unitree/piper-venv/bin/python -I` 读取，按 `/opt/piper-boot/piper.json` 的 USB 身份确认 `can0`。SDK 连接使用 `piper_init=False, start_thread=False`，只接收并解析反馈；每次采样均等待连接/采样起点之后的状态帧、六关节使能反馈及三组关节角反馈，不使用排队旧帧。未调用使能、失能、夹爪或运动接口，CAN TX 计数前后均为 5。
+
+上位机时间 `2026-11-06T17:24:46.215279+08:00` 和 `17:24:47.241150+08:00` 两次新鲜采样完全一致，所需帧最大接收年龄分别为 0.0201 秒、0.0178 秒；两次均 `READY`、六关节全部使能。
+
+| 关节 | 原始反馈（0.001 度） | 当前采样角度（度） |
+| --- | ---: | ---: |
+| J1 | 1786 | 1.786 |
+| J2 | -7740 | -7.740 |
+| J3 | 2129 | 2.129 |
+| J4 | 0 | 0.000 |
+| J5 | 21456 | 21.456 |
+| J6 | -44527 | -44.527 |
+
+本表补充前一节“未读取调整后角度”的缺口，仅为当前姿态记录，不是自动回位配置或安全轨迹。未读取末端坐标、未验证地面抓取或行走保持，也未执行冷启动。SSH 出现 known_hosts 自动更新受只读文件系统限制的提示，但连接、两次采样及正常退出均成功；未修改 SSH 配置。
+
+### 2026-11-06 地面抓取离线几何初筛
+
+用户提供侧面照片，随后要求按安装面离地 60 cm、基座轴到雷达/护架前缘水平 50 cm 讨论并继续。两尺寸为讨论假设，不作为实测标定。候选官方 URDF 与固定版本 SDK 0.6.2 的正运动学完成 302 组离线位置交叉核对，最大差异约 0.14 mm；模型和实机的零位/限位/TCP 仍未完成标定。
+
+假设基座水平、目标水平距离 50 cm、夹持点离地 5 cm，肩部比安装面高 12.3 cm，肩部到目标约 83.84 cm。按模型连杆长度的三角不等式，法兰到夹持点距离至少需要约 21.07 cm 才满足任意朝向的必要条件；假设工具长 10/15/20 cm 时均超出上界。此为有条件的排除，不是所有地面位置都不可达的结论。公开夹爪模型版本不同，未把手指关节原点当实测 TCP，也未通过照片确定版本。当前实测 J2/J3 略超公开 URDF/SDK 默认范围，原因待核实，未改限位或校零。
+
+方法、来源、限制及下一步见 [Piper 地面抓取可达性初筛](piper_ground_reachability_20261106.md)。计算脚本、模型快照、哈希、result.json 和图位于 `build/piper-reachability-20261106/`，仅为离线证据，不是长期机器人入口；build 不受 Git 保护，不清理。下一步须实测安装几何和法兰到夹持中心长度，并选择具体物体；再核对可达候选、真实模型与整条无碰撞路径。本轮无 SSH、ROS 或控制命令，未修改产品代码或安装产物，不构建、不切换 overlay；尚未完成 IK、碰撞和真机抓取验证。
+
+### 2026-11-06 用户手动伸展：正前方约 10 cm 以上、肩部侧方约 5 cm
+
+用户在收到临时失能与恢复步骤后报告已做伸展检查：沿中轴线从头部相机前方向下，距地面约 10 cm 或更多；从头部侧方、肩膀附近向下，距地面约 5 cm。用户进一步确认两数值均为地面到夹指最下端（指尖）的距离，不是夹持中心高度。对应侧别、水平距离、关节角、机身姿态、碰撞余量及当前使能状态均未采样，不能视作完整空间极限或正式抓取成功。本机本轮未执行 SSH 或控制操作。
+
+后续优先核对侧方候选：检查物体可夹持部位与指面有效接触区域的重叠，再核对前腿/机身干涉及停车后相机可见性，不直接把 5 cm 当作 TCP 高度或可抓物体高度阈值。详细解释已补入 [可达性初筛](piper_ground_reachability_20261106.md)。仅更新文档，未构建或改变导航/机械臂运行配置。
+
+### 2026-11-06 独立夹爪调试工具完成（未上传、未真机执行）
+
+用户明确尚未实物尝试，选择目测高约20cm、宽约7cm的杯子，随后确认夹爪宽度可用、不再讨论这一点，要求开始调试。本轮按此范围完成独立工具，不把宽度目测改写为实物抓取通过，不自行控制机器人。
+
+新增 `scripts/go2_piper_gripper.py` 与 `scripts/piper_gripper_debug.sh`：上位机 Python3.8/SDK0.6.2，显式加载同目录 `go2_piper_boot.py`，复用USB身份、只读CAN与现有使能/故障反馈检查。`inspect`被动持续监测，不发CAN；`set --width-mm ... --effort-nm ...`查询已有驱动范围后，最多尝试一次GripperCtrl，故障/断流/重连不会重发已尝试的动作。查询不会改行程、零位或负载；不调用六关节、底盘、失能或清错接口，也不改开机服务。Ctrl+C退出监测而非物理停止/释放。诊断明确反馈与实物结果的区别，grasp_confirmed始终false。
+
+主终端只显示日志路径；有图形会话时尝试打开诊断窗口，SSH无图形时第二终端执行 `bash piper_gripper_debug.sh diagnostics` 持续跟踪原子切换的current.log。真实日志位于上位机 `~/.local/state/go2-piper-gripper/`；set持有按USB身份划分的本用户控制锁。入口故障可等待恢复，不通过额外杯宽验收解锁。命令参数有效性与驱动已配置范围仍核对，SDK力矩单位为N·m，不是指尖夹持力N。
+
+验证：新增 `test/test_piper_gripper.py` 42项，既有 `test/test_piper_boot.py` 24项，合计66项通过；Python3.8 AST语法与Bash语法通过。先复现再修复：清理异常覆盖KeyboardInterrupt导致继续重连；SDK0.6.2异常夹爪帧被丢弃后缓存不更新，入口仍标新鲜。现在保存解析前时间戳数值，只有SDK确实更新0x2A8缓存才登记新鲜，拒绝时移除对应seen。独立审查复核66项，无剩余重要静态缺陷。未跑全库，未实机验证Python3.8/反馈/夹爪动作、杯子夹持或抬升。
+
+按runbook新输出 `build/go2-piper-gripper-20261106/overlay` 三包构建26.8秒成功（既有CMake/PCL等警告保留）；同输出定向ctest通过，colcon汇总68含两个pytest包装条目，实际用例66。三个包前缀均核对本次输出；独立上位机工具不切换导航默认overlay。安装share中三脚本与源码字节一致，从share打包到 `build/go2-piper-gripper-20261106/package/`，附SHA256SUMS；证据位于同级evidence目录。构建、上位机部署及两终端依赖步骤见 [runbook夹爪调试节](go2_runbook.md#2026-11-06-piper-独立夹爪调试入口)。尚未上传或部署，不覆盖/opt/piper-boot，不自动发送现场动作；用户下一步先上传核验、inspect，再空载打开，之后逐步原地夹持/释放。示例70mm/0.2N·m、后续68mm只是显式调试目标，不是已验收抓取参数。
+
+### 2026-11-06 夹爪不动作：实物合拢与反馈108.1mm不一致
+
+用户随后部署到上位机 `/home/unitree/piper-gripper-debug-20261106`，两次执行 `set --width-mm 70 --effort-nm 0.2` 后均报告不动作，明确允许本机自行读取日志并继续排查。SSH只读核实SDK0.6.2及部署脚本；第二轮日志 `~/.local/state/go2-piper-gripper/set-joaxi5f3.log` 从时间戳1793968102.000 STARTING、1793968102.641 COMMAND_ATTEMPTED后持续反馈108.1mm，未见SDK发送错误。日志快照保存在 `build/go2-piper-gripper-20261106/evidence/upper-retry-set-joaxi5f3.log`，共292行，末行EXITED/USER_EXIT，表示该轮监测退出，不是物理停止或失能。
+
+只接收CAN的2秒采样（结束1793968274.205）收到399帧0x2A8、400帧0x2A1及各关节新反馈；夹爪原始位置0x0001A644=108100、状态0x40，enabled=true、homing=false、故障位全零；arm ctrl_mode=0、arm_status=0、teach_status=0、err_code=0。TX计数7→7，无查询或控制发送。SDK实际发送类是 `piper_sdk.hardware_port.can_encapsulation_v0_4_0.C_STD_CAN`，不能用同包旧 `can_encapsulation.C_STD_CAN` 替代分析。仅内存替身编码 `GripperCtrl(70000,200,1,0)` 得0x159/0001117000c80100，确认单位与编码，不代表当时总线报文或固件接受证据。源码及采样在同级 `zero-mismatch-readonly.txt`。
+
+用户进一步确认当前夹指“基本合拢或指尖接近”。**已确认的是实物与反馈开口明显不一致；优先假设为夹爪零位偏移/未正确标定。**当前70mm相对反馈108.1mm是进一步闭合的目标，因此可能已被物理闭合端阻挡。该解释尚待正确校零后的小开口动作验证；homing=false本身不足以判根因，ctrl_mode=0也未证实是阻断原因。未发送实际控制帧抓取，未验证0.2N·m是否足以驱动，不能提前宣称故障已修复。
+
+厂家[Q&A](https://github.com/agilexrobotics/piper_sdk/blob/master/assets/Q%26A.MD)说明闭合时反馈偏大应设夹爪零位；[V2校零示例](https://github.com/agilexrobotics/piper_sdk/blob/master/piper_sdk/demo/V2/piper_set_gripper_zero.py)先仅失能夹爪、等待1.5秒，再以失能状态set_zero=0xAE。下一步顺序：原操作终端退出set并确认没有其他控制进程；空载，仅发送夹爪失能0x159(code=0,set_zero=0)，核对新鲜反馈已失能；操作者确认夹指自然完全合拢后，再单独发送夹爪校零(code=0,set_zero=0xAE)，核对新鲜反馈接近0；随后用小开口（例如10mm、保持0.2N·m）做动作验证。每步依赖上步结果，不把“基本合拢”直接当精确零位，不在张开或夹物时校零。六关节保持使能，开机服务不改；不重置整臂、不改模式、不改行程、不自动提高力矩。
+
+本轮未执行失能、校零或运动，未部署修改。仅记录证据并修正文档中将70mm无条件称为打开/释放的表述；未改代码、不构建、不重跑既有测试。真实校零和夹爪动作仍待现场操作。
+
+后续用户明确“现在是空载，授权验证”。本机按顺序仅发送一次 `GripperCtrl(0,200,0,0)`，未发送六关节控制或校零。发送前新鲜反馈READY、六关节使能全true、夹爪enabled=true；发送后2秒新鲜采样确认夹爪enabled=false、status=0，六关节仍READY且全true，位置仍108.1mm、homing=false；TX7→8。证据 `build/go2-piper-gripper-20261106/evidence/gripper-disable-before-zero.jsonl`（采样时间1793968661.126及1793968663.128）。未观察到0x159本机回环，不以此否认已发生的使能位变化。已向用户询问手动自然完全合拢与手移开确认；该物理前提尚未确认，当前不发送set_zero=0xAE，也不执行10mm打开测试。授权在范围内延续，无须再次询问相同授权。
+
+### 2026-11-06 夹爪校零及10mm验证：位置偏差已纠正，动作故障尚未解决
+
+用户确认“已完全合拢”后，在夹爪新鲜反馈失能、六关节READY条件下发送一次 `GripperCtrl(0,200,0,0xAE)`。发送前107.3mm，发送后2秒新反馈0.0mm；夹爪仍失能、六关节全使能，TX8→9。homing反馈仍false，不能称回零标志已置位或重启后持久化已验证。证据同目录 `gripper-zero.jsonl`。
+
+随后按已授权10mm/0.2N·m通过实际已部署入口执行一次set，约8秒后SIGINT结束监测；日志 `set-n0p351s9.log`。发送前夹爪失能，发送后enabled=true，但位置始终0mm；仅确认使能变化，没有到位。用户因未看清明确要求“重新进行”，再执行一次相同目标（发送前已使能），观察8秒；日志 `set-o1vvqj7q.log`，独立接收的1601帧0x2A8均为0mm，用户现场确认“完全没有动作”。两次均无自动重发、无SDK发送报错；查询及命令TX依次9→11→13。两次程序均以SIGINT正常退出监测（返回130），退出不撤销目标，夹爪保持使能。原始0x47E=6464010000000000，即现有最大行程100mm；0x2A1全零，仍待机模式。未更改行程配置、力矩、控制模式或六关节目标。证据 `gripper-open10-after-zero.txt`、`gripper-open10-enabled-retest.txt`。
+
+结论：闭合位置的107.3mm偏差已被纠正，但不能将原动作故障归结为零位并宣称修复；在已使能状态再发送同一10mm目标仍不动，“第一条命令只完成使能”不能单独解释。下一单变量候选为检查0.2N·m是否足以驱动，厂家独立夹爪示例使用1N·m但这不证明实机最低要求。拟在空载、10mm目标不变条件下单次试0.5N·m并观察8秒，不自动升到更大值；该力矩变更尚未执行，待用户确认。当前不采用整臂模式切换、清错或重置作为猜测性修复。仅更新证据/文档，无产品代码修改、不构建。
+
+### 2026-11-06 10mm/0.5N·m测试与用户要求重试：仍无位置变化
+
+用户明确“执行”，授权10mm/0.5N·m一次测试，随后又明确“重新尝试”，授权相同参数再试一次。两次各观察8秒，每轮实际部署入口仅尝试一次位置命令，无自动重发；每轮后SIGINT结束监测，日志均EXITED，子进程返回130。第一轮 `set-wx7nizcr.log`（1793969091.006至1793969098.958），TX13→15；第二轮 `set-ceis7es8.log`（1793969161.046至1793969169.001），TX15→17。每轮各1601帧0x2A8，宽度最小/最大/最后均0.0mm，夹爪状态始终0x40（使能、故障位全零）；扭矩反馈范围分别0.004~0.075N·m、0~0.070N·m。六关节反馈正常/使能，arm状态帧仍全零；原配置最大行程100mm，未更改。最新一轮现场目视结果尚待用户补充，不能替用户声称已经看清。
+
+证据：`build/go2-piper-gripper-20261106/evidence/gripper-open10-effort05.txt`、`gripper-open10-effort05-retry.txt`。结论仅是将请求力矩从0.2提高到0.5N·m仍未到达10mm目标，不能据此排除所有力矩/机械问题，也不能认定是控制模式或发送频率根因。实际SDK `_create_bus()`明确设置 `receive_own_messages=False, local_loopback=False`（`sdk-local-loopback.txt`），因此独立同机CAN接收器没有观察到0x159回环符合发送端配置，不作为未发送证据。TX计数和SDK无报错也不等同于固件接受位置命令。
+
+本轮未继续加力矩、改整臂模式、清错/重置或重新校零。当前夹爪和六关节均保持使能；监测退出不撤销已发目标。后续应核对固件接受位置命令的条件/发送时序，不能把重复相同命令视作排障进展。仅记录文档及证据，无产品代码修改、不构建。
+
+### 2026-11-06 继续只读排查：固定版官方发送周期与夹爪电机固件线索
+
+用户要求继续排查；本轮未再发运动/查询/配置命令。时间1793969395.056只接收采样仍为六关节READY全使能、夹爪status=0x40、width=0mm、homing=false，arm ctrl_mode=0/arm_status=0/err_code=0；TX17→17。证据 `build/go2-piper-gripper-20261106/evidence/further-readonly-20261106.txt`。在上位机实际SDK0.6.2中以内存发送替身编码 `GripperCtrl(10000,500,1,0)`，生成0x159/0000271001f40100，未接真实发送端；确认参数编码，但不是之前真实物理总线抓包。
+
+已核对与部署版本对应的[0.6.2官方夹爪demo](https://github.com/agilexrobotics/piper_sdk/blob/0.6.2/piper_sdk/demo/V2/piper_ctrl_gripper.py)：循环内每次GripperCtrl后sleep(0.005)，与本工具一次发送不同；示例还包括1N·m、失能清错等差异，因此不能把差异直接当根因，也不原样运行无限开合demo。独立夹爪demo未调用MotionCtrl_2；实际EnablePiper仅调用EnableArm(7)，不会隐式切换控制模式。因此仅凭当前ctrl_mode=0不足以要求切整臂模式。
+
+厂家仓库[issue40](https://github.com/agilexrobotics/piper_sdk/issues/40)报告夹爪使能、低扭矩反馈、无故障但示教软件/SDK位置命令不响应，最终通过升级**夹爪电机固件**解决；这是其他设备用户的报告，SDK版本/硬件不同，不能直接认定本机同根因。主控S-V1.8-2不等于夹爪电机固件版本，当前公开SDK接口查到的是主控固件方法，没有已确认可用的独立夹爪电机版本读取方法。用户对历史是否正常开合回答“不确定”，不能记录为之前正常或一直损坏。另一个[issue17维护者说明](https://github.com/agilexrobotics/pyAgxArm/issues/17#issuecomment-4222517310)针对旧主控从MIT切位置速度模式的限制；本会话未进行此类切换，无证据适用，不据此重置/升级。
+
+下一候选实验已限定为只改变发送周期：空载、目标10mm、力矩0.5N·m、使能code=1、set_zero=0保持不变，按5ms间隔持续最多2秒且最多400次，再只读观察6秒；反馈失效/故障或到达目标即停止后续发送，不重连重播、不改六关节/控制模式、不清错校零。周期发送次数超出此前每轮单次授权，尚未执行，需用户明确允许此有界测试。若响应，才继续定位/修正单次发送策略；若仍不响应，优先核对夹爪电机固件/厂家示教软件，不继续靠加力矩推断故障。本轮仅追加证据和文档，未改产品代码、不构建。
+
+### 2026-11-06 用户授权有界周期测试：373次发送仍无位置变化
+
+用户明确“执行”后，实际使用上位机SDK0.6.2，独占既有USB控制锁，仅查询一次已有夹爪行程上限（100mm），新鲜反馈六关节READY、夹爪已使能且无故障后，发送恒定 `GripperCtrl(10000,500,1,0)`。只在本次进程内包装SDK传输函数校验0x159载荷必须为0000271001f40100，非SEND_MESSAGE_SUCCESS立即停止；没有绕过真实发送、写SDK安装文件或部署代码。接收采用内核时间过滤、逐帧新鲜度及SDK夹爪缓存更新检查；每次发送前检查原有反馈/故障条件，到位或异常立即停止后续发送，无重连重播。
+
+2秒时长上限先到，实际373次调用，首尾跨度1.994853秒，最小调用间隔5.252ms，约187Hz；不能记为实际精确200Hz或400次。停止原因duration_limit，随后只读观察6秒。共1740帧夹爪反馈，width_min=width_max=0mm，状态均0x40，扭矩0~0.074N·m；结束时六关节全使能且READY，夹爪enabled=true，ctrl_mode=0。TX17→391，增量374与1次查询+373次控制一致；传输调用均未报错，但不等于固件确认执行位置目标。过程1793969575.131至1793969583.132，证据 `build/go2-piper-gripper-20261106/evidence/gripper-open10-effort05-burst.jsonl`。
+
+本次条件下周期发送未解决故障，不将单发策略视为已证实根因，也不以一次阴性测试排除所有频率/固件/力矩组合。用户本轮目视结果尚未提供，软件结论限定为无位置反馈变化。未增加0.5N·m上限、切换整臂模式、修改六关节目标或刷固件；实验退出后夹爪和关节仍使能，退出连接不撤销目标。下一步优先核对厂家示教软件下的夹爪响应及独立夹爪电机固件兼容性，尚未验证或升级，不自动启动新硬件实验。本轮仅更新证据与文档，无产品代码修改、不构建。
+
+### 2026-11-06 固件兼容性评估：尚无候选包，不直接升级最新版
+
+用户要求核对后再考虑升级，确认尚无厂家包/候选版本，准备询问曾使用者。本机重新查询0x4AF：实际主控S-V1.8-2、硬件H-V1.2-1、标识ARM_MC；TX391→392只增加一条版本查询，无控制/刷写。上位机Python3.8.10、SDK0.6.2、python-can4.5.0，SDK无V3类，开机服务active/exited且enabled。夹爪电机独立固件、硬件与内部ID仍未知。安装资产哈希和版本回复保存在 `build/go2-piper-gripper-20261106/evidence/firmware-installed-baseline.txt`、`firmware-fresh-query.jsonl`。
+
+官方要求主控1.8-8及以后使用V3；新ID10夹爪要求主控至少1.8-8，旧ID7仍可用。本机实际夹爪ID未确认，不由EnableArm(7)或主控回复数字推断。建议先询问是否有保留主控1.8-2/SDK0.6.2的独立夹爪电机修复包；没有具体目标包、型号/ID/标定保留与回退说明前不承诺升级无影响。实际产品SDK依赖集中在Piper开机/夹爪入口及安装器（固定SDK0.6.2），未接入现有导航抓取栈。
+
+离线从PyPI wheel加载0.6.2/V2与0.7.0a1/V3（预发布候选，仅分析），控制电脑Python3.10.12中禁止CAN socket，真实反馈回放/内存发送替身两组比对：EnableArm(7)与10mm/0.5N·m编码一致，宽度模式READY/AT_TARGET均通过；但V3角度模式mode=1、数值10000被现脚本误判为10mm到位。升级V3需补模式语义验证，不能只换import/pip。两SDK的Python3.8 AST语法通过，不是Python3.8/aarch64实测。候选wheel、SHA256、comparison.json和回放代码文本在 `evidence/sdk-compatibility/`；依赖含本机cp310/x86_64产物，不作上位机部署包。未修改上位机环境、产品代码或构建，未重跑既有66项测试。
+
+详细版本矩阵、依赖、向曾使用者/厂家索取的问题和未代发的摘要见 [runbook固件兼容性评估](go2_runbook.md#2026-11-06-piper-固件升级兼容性评估未刷写)。当前待取得同一设备正常开合时的主控、独立夹爪电机、硬件/内部ID、SDK/接口或示教软件版本，以及操作顺序/更换升级历史；用户要求将这些问题整理成可转发选项。未知版本仍要求原始字符串/截图或明确未知，不根据选项猜测。未发送外部消息、安装刷写工具、重启或追加动作实验。
+
+### 2026-11-10 机载 Piper 抓放与携带接入方案
+
+用户确认使用Go2身上的相机与机械臂，首版原地pick and place，后续抓起后携物导航、到目的地再放置；要求整理整个`~/机械臂资料`工具包与当前环境的匹配情况和两端对齐事项。本轮完成[接入设计草案](../superpowers/specs/2026-11-10-go2-piper-pick-place-carry-design.md)，两端明确为当前控制电脑与机载Piper执行电脑，不是Ranger。推荐保留Humble导航、独立RoboRSI与机载SDK，通过隔离的视觉/IK计算和有限任务接口接入；工具、执行协议、状态和阶段划分均为设计，尚未实施或批准部署。
+
+同会话本机离线核实：默认仍为`build/go2-dual-recovery-sync-20261105/overlay/install/local_setup.bash`，59个Python模块与当前源码一致，但缺少后来新增的`config/piper_boot/piper-boot.service`及`piper.json`，完整`--check-install`退出1；最新构建`build/go2-piper-gripper-20261106/overlay/install/local_setup.bash`同样59模块一致且完整检查退出0。框架HEAD仍为`0208cd72ec7c885a7219040cd2be459d127e374e`且工作树干净；实际Codex CLI为0.167.0，与配置固定0.166.0不符，框架预检失败。采集时enp4s0为DOWN、无192.168.123.x地址，环境入口网络检查失败。没有把这些结果改写为现场故障根因或自动修改版本/默认overlay。白名单环境、接口schema、三包prefix和源码摘要保存在`build/agent-piper-inventory-20261110/`。
+
+资料核对补充：原操作Agent直接用RealSense SDK/CAN，ROS1主要在标定采集层；primitive3导入即创建Piper并使能，不能直接导入现有框架进程。原TCP入口没有完整任务取消/分帧契约；goto_joint超时仍返回目标关节，不能当到位。标定scripts/1入口与write_pose_file参数不匹配，安装规则亦指向通用scripts入口；Pyroki要求Python≥3.10，不能直接复用机载Python3.8环境。方案列出18项双端对齐条目及证据要求，分别覆盖身份/版本、图像/时钟、坐标/TCP/单位、模型/命令、归属/结果/取消恢复、诊断及携带交接。
+
+机载版本、固件和夹爪不动作仍引用11月6日历史记录，本轮未SSH复核。物体、起终区域、实际外参/模型、标定目标、停止与持物语义仍待确定；不把旧样本、0.135m工具偏移、旧角度或旧外参当当前机载标定。仅新增方案并追加本交接，保留所有原未提交工作；不安装、不改产品代码、不构建、不启动ROS/模型/SSH/CAN或真机动作，不提交或外发。
+
+文档验证：方案20个本地链接有效、18项对齐条目完整、代码围栏与表格结构检查通过；新增方案及交接增量的diff空白检查通过。交接原始字节前缀完整保留，其余79份已有改动文件摘要未变。独立审读核对Python/ROS边界、RGBD坐标单位、取消/重启及持物导航交接，无剩余重要设计缺口；此为方案静态审读，不是执行器测试或现场验收。
+
+### 2026-11-11 Piper独立状态/关节/夹爪入口：离线完成，未运行真机
+
+用户缩小当前范围：固定Go2机身，先完成独立状态读取、六关节和夹爪控制，为后续手眼标定准备；本轮不接导航、携带、视觉抓放或IK。用户随后明确不得修改原代码异常处理。本轮在 `/home/isee-pst/unitree_ros2/piper` 新增 `piper.sh`、`standalone/{piper_control.py,piper_common.py,requirements.txt,README.md}` 和 `tests/test_standalone.py`；仅为原 `桌面操作和标定.md` 增加新入口提示，原文档备份于该目录 `.standalone-backup-20261111/`。原 `agent/`、`calibration_toolbox/`、`piper_calibrate/` 及SDK安装文件保持不变；没有包装或替换SDK发送函数，没有修改原异常处理逻辑。
+
+入口提供 `check`（离线依赖/配置检查）、`inspect`（只接收反馈，无查询或控制发送）、`joints`（显式六关节角与速度）、`gripper`（显式开口与力矩限制）及 `diagnostics`。使用独立Python解释器与 `-I`，不导入原视觉/标定Agent，不source ROS overlay。运行目标依赖SDK0.6.2/python-can4.5.0；默认解释器优先历史机载 `/home/unitree/piper-venv/bin/python`，否则系统Python，可用PIPER_PYTHON指定。默认读取既有 `/opt/piper-boot/piper.json` 的USB序列号，不配置CAN或改变开机使能服务。使用说明及按依赖顺序的终端步骤在piper的 `standalone/README.md`。
+
+新入口沿用已有USB身份与健康检查；反馈按帧新鲜度过滤，SDK拒绝异常关节/位姿/夹爪帧后不复用旧缓存冒充新数据；控制目标核对设备现有限位/行程，显式命令仅尝试一次，不自动重放。等待、故障与超时在独立诊断日志显示原因及状态；抛出异常导致部分写入时保持结果不确定。遵照用户限制保留SDK0.6.2底层发送失败可能只记日志的行为，`COMMAND_ATTEMPTED`不证明发送成功，`AT_TARGET`仅表示反馈到位。没有夹持成功或独立停止判据；Ctrl+C/SIGTERM只退出监测，不撤销已发目标、不自动释放/失能/回零。夹爪显式命令包含夹爪使能位，不自动使能六关节。
+
+验证：从实际安装路径执行新增38项离线测试，全部通过；禁止socket后使用实际SDK0.6.2 wheel、历史反馈与合成报文核对编码、单位、缓存失效、原发送失败日志行为及无重发。两个生产Python文件编译、Python3.8 AST、Bash语法与跨目录help检查通过。安装前81份原文件摘要均未变；安装后除有备份的原文档外80份摘要均未变，7份安装文件与审阅版本一致。独立审读无剩余阻塞问题。证据在 `build/piper-standalone-20261111/evidence/`；早期red/review-red/recovery-red日志保留开发过程，最终结果以tests-final、sdk-offline-final和installed-verification为准。
+
+没有运行旧硬件demo或全目录pytest，没有安装依赖、SSH、上传机载端、启动ROS/CAN/运动或采集标定数据。独立Python入口编译已完成；未改ROS包及导航启动入口，不做colcon构建或切换既有overlay。Python3.8/aarch64实机运行未验证；历史夹爪不动作未解决，不能将离线结果称为抓放成功。下一步是在实际连接USB-CAN且依赖齐备的电脑按README先check、再inspect，取得新鲜反馈后再按现场授权验证关节与夹爪；随后单独进行机载相机手眼标定，不复用旧外参。
+
+
+### 2026-11-11 Ranger RoboRSI 协商与 Go2 CLI 版本兼容
+
+用户先授权通过Codex信箱商定Ranger接入RoboRSI+CodexCLI，随后明确要求Go2侧agent适应CLI持续更新。本轮分支 `go2-cooperative-task-layer`、HEAD `323d5c52737477962a874ae012db117be5a93f34`；保留原dirty、日志和证据，不提交。信箱doctor通过，角色go2→ranger，任务 `ranger-roborsi-codexcli-20261111`。历史未处理消息未当本轮任务执行。
+
+**本机修改与原因。**原 `tools/go2_agent/config.yaml` 精确固定0.166.0，今日实际CLI为0.167.0；框架宿主预检和真正planner预检均会比较精确版本。改为 `minimum_version: codex-cli 0.166.0`，接受不低于基线的稳定版本，拒绝过旧、无法解析和预发布版本；用本地--version及分别的顶层/exec --help检查必要参数。每轮把实际解析的绝对路径、版本和SHA-256传给原RoboRSI，保留第二次严格预检及启动前摘要检查，下一轮重新发现更新，不自动升级/降级/回退CLI。框架仓库仍为干净的 `0208cd72ec7c885a7219040cd2be459d127e374e`，没有修改框架、认证或导航/取消策略。
+
+**构建与实际入口。**新输出 `build/go2-codex-compat-20261111/overlay/install/local_setup.bash` 三包构建成功；CoVLM_env、Cooperative_env、Launcher及公共诊断入口默认路径同步，显式COOP_SETUP_FILE仍优先。完整--check-install退出0，59个Python模块来自本轮安装；三包prefix及6份脚本/launch安装副本核对通过。Agent runtime/config仍走源码入口。完整命令与环境仅见 [runbook新节](go2_runbook.md#2026-11-11-codex-cli-版本兼容)，旧进程不会热更新。
+
+**验证。**适配基线44项通过，最终59项通过（新增15）；入口/环境基线149项通过，加入既有恢复入口6项后的最终155项通过，11条既有第三方弃用警告。新增回归先复现新版被固定版本拒绝，独立审查另发现顶层/exec帮助混用误报并以3项失败用例复现，已分开检查；真实框架第二次预检拒绝同版本内容替换的SHA-256错误也已验证，搜索未启动。实际0.167.0原生二进制预检退出0，摘要 `cdcb45aaa01d0f14e298985e09465aebccd47f64ecd298aea44814af7b62bbda`，仅本次身份，不永久钉死。0.166.0及更高版本矩阵其余项使用假CLI，不能当对应真实版本模型验收。证据 `build/go2-codex-compat-20261111/evidence/` 包含before快照、基线、red/review-red、最终测试、构建、preflight和安装核对；build不受Git保护。未重跑全库/C++测试，未运行真实模型、ROS节点、SSH、桥接、录包或运动。
+
+**信箱已商定范围。**Ranger消息 `9660104700434faf8c464acbfbb89467` 说明其用户目标为双机接入；Go2已逐项核对并回复 `22746896f3ba4314aaad1fdc39b648ab`。Ranger确认消息 `6cc41175395145adbbd8e3659cc5fbc9` 同意：Go2保留唯一coordinator及原start/pause；Ranger只读观察既有task_id，不把READY/deposited/模型finish当全局成功，未验证的结果/停车保持UNVERIFIED。Go2本轮不新增双机外层实现。待定集中在Ranger仓库 `docs/multi_agent/cooperative_roborsi_pending.md`；远端文件/112项回归及CLI0.167.1属于Ranger报告，本机未复制或执行其实现。两端兼容策略不同，不宣称字节一致或联合验收通过。当前任务收到的三条Ranger消息均在回复投递成功后ack。
+
+**已核对的双机限制。**AutomaticLauncher.run会自动ARM并发一次start；分阶段prepare不start。StartTask等待5秒，回执仅print，正常返回才写 `build/go2-field/cooperative-task.*/start.log`，无结构化持久化请求ID或幂等键；超时须保持受理结果UNKNOWN，不重发。pause是软件暂停，不是整轮取消，Trigger成功不证明停车；已DONE保留DONE。本地coordinator/status含task_id/phase/reason等但没有统一持久化全局result，当前Coordinator没有主动赋值FAILED路径；双方AgentState不含motion_terminal，Go2诊断status也未绑定task_id，不能单独作为整轮证书。未来可讨论Go2本地只读证据输出，但本轮未实施；远端动作终态及证据完整性缺口不能由本机推断补齐。双机模型控制、至多一次请求、超时UNKNOWN、pause/cancel语义及整轮验收仍待后续明确需求。
+
+**剩余边界。**CLI参数预检记录 `model_protocol=unverified`，不证明MCP/JSON事件或真实工具隔离；未来破坏性接口变化仍可能需要适配。已纠正runbook中--ignore-rules的说明：跳过execpolicy .rules，不等于跳过AGENTS.md。未修改既有硬件授权或真实验收结论。
+
+交付检查：git diff --check、Python编译与Bash语法检查通过；新增6个本地链接有效，文档代码围栏成对；原交接字节前缀和其余未涉及的dirty文件摘要均保留。独立复核无剩余产品代码阻塞问题；提示音乐已播放5秒。最终确认回复 `0b2c537088164be89e6292464639c958` 已投递。
+
+### 2026-11-11 Piper入口解释器路径报错修正
+
+用户报告piper.sh第12行找不到 `/home/unitree/piper-venv/bin/python`。本机该路径不存在，显式设置PIPER_PYTHON为此值可复现相同报错；不设置该变量时原入口已能回落系统Python并显示help。用户终端环境本身未读取，不将复现等同其环境取证。修正piper.sh：显式无效解释器在exec前报告PIPER_PYTHON及unset修复方法，不静默切换用户指定环境。README本机首步改为unset而非机载路径export；原控制Python、SDK及异常处理未变。原文件备份位于piper/.standalone-backup-20261111/python-entry/。
+
+安装后原38项加新增2项回归共40项通过，Bash语法通过；变更哈希、补丁在build/piper-python-entry-fix-20261111/。仅修改独立shell入口、测试及说明，不涉及ROS包，不构建/切换导航overlay。清除错误解释器变量仅解决路径问题；本机Piper依赖、默认机载配置及CAN仍不齐全，check不等于硬件可用。没有安装依赖、SSH、启动CAN或执行动作。
+
+### 2026-11-11 Piper本机独立依赖补齐：离线CHECK_OK
+
+用户提供check-lz72l433.jsonl，实读为CHECK_FAILED，原因是当前Python缺piper-sdk元数据。在piper项目新建 `.venv`（本机Python3.10/x86_64），从既有SDK兼容性证据目录的本地wheel离线安装piper-sdk0.6.2、python-can4.5.0及依赖，不联网下载、不修改系统/导航/机载环境。pip及检查使用-I隔离ROS PYTHONPATH；临时探针最初未加-I的pip check看到了继承ROS包而报缺项，加-I后无依赖冲突，未为此修改ROS依赖。机载aarch64不能直接复制本机虚拟环境。
+
+piper.sh默认解释器顺序更新为项目.venv、历史机载环境、系统Python；显式PIPER_PYTHON仍优先。README同步本机步骤；原控制Python和SDK异常处理未改。默认配置仍为机载 `/opt/piper-boot/piper.json`，本机不存在；本机check需显式指定已有 `/home/isee-pst/unitree_ros2/VLM_Nav/config/piper_boot/piper.json`，没有伪造USB身份或修改系统配置。
+
+从安装路径验证40项基线及1项项目环境选择回归，共41项通过；Bash语法、Python编译、实际SDK导入及隔离pip check通过。实际 `env -u PIPER_PYTHON bash /home/isee-pst/unitree_ros2/piper/piper.sh --config /home/isee-pst/unitree_ros2/VLM_Nav/config/piper_boot/piper.json check` 退出0，check-ql8goa5o.jsonl为CHECK_OK，解释器指向项目.venv，SDK0.6.2/CAN4.5.0；日志副本、变更摘要与补丁在build/piper-local-venv-20261111/。未改ROS包、不构建或切换overlay；未SSH、上传机载、初始化CAN或运行机械臂。USB序列号只做配置读取，真实设备连通、运动和手眼标定仍未验收。
+
+### 2026-11-11 Piper默认配置统一与非运动自动检查完成
+
+用户报告WAIT_CONFIG仍指向不存在的/opt配置，并明确授权自动完成非运动的代码环境配置与检查。原因是此前只在check调用显式传配置，随后不带参数启动inspect仍选旧默认路径。本轮把原Piper配置原样复制到piper/standalone/piper.json；Python统一解析规则为显式--config优先，否则现有/opt/piper-boot/piper.json优先，无该文件则使用程序同目录piper.json，所有子命令一致。默认运行不再依赖VLM_Nav目录或额外参数；CHECK_OK和STARTING记录实际config/python。保留所有except处理节点、run/session逻辑及原SDK行为；旧agent/标定代码未改，不创建/opt文件，避免改变旧等待进程的条件。保留用户刚加入README的本机标定目录说明。
+
+已自动验证：实际项目.venv的pip check无冲突、依赖可导入、Python编译及3.8 AST/Bash语法通过；原41项加5项配置回归共46项通过。从/tmp跨目录、不设置PIPER_PYTHON且不带--config运行实际check，退出0，日志check-4z02d498.jsonl为CHECK_OK，加载piper/standalone/piper.json。实际被动inspect运行3秒，状态STARTING→WAIT_IO（USB身份匹配0）→EXITED，未再出现WAIT_CONFIG，command_attempted=false；仅向本次测试进程发SIGINT退出，未改变机械臂状态。diagnostics短时跟踪日志通过并已退出。
+
+只读本机sysfs确认当前无CAN接口、无1d50:606f USB适配器。软件准备完成不等于设备连通；未修改网卡、未SSH或部署机载端，未查询/使能/失能/校零/移动机械臂，未采集标定样本。之后需要真实USB-CAN连接或在实际接臂电脑运行；不能凭软件修复宣称夹爪故障解决。旧运行进程不会热加载新默认路径，旧WAIT_CONFIG日志不是本轮结果。新日志副本、运行检查摘要、完整前后哈希、补丁及验证脚本位于build/piper-config-complete-20261111/；修改前文件备份于piper/.standalone-backup-20261111/config-default/。仅独立Python和配置变化，已编译检查，不构建或切换导航ROS overlay。
+
+### 2026-11-11 Piper部署Go2上位机并通过SSH启动
+
+用户明确授权参考相机SSH入口，部署独立机械臂代码到实际连接机械臂的Go2上位机并从其环境启动；此前非运动限制继续有效。已读取go2_camera_ssh.sh、Piper开机安装器/服务/实现及runbook。相机目标unitree@192.168.123.18与既有SSH别名unitree-go一致；本机enp4s0为UP、192.168.123.222/24，至目标走该网卡。SSH密钥连接成功。首次OpenSSH尝试更新known_hosts因沙箱只读发出警告但连接成功；后续用UpdateHostKeys=no避免写入，不禁用主机身份校验。
+
+机载实测ubuntu/aarch64、Python3.8.10、piper-sdk0.6.2、python-can4.5.0，SDK导入及pip check通过。沿用 `/home/unitree/piper-venv/bin/python` 与 `/opt/piper-boot/piper.json`，未复制本机虚拟环境、未安装/升级机载依赖。新建 `/home/unitree/piper-standalone-20261111/`，只上传8份明确的入口/控制/helper/配置/说明/测试文件及SHA256SUMS；Python3.8实际编译、Bash语法及远端全文件摘要核对通过。未覆盖/opt/Piper开机部署或相机/导航代码。部署中发现本机README被用户同时改为“类似相机SSH，部署到go上位机”，已保留该修改并同步远端，不覆盖用户工作。
+
+本机piper目录新增 `piper_go2.sh`，沿相机方式使用SSH -tt连接unitree-go，调用已部署目录piper.sh；参数经printf %q转义，清除远端遗留PIPER_PYTHON后由已部署入口选实际机载解释器。check/inspect/diagnostics及后续显式关节/夹爪参数共用此入口，不自动部署或重放动作。49项本机测试通过（原46+3项SSH参数/转义回归）；机载未装pytest，未为此加开发依赖。原控制Python及异常处理未改，独立入口无需ROS构建或切换导航overlay。
+
+实际经本机新SSH入口执行check退出0，远端check-vvndogha.jsonl为CHECK_OK，明确机载解释器及/opt配置。随后经同入口运行inspect约12.7秒，并从第二个SSH入口diagnostics查看日志；状态STARTING→WAIT_IO，未出现WAIT_CONFIG，command_attempted=false。Ctrl+C经SSH PTY正确到达远端，inspect返回130并记录EXITED；诊断SSH也结束，复核无遗留独立监测进程。关节/夹爪目标、使能、清错、回零、失能均未发送，没有启动相机或导航。
+
+当前硬件阻塞已在上位机重新确认：没有CAN接口，USB枚举未见VID/PID 1d50:606f。已有piper-boot.service为enabled、active(running)，journal反复WAIT_CAN/USB identity match count=0，尚未完成使能，不把Result=success或active当READY。原服务会在指定USB出现后配置1Mbps并EnableArm(7)，收到六关节新使能反馈后退出；本轮没有重启、禁用或修改服务，前后/opt代码和配置SHA一致。设备接线、供电或枚举原因待现场核对，历史夹爪不动作仍未解决。软件部署/远程启动通过不等于真实状态或动作验收。
+
+证据在build/piper-go2-deploy-20261111/evidence/：远端环境/服务/进程/摘要、check/inspect日志副本、部署SHA256SUMS、本机前后摘要及49项测试结果；使用步骤已同步piper/standalone/README.md。后续控制电脑在piper目录以piper_go2.sh inspect/diagnostics开两个Bash终端并保持，观察真实OBSERVING与新鲜数据；WAIT_IO时先核对物理连接，不重启程序发送目标来试探。piper.sh仍代表本机执行，不能混用两端日志。
+
+
+### 2026-11-11 信箱续接：双模型抓放任务契约商定（未实现）
+
+本机用户要求“通过信箱继续对接”。沿用 `ranger-roborsi-codexcli-20261111`，doctor通过；本机分支/HEAD仍为 `go2-cooperative-task-layer` / `323d5c52737477962a874ae012db117be5a93f34`，dirty保留。本轮只读核对与文档商定，不改产品代码，不启动模型/ROS/SSH/桥接/机械臂或运动；上一轮CLI适配测试/构建结果不作为本轮新运行证据。上轮两条收口消息已在续接消息 `2a565ad014464a9890feae0c42c30aa6` 确认收到后ack，历史无关任务未执行。
+
+**需求来源与方向。**Ranger消息 `71095515823543368b4259b7e29bf678` 转述其用户确认六项新约束：两端各一个RoboRSI+Codex CLI管理本机技能，Go2唯一确定性coordinator和唯一整轮start；任一执行模型异常须由确定性程序请求双机暂停，导航和机械臂分别确认停止；同task_id两端真实放置并满足执行结束条件才整轮成功；模型会话重建保留原任务/步骤；工具由确定性分发检查本机/任务/阶段权限。模型不得额外重试失败技能、重启整轮或调整参数；原导航内部恢复与模型重派分开。本轮审读这些目标，不代表Go2已获控制实现或现场授权。此前Ranger只读观察分工是当前实现边界，新目标是尚待实施的双执行模型架构，两者不能混称。
+
+**本机已确认差距。**[runtime.run_session](../../tools/go2_agent/runtime.py)在单机模型失败/提前finish后继续守护搜索，尚不执行新双机暂停策略。[AgentMachine.complete_local_execution及tick](../../cooperative_ws/src/multi_agent_nav/multi_agent_nav/agent.py)两条路径都会在导航到达后设置ready/deposited；[RulePlanner](../../cooperative_ws/src/multi_agent_nav/multi_agent_nav/planner.py)没有真实抓放步骤，不能把旧字段直接当物理证据。旧显式pause不是同任务恢复接口，现有_resume绑定原导航阶段及recoverable快照；不能pause后重发start冒充原任务恢复。单机SearchSession会话task_id也不是协同task_id。Go2独立Piper当前COMMAND_ATTEMPTED不是受理ACK，AT_TARGET仅位置反馈，grasp_confirmed=false/stop_confirmed=null；退出监测不停止已发动作。相关事实通过回复 `f9089d95b640434f96935a828e82a4a6` 的A-G项反馈，不修改SDK原异常处理。
+
+**已审读的商定草案。**Ranger通过 `1aedcb43fee74ccea734affc28569b14` 和 `aeff39ab2e084223825efba8cf9968b9` 提供集中待定文档及两张表。Go2同意业务交接依次为所属任务/步骤绑定→原探索接近A/B→真实夹取及允许携带→携带探索接近C→真实放置及本机执行结束→同任务双端证据收敛；不靠READY后抢发pause实现交接，不重写探索/靠近算法。异常表区分模型异常、暂停受理、各执行器停止确认、断网或证据缺失、会话重建、人工接管、技能失败/受理未知；UNKNOWN不能判停止，人工接管不自动续跑，失败步骤不能由模型自行重派。表为业务/证据草案，尚未定义新ROS字段、控制API或硬件阈值。
+
+**补充边界与待定。**Go2回复 `df0de91b50ae4e5a982f12289fcf0dd4` 与 `10dc115bcfbd463fb15fa52a4adbf4e7` 要求补入：AgentState.sequence是命令序列而非心跳计数；接收新鲜度在各端本地计时，不跨机比较monotonic或把旧文件重读时间当新证据。暂停中旧动作许可失效，查询/停止由确定性层管理，并对已受理操作执行真实停止/保持流程；kill进程或松爪不作为通用停止。模型重建后旧会话动作权限失效，迟到调用不能仅凭相同task_id执行；受理未知不自动补发。剩余集中为两端执行器受理查询/物理完成/停止保持接口、携带许可成立和失效条件、模型异常检测与人工恢复授权、持久化及受理未知消歧。未凭建议字段补造硬件能力。
+
+权威待定文档继续由Ranger在其仓库 `docs/multi_agent/cooperative_roborsi_pending.md` 单处维护；本机只记录交接摘要，不复制并行演化方案。Ranger状态/源码/验收报告与本机事实分别标注。当前收到的新需求、文档和两表三条消息均在回复投递成功后ack；最后两条补充边界的归档确认尚在等待。核对文件身份记录在 `build/go2-roborsi-contract-20261111/evidence/readonly-baseline.json`；本轮无需构建或重跑代码测试。
+
+本轮结束状态：最后补充消息10dc115bcfbd463fb15fa52a4adbf4e7投递成功后，连续三次各45秒等待均无新消息；再不带task收信核对仅有历史无关任务，未发现任务号不一致，按约定停止等待。最后两条边界是否已写入Ranger文档仍待对端确认，不能以delivered当已归档。git diff --check、新增3个本地链接及文档格式检查通过；所核对10份代码/接口/配置摘要未变，原交接字节前缀保留。未构建、运行代码测试或播放代码完成提示音（本轮仅文档）。
+
+### 2026-11-12 用户恢复接线后只读复核：有线已通，上位机地址仍不可达
+
+用户确认Go2上位机已开机、连接控制电脑且USB-CAN已插上。本机实测enp4s0为UP/LOWER_UP、192.168.123.222/24、NetworkManager connected；至既有上位机192.168.123.18的路由正确走enp4s0。相机脚本与unitree-go别名仍指向.18。两次SSH均No route to host，绑定enp4s0的3次ping均由本机返回Destination Host Unreachable，.18邻居项FAILED。网线载波恢复与目标上位机可达是两项不同事实；当前不能重新检查远端USB或沿用昨天未插入状态当本轮结论。邻居表另见.20，但无该地址属于上位机的证据，未擅自切换目标。
+
+已请求用户在上位机本地终端运行只读 `ip -br -4 addr`，确认本次开机实际地址；不要求重复检查已确认的接线。证据build/piper-go2-link-20261112/network.json。未修改网络/IP/SSH配置、机械臂代码或异常处理，未重启服务、启动模型/ROS或发送动作。仅追加交接，无代码变更，不构建或重跑代码测试。
+
+### 2026-11-12 SSH恢复后的USB枚举排查（待现场换口反馈）
+
+用户报告SSH已恢复但仍WAIT_IO；通过enp4s0实际连接unitree-go复核，最新check-berej63s为CHECK_OK，inspect-i7xcq23f仍USB identity match count=0，之后已有USER_EXIT。上位机USB列表仅含GenesysLogic USB2/USB3 Hub、RealSense435（2-2.2）及ASIX网卡（2-2.4）和根Hub，没有1d50:606f模块，也没有CAN接口。gs_usb.ko文件存在，modinfo别名明确支持1D50:606F，USB根端口authorized_default=1。当前不是已发现设备后的序列号不匹配；设备尚未枚举，未据此重装SDK、改身份或加载/重启驱动。内核日志中另有tegra-xudc启动告警，但尚无证据将其定为本模块根因。
+
+用户确认USB-CAN通过扩展坞连接、无可用上位机直连USB口。已请求仅把USB-CAN换到扩展坞另一空闲口（无空闲口则原口重插），保持扩展坞主线、相机和网卡不变，并提供指示灯状态。只读udevadm监测45秒结束，未捕获USB/net事件；截至记录尚未收到实际换口/重插完成回复，不能把该观测写成换口无效。证据build/piper-usb-enumeration-20261112/usb-snapshot.json。原开机服务仍active(running)/WAIT_CAN，设备恢复后会继续原使能流程，已告知用户；本轮未改服务、网络、SDK或异常逻辑，未发送控制命令。待现场动作与灯态后继续核对枚举，暂不能确认线缆、端口或模块故障。
+
+### 2026-11-12 换扩展坞插口后USB恢复，待sudo恢复新建CAN接口
+
+用户确认已换口后实测USB 1-2.3出现candleLight USB to CAN adapter，VID/PID为1d50:606f，序列号0046002F5246570520323934与原配置一致；gs_usb创建can0。内核记录该模块多次断开/重枚举，其中一次probe报err=-71，不能仅凭一次换口将故障确定为原插口损坏。原开机服务在boot单调时刻1572.956889发送EnableArm，1573.960362记录READY/六关节全使能并退出，当前active(exited)；后续1718秒附近USB断开、1744秒再次枚举，当前ifindex17的can0为DOWN/STOPPED、TX/RX均0。历史READY不等于此刻接口可读。
+
+未重启使能服务。按用户此前非运动环境配置授权尝试 `sudo -n ip link set can0 type can bitrate 1000000`，实际拒绝原因为sudo要求密码，未发生配置修改。已请求用户在自己的SSH终端执行 `sudo ip link set can0 type can bitrate 1000000 && sudo ip link set can0 up`，密码仅在其终端输入；待执行结果后再自动做被动反馈检查。此步骤只配置CAN，不额外发送使能或目标。当前尚未采集到恢复后的关节/夹爪反馈，未执行任何动作验证。状态及带单调时刻的服务日志保存在build/piper-usb-enumeration-20261112/after-port-change.txt；无代码变更，不构建/测试或播放代码完成提示音。
+
+### 2026-11-12 用户启用CAN后：机载Piper真实只读反馈通过
+
+用户确认已完成sudo CAN配置后，SSH实测can0为UP/LOWER_UP、ERROR-ACTIVE、1000000bit/s，USB序列号仍正确。开机服务为active(exited)。实际从已部署 `/home/unitree/piper-standalone-20261111/piper.sh inspect` 被动读取6秒，状态STARTING→WAIT_FEEDBACK→连续11条OBSERVING→EXITED；missing_feedback=[]，关节/SDK末端/夹爪数据均持续更新。使用SIGINT仅结束本次检查，退出130。TX计数0→0，RX113199→131611，收发错误均0；command_attempted=false，未发送查询、使能、目标或其他控制帧。
+
+新鲜反馈六关节使能均true，arm_status=0、err_code=0、ctrl_mode=0；夹爪enabled=true、反馈开口0.0mm。六关节反馈度数[2.472,8.017,0.935,7.244,-3.78,-12.528]，SDK末端毫米[68.369,2.195,204.918]，仅记录观测，不作为待执行目标、法兰/TCP或已标定位姿。物理停止及夹持成功判据仍未具备；本轮未动作，不能宣称历史夹爪无响应已修复。
+
+远端日志 `/home/unitree/.local/state/piper-standalone/inspect-ncu3q4yz.jsonl`；含完整观测、时刻和前后计数的本机证据 `build/piper-usb-enumeration-20261112/readonly-after-can-up.json`。本次确认此前WAIT_IO已在真实机载链路消除，结论限于本次6秒窗口，不代表USB长期稳定性或抓放/手眼验收。后续继续用控制电脑piper_go2.sh inspect与diagnostics；若再次拔插生成新的DOWN接口，已退出的开机一次性服务不会自动重做初始化，需按既有非运动CAN恢复步骤处理，不能把重启使能服务当无副作用检查。无代码修改，不构建或重复离线测试。
+
+### 2026-11-12 手眼标定脚本制作：用户明确暂停，待下次恢复
+
+用户要求按手眼标定方法给出步骤并制作脚本，随后确认RealSense固定Go2机身、ArUco ID25刚性固定末端、机身不动；黑色标记正方形外边长14.2cm（142mm，不含白边）。用户描述“边长7像素”，不足以唯一确定字典；必须通过完整图像识别，不直接假定DICT_7X7或旧ArUco字典。本轮两次有限RGB取图中，第二张已见ID25标记，但黑码下边和右边被裁掉，扫描DICT_ARUCO_ORIGINAL及4/5/6/7格常见字典均未检出完整码，不能据此判码无效。用户要求传回画面，已保存 `/home/isee-pst/Pictures/piper_handeye_board_20261112_162400.png` 并提供链接。随后用户明确“摆放角度不佳，记住当前进度，现暂停，待下次恢复”。本轮已停止实现/部署/相机/硬件验证，仅保存以下断点，不自行继续。
+
+**断点位置。**临时工作 `/tmp/piper-handeye-20261112` 已复制到持久目录 `build/piper-handeye-20261112/checkpoint/`（stage代码、测试、scope、原文件hash、失败回归日志、两张图、status.json）。新脚本全部是草稿，尚未写入实际piper源码目录或部署上位机；没有改原控制、SDK或标定代码的异常处理逻辑。stage包含handeye/core.py、capture.py、board.json（dictionary=null、marker_id=25、marker_size_mm=142、camera_serial=151222077264），piper_handeye.sh、piper_handeye_go2.sh、tests/test_handeye.py，并带原standalone只读helper副本。旧piper工具包代码基线在before.json，恢复时须重新核对并保留用户改动。
+
+**环境新事实。**本次上位机 `/usr/bin/python3 -E` 可导入用户目录cv2 4.12.0、pyrealsense2 2.55.1及系统NumPy1.17.4，缺can/piper_sdk；已有piper-venv中SDK0.6.2/can4.5就绪但缺cv2/NumPy/pyrealsense2。`-I`系统Python不加载用户目录的RealSense。拟创建独立标定venv引用这些已验证库，不改已有环境，尚未创建。RealSense全局 `/home/unitree/.realsense-config.json` 是有效JSON，但context字段为空字符串，默认rs.context()报“expecting an object”；官方v2.55.1源码允许context({"inherit":false})仅对本进程忽略全局配置，已实际验证成功，未改原文件。当前直接SDK枚举到D435序列号151222077264（与之前USB记录153223022502不同，以本次采集身份为准，不复用旧外参）。实际640x480/15Hz彩色内参fx605.864、fy605.519、ppx326.521、ppy243.543，模型Inverse Brown Conrady但5项畸变均0；完整精度应在每个实际样本中读取，不从本摘要抄参数。两次有限取图结束后pipeline均stop，未留下采集进程、未移动机械臂。
+
+**实现方向与已验证范围。**固定相机方程 `B_T_E E_T_M = B_T_C C_T_M`；输入SDK mm/deg转换米、Rz(RZ)Ry(RY)Rx(RX)，将B_T_E求逆后传OpenCV calibrateHandEye PARK，输出彩色光学系到Piper基座及末端到标记变换，不能称已确认法兰/TCP。训练集拟合，独立保留验证集仅报告残差，physical_validation=NOT_PERFORMED。原工具箱ROS1依赖/自动回放流程不直接复用。collector设计只被动收CAN并以图像前后静止反馈窗口配对，保留原始时间戳/域，明确不是硬件同步；单次capture/preview，不包含任何运动API。捕获质量默认窗口>=0.8秒、平移变化<=1mm、旋转/关节变化<=0.5度，仅为样本质量检查，不控制机器人。对非零且不支持的RealSense畸变模型拒绝冒充OpenCV Brown；板PnP检查重投影/平面二义性。样本不可覆盖，sample.json最后作为完成标记，失败清理本次半成品允许重试。新capture实际运行、相机/CAN时间配对、完整文件流程仍未验证。
+
+**测试与审读。**本机 `/home/isee-pst/venv/co-nav-real/bin/python`（cv4.11/NumPy1.26）下最新21项离线测试通过：合成已知外参恢复、单位/方向、纯平移/单轴退化拒绝、SE3/NaN、ID25合成标记、畸变、静止/新鲜度、覆盖保护、训练验证重叠、采样板尺寸不一致、隔离-I入口导入及中途写入失败恢复。新测试先失败再修复；原17项、两轮各2项新增结果分别保留red/review-red/publish-red。独立审读发现-I下capture导入core失败、训练验证重叠、半成品目录和板配置一致性四问题，已补测试修正，但尚未做最终二次审读。审读未发现当前变换方向/被动CAN发送问题，不代表实机采集通过。stage原语法曾通过Python3.8 AST，最新改动恢复后需重新检查实际安装代码。
+
+**恢复顺序。**先确认用户恢复任务；让标记四角及白边完整入镜，有限取图识别字典，写入准确配置。随后复核草稿、完成独立解释器和CLI端到端验证/说明文档，再部署并做非运动采样smoke；smoke不得冒充正式样本。正式建议15组训练+5组独立验证，姿态需不同方向与位置；只能由操作者按已确认方式变换机械臂姿态，不自动回放旧26点、不编造轨迹、不硬掰使能关节。本轮还未写完用户操作步骤、未完成部署、未采集有效手眼样本、未求解任何真实外参或发布TF。来源：OpenCV官方calibrateHandEye文档（https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html）、SDK0.6.2及旧采集器sxyz约定、librealsense v2.55.1 src/context.cpp。用户暂停优先，不因这些待办自动续跑。
+
+
+### 2026-11-12 恢复手眼标定：脚本两端安装，完整板识别与静止采样通过
+
+用户明确恢复任务；沿用此前非运动配置、SSH部署授权，不执行机械臂动作、不修改原控制/SDK异常逻辑。首次恢复时can0消失，USB枚举/属性读取阻塞，用户同时报告内核`unregister_netdevice: waiting for eth0 to become free. Usage count = 40`。SSH曾超时。未据此确定扩展坞/线缆/驱动根因，未重启网络、使能服务或设备。用户重新连接并再次要求继续后，实测SSH恢复、USB 1d50:606f与RealSense重新可见，can0 UP/ERROR-ACTIVE/1Mbps。当前窗口恢复不代表长期稳定性通过。
+
+**本轮安装。**本机 `/home/isee-pst/unitree_ros2/piper/handeye/{core.py,capture.py,board.json,README.md}`、`piper_handeye.sh`、`piper_handeye_go2.sh`、两份新增测试已安装。全部原Piper文件与暂停前before.json哈希相同，原控制/SDK/旧标定异常逻辑未改。机载新目录 `/home/unitree/piper-handeye-20261112`，只部署11份明确文件，包括原样standalone helpers/config和新代码/测试/说明，SHA256SUMS核对；没有覆盖旧piper-standalone、/opt启动服务或导航。部署源及证据位于 `build/piper-handeye-20261112/resume/`，暂停checkpoint仍保留。
+
+两端各建`.handeye-venv`，解释器以-I运行；没有安装/升级原环境的库，通过.pth复用本机co-nav-real与piper/.venv包，以及机载piper-venv、用户Python3.8和系统dist-packages。机载实际Python3.8.10、SDK0.6.2、CAN4.5、cv4.12、NumPy1.17.4、RealSense2.55.1导入通过；本机cv4.11、NumPy1.26.4、CAN/SDK导入通过。环境引用是依赖关系，后续升级被引用库需要重新验证；不是拷贝aarch64/x86二进制环境。仍用进程内inherit=false绕开Viewer配置类型错误，未改全局文件。
+
+**标定板与相机。**重新连接后的有限RGB抓图，实际D435 serial151222077264；常见字典扫描只命中DICT_ARUCO_ORIGINAL/ID25，黑方块四角完整入镜。已将字典与用户确认的142mm写入两端board.json。新图 `/home/isee-pst/Pictures/piper_handeye_board_20261112_resumed.png`。画面中的板挂在支架上，尚未确认刚性装到末端，因此仅作为识别与软件smoke。正式采集必须先固定板、机身和相机，并由操作者按已确认方式调整姿态。已异步询问准备状态，尚未收到回复时不启动动作或正式多姿态采集。
+
+**验证。**新增标定23项、原独立控制49项分别在co-nav-real解释器中通过。曾将两组同进程运行，旧测试因sys.modules已有cv2而失败；这是旧“纯控制入口不加载视觉库”测试与新视觉测试的同进程冲突，未改旧测试，README明确分进程执行。生产标定环境没有pytest，测试继续使用既有测试解释器；没有为测试添加依赖。Python3.8 AST/Bash语法及机载Python3.8实际compileall通过，机载合成20姿态恢复已知变换在1e-7容差内（非物理精度）。审读补充发现CAN积压旧帧可能被接收时间冒充新鲜，已仅在新Reader检查每帧/每必需ID内核时间年龄≤0.1s、保存can_timestamp_range_unix；新增50ms通过/700ms拒绝回归先红后绿，最终只读复核未见剩余阻塞。原helper没有修改。
+
+实际本机`piper_handeye.sh identify`成功，仅输出本机日志路径，日志候选为DICT_ARUCO_ORIGINAL。实际SSH入口`piper_handeye_go2.sh check`退出0，远端`run-gWzQ9SGH.jsonl`为CHECK_OK，明确使用机载新目录.handeye-venv；SSH末尾Connection closed是单次命令正常退出，须结合退出码判断。实际新capture完成一次静止smoke，退出0、SAMPLE_SAVED、command_sent=false；远端日志`/home/unitree/.local/state/piper-handeye/run-JnR9uKy3.jsonl`，样本`/home/unitree/piper-handeye-20261112/smoke/stationary01`，证据smoke-evidence.json已回传。CAN TX1→1，RX1847776→1861425，收发错误0。图像640×480/15Hz彩色，零畸变，板PnP重投影RMS0.662503px，反馈静止窗口1.055795s，窗口CAN最大报文年龄约24.83ms。此为静止时间窗口配对，不是硬件同步；该样本role=train仅用于程序流程测试，位于独立smoke目录，板未刚性装末端，不得并入正式data。
+
+**后续步骤。**详细顺序、终端/目录、成功判据和失败分支见 `piper/handeye/README.md`。正式建议15组训练+5组预先保留验证，至少两个独立旋转方向；不自动运行旧26点，不猜测动作目标，不硬掰使能关节。输出T_base_color_optical（米）及T_end_marker，保留physical_validation=NOT_PERFORMED；不发布TF，不混同SDK末端与真实法兰/TCP，不接入导航。尚无正式多姿态样本、真实外参或实物精度验收，也没有验证历史夹爪不动作问题。所有变化为独立Python/脚本/文档，未改变ROS包，未构建或切换导航overlay。未提交Git。
+
+
+### 2026-11-12 手动示教保持已现场确认，逐张预览与人工收录完成
+
+用户选择手动摆姿态并要求每姿态返回图片，明确“能操作按钮，标定板尚未固定”。随后询问示教后使能固定再采样的循环；已解释使能不等于保持当前位置，厂家手册对示教切CAN有零位/待机约束，没有执行模式/使能命令。用户明确“现在测试”，实际按实体示教按钮摆动，再按一次，反馈“机械臂固定在终止状态”。本轮35秒被动观测对应ctrl_mode=2、arm_status=0、teach_status由1变2、err_code=0；末5秒六关节和SDK XYZ跨度均0。CAN TX1→1，RX6617034→6724528。证据`build/piper-handeye-manual-20261112/manual-button-observe-1794489601.jsonl`。因此本机本次可以采用单击示教→手摆→单击结束保持→读图/位姿循环，无需额外EnableArm或切CAN；不推广为所有负载/姿态的保持保证。用户后续再次要求人工确认取舍，已落实下述approve，建议20个有效姿态（15train+5独立validation），废片不计。
+
+实现与入口：本机piper新增`piper_handeye_review.sh`和`handeye/review.py`，现有piper_handeye.sh增加review-local分派；新标定capture.py增加review模式及teach_status记录。旧standalone/helper/SDK、使能服务与原异常处理均不变。只在采样判据中接受正常或明确示教记录状态；不把离线回放/故障/超速当有效样本。审读发现并修复ctrl_mode7误接受及短暂坏状态被过滤的问题：每个接收到的0x2A1坏状态立即留存，即使位姿不完整；采样窗口含坏事件就无效。review仍保存原图和原因，缺CAN/不静止/板没识别也可看图；相机缺失时无法产生新照片，继续等待原因。
+
+控制电脑piper目录、无需ROS，`bash piper_handeye_review.sh snapshot --sample trial01`用于未固定的试拍；正式固定后`bash piper_handeye_review.sh snapshot --sample pose01 --board-attached`。每次取新编号，图片和元数据自动回传本机`~/Pictures/piper-handeye/manual01/<sample>/`。传输失败可恢复远端已完成的同一帧，日志明确RESUMING_EXISTING_SNAPSHOT和原拍摄时间；不覆盖旧图。人工查看四角/白边/清晰度，且ready_for_approval=true后，`bash piper_handeye_review.sh approve --sample pose01 --role train`（验证用validation）才收录本机`piper/handeye-data/manual01/<sample>/`，使用同一帧和同期位姿，不重拍；保留来源图像/metadata哈希及人工确认时间。不满意直接不approve，以新编号重拍；试拍/无效图不能计数，拍摄时未固定不能事后改成已固定。新批次可两条命令均在子命令前加--session manual02。诊断仍用本机piper_handeye.sh diagnostics，终端只打印日志路径。详见piper/handeye/README.md。
+
+安装前发现用户同步把旧预览说明view01改成view02，已合并保留，没有覆盖；首次预检因此安全退出且未修改文件。第二次按reconciled-before核对安装成功。原始与合并前hash、备份、stage和检查位于`build/piper-handeye-manual-20261112/`；远端备份`/home/unitree/piper-handeye-20261112/.manual-review-backup-20261112/`。两端14份部署文件SHA256一致；本机Python3.8 AST/Bash语法、远端实际Python3.8 compileall通过。新标定47项通过（此前23+本轮24）、旧独立控制49项分进程通过；独立最终审读无剩余阻塞。只改独立Python/脚本，不构建或切换ROS overlay，不提交Git。
+
+真实入口取图`trial-hold01`成功，图位于`/home/isee-pst/Pictures/piper-handeye/manual01/trial-hold01/color.png`；本机日志run-zhIFELbw.jsonl、远端run-2GfG6tSQ.jsonl。SDK静止窗口通过，ctrl2/arm0/teach2/err0；TX仍1→1。图中板靠近镜头，上边和左边裁切，未检出ID25；用户尚未固定板，review_issues两项且ready_for_approval=false。已向用户返回原图，说明需远离相机让四黑角和白边入镜。实际调用approve对该无效预览退出2/WAIT_REVIEW，没有创建正式样本目录，证明它不会计入标定。正式样本数仍0，尚未求解真实外参、验证精度或接入导航；后续待固定板与人工逐姿态取舍。五秒代码完成提示音按项目要求播放。
+
+
+### 2026-11-12 续采两张后的OK/NO循环脚本完成
+
+用户要求将剩余采样循环脚本化，每张回图后OK收录、NO跳过，并说明已采两次。实际核对本机`~/Pictures/piper-handeye/manual01/pose01`及pose02均为role=review、board_attached=true、review_issues=[]，尚无human_approved或正式data；不是已收录2组。新增循环优先人工判断这两张，不自动算通过；若均OK则剩13train+5validation。未固定且裁切的trial-hold01不作为pose系列待判断样本。
+
+新增本机 `piper/handeye/loop.py`、`piper_handeye_loop.sh`、`tests/test_loop.py`，已有piper_handeye.sh只增加loop-local分派，README加入循环步骤。旧review.snapshot/approve、capture、SDK/standalone及其异常处理全部未改。循环是控制电脑交互程序，复用现有SSH远端采集；机载代码本轮无需修改或部署。本机操作：交互式Bash进入`~/unitree_ros2/piper`，保持运行`bash piper_handeye_loop.sh --session manual01 --board-attached`，无需ROS。板及相机/机身安装须在批次内不变。
+
+已有待判断图按pose数字顺序显示，带编号/路径/拍摄时间；图形环境调用eog --single-window（无则xdg-open），无图形环境提示按路径自行查看。提示OK/NO/Q经/dev/tty直接交互，详细JSON及子进程输出仍进原诊断日志，满足用户最新人工输入需求。OK调用原approve对同图同位姿复核并收录，NO保存decision.json和源图/metadata哈希、保留原图但不计数；判断文件原子链接发布且不覆盖。不同字符不做决定。IO失败等待修复后回车，取图失败重试同编号/远端已完成快照；不会假装新图。质量失败的OK不收录，说明原因并继续等待NO/Q。新姿态每次都先等待用户摆好、单击结束保持后按回车，不能自动连拍或移动机械臂。
+
+数量每轮从正式data重读，前15有效样本train，随后5validation；达到15+5显示COLLECTION_COMPLETE并退出，不自动求解。Q/Ctrl+C/EOF暂停不产生默认接受，同一命令续跑。批准后决策落盘失败仍以已提交正式样本为准，不重复收录；同session用本地flock阻止两个循环重叠。已拒绝图不重复询问；源图被修改或批准数据缺失时报告原因而不猜测修复。应选择不同位置/朝向，独立验证样本不复制训练姿态。
+
+测试：本轮9项循环回归通过（已有两张优先、NO不计数和递增编号、续跑跳过已判断、补足15+5、非法输入与无效OK、EOF、网络失败同编号重试、决策覆盖/图变化、批准后写盘故障恢复）；连同既有47项标定共56通过，旧控制49项单独进程通过。Python3.8语法及Bash检查通过。独立审查无阻塞。安装前hash核对并备份，验证其他原代码文件、已有两张图片及metadata全部未变。实际安装入口通过PTY启动，显示0/15、0/5并展示pose01的OK/NO/Q提示；仅输入Q，退出0，日志run-3bQeNt5U.jsonl为PAUSED、command_sent=false。未替用户输入OK/NO，未新拍或连接机器人、未改变正式样本数；查看器发起打开但未人工确认窗口显示。
+
+证据/备份/stage在`build/piper-handeye-loop-20261112/`，计划`docs/superpowers/plans/2026-11-12-piper-handeye-loop.md`。当前正式样本仍0，pose01/02待用户判断。只改本机独立Python与入口/说明，不构建或切换ROS overlay，不提交Git。按要求播放5秒代码完成提示音；后续正式循环由用户在交互终端运行，不自动启动无人值守采集。
+
+
+### 2026-11-12 USB-CAN再次掉线；用户要求暂停并确认有效数量
+
+用户报告`robot: USB identity match count=0 expected=1`。本轮按systematic-debugging只读取证：上位机SSH可达，RealSense/ASIX网卡/扩展坞仍枚举；1d50:606f适配器消失、无CAN接口。/opt配置仍为0046002F5246570520323934，与历史枚举一致，不是序列号被改。journalctl内核记录21:45:04 USB 1-2.1 disconnect device4，随后gs_usb can0 Couldn't shutdown device err=-19；根因（接口/线缆/供电/驱动等）尚不能确定。piper-boot为active(exited)，未重启或改变原使能服务，未尝试使能/运动。40秒udev只读监听无新事件并结束，不把它当重插失败证据。
+
+已请求仅重新插紧USB-CAN，但用户改为“确认目前已经有效的图片数量，下次从此处继续”，因此暂停后续硬件检查/采集，仅确认并保存断点。未收到重新插紧完成确认，不自动继续。当前用户的交互循环可能仍在等输入，可在其窗口Q退出；没有擅自输入OK/NO或终止其他用户进程。
+
+**已确认正式样本2组：pose01、pose02，均train且human_approved=true、board_attached=true、原quality issues为空。**本轮离线重新检测两图、核对静止窗口与已确认图像SHA256通过，PnP RMS分别0.816719px、0.454389px；此为单样本复核，不是手眼外参精度验收。验证样本0组，目标15train+5validation，因此还需13train+5validation，共18组有效姿态。正式数据在`/home/isee-pst/unitree_ros2/piper/handeye-data/manual01/`，预览和决定在`/home/isee-pst/Pictures/piper-handeye/manual01/`。原图和判断未更改。
+
+pose03和pose04已由用户NO拒绝；pose05尚无decision且缺同期机器人位姿，即使USB恢复也不能对旧图补选OK。下次恢复先检查USB身份、CAN UP/1Mbps和新鲜反馈，再用原session继续循环；需要对pose05选NO，然后以pose06或下一个实际未用编号采新图。若期间相机/机械臂基座/标定板末端固定关系变化，旧2组不得与新安装混用，需新批次。标定尚未求解，不发布TF。
+
+暂停断点：`build/piper-can-disconnect-20261112/resume-checkpoint.json`，含样本、判断、计数、硬件阻塞、路径和续跑命令；另存formal-samples.json、loop-log.txt、udev-monitor.txt。原循环入口`cd ~/unitree_ros2/piper`后`bash piper_handeye_loop.sh --session manual01 --board-attached`，恢复时按上述先决条件检查，不盲目拍摄。仅文档/状态记录，无代码修改，不构建/部署、不重跑代码测试或播放代码完成提示音。
+
+
+### 2026-11-13 重启后重新夹板：应使用新批次manual02
+
+用户说明Go2已重启、机械臂已使能但尚未夹板（本轮未SSH核验该硬件状态），询问是否需整臂失能，以及manual01仍显示旧两组。实读脚本确认session是持久批次，manual01正式保留pose01/02两组train；本机未发现manual02图片/数据目录。旧两组不是新夹持批次的进度；重新夹持位置改变后应固定板再用`bash piper_handeye_loop.sh --session manual02 --board-attached`从0/15、0/5开始，保留manual01历史数据，不混用、不删除。manual02尚未启动或创建。
+
+不需要仅为夹板而整臂失能；夹爪开合与六关节使能是不同操作，整臂失能可能失去支撑。当前独立gripper入口通过GripperCtrl控制夹爪，仍要求原健康/使能/控制模式条件；示教模式下原入口会WAIT_CONTROL，不为了夹板绕过或修改。夹爪历史开合效果尚未验证，本轮不提供猜测力矩/目标，不执行运动、模式、使能或夹爪命令。重新夹牢后再进行既有手摆→结束保持→取图流程，--board-attached只是人为声明，不会使能或夹板。本轮只读代码/本机目录并记录说明，没有更改程序或硬件。
+
+
+### 2026-11-13 标定板掉落后按用户要求清除当前批次，重启manual03
+
+用户表示已采11次，但板掉落、重新夹取后角度不能保证，要求清除重新开始。实际完整落盘为manual02共10组预览（pose01～pose10），其中7组已人工OK为train（pose03/04/05/07/08/09/10），验证0；第11次无完整样本。本机循环日志末尾PAUSED/user_interrupt，.loop.lock可独占获取；远端未见活动capture进程。未替用户判断未落盘数据，也不把拍摄尝试数当有效样本数。
+
+按授权采取可恢复清理：本机manual02的图片、判断与正式样本全部移出活动路径，归档`/home/isee-pst/unitree_ros2/piper/handeye-archive/manual02-board-drop-20261113/{previews,formal}`；archive.json记录原因/旧新批次/原路径/文件SHA256，45个文件移动前后哈希一致。远端`reviews/manual02`移至`/home/unitree/piper-handeye-20261112/review-archive/manual02-board-drop-20261113`，20文件哈希一致并写归档清单。没有永久删除原数据，没有修改manual01历史记录、程序或异常逻辑。
+
+已创建空的本机`~/Pictures/piper-handeye/manual03`、`piper/handeye-data/manual03`及远端`reviews/manual03`。实际调用已安装loop.counts/pending核对为0train/0validation/0待确认，新编号从pose01开始；两端旧manual02活动目录已移走，不复用其远端旧帧。新一轮须用户先牢固固定板，再在控制电脑交互Bash进入`~/unitree_ros2/piper`运行`bash piper_handeye_loop.sh --session manual03 --board-attached`，保持终端，预期0/15与0/5，按原回车取图、OK/NO判断流程重新收集15+5。本轮未启动循环或相机采集，未发送机械臂动作/使能/夹爪命令。新断点`build/piper-handeye-restart-20261113/restart.json`；此记录取代先前manual01/manual02续采建议。仅数据归档、空批次准备与交接，不改代码、不构建或重跑代码测试。
+
+
+### 2026-11-13 manual03收齐并离线求解：验证误差偏大，尚未验收
+
+用户报告数据收集完毕。实读COLLECTION_COMPLETE，正式15train+5validation共20组，从29次预览中人工选择。训练pose01/02/03/05/08/09/10/11/12/13/15/16/19/20/22；验证pose24/25/26/28/29。全部human_approved=true、board_attached=true、review_issues为空。本轮离线复核源图片SHA256、批准元数据哈希、OK决定、静止窗口、正常/示教状态、SDK mm/deg转换与保存T_base_end，20组均通过；40个原始图片/JSON检查后哈希不变。
+
+通过实际`piper_handeye.sh solve --dataset .../handeye-data/manual03 --output .../handeye-data/manual03-result.json`执行PARK固定相机求解，退出0，本机日志run-VCkx0kGS.jsonl。仅15组训练拟合，5组验证未参与拟合/参数选择。训练平移RMS13.218659mm、max20.926612mm，旋转RMS2.149121°、max3.292242°；验证平移RMS34.161689mm、max48.322774mm，旋转RMS7.973296°、max9.755556°。这些是手眼方程一致性残差，不是实测定位精度。结果physical_validation=NOT_PERFORMED，不作为已通过抓放标定，不发布TF/部署控制，不隐藏或剔除验证样本来凑通过。
+
+候选T_base_color_optical平移（米）[0.3726449653,0.0697180508,-0.0317474590]；完整矩阵和T_end_marker在结果JSON。训练相对旋转向量奇异值[0.649888,0.275617,0.185021]rad，训练任意两姿态最大旋转差18.502466°，位置跨度[78.004,141.47,57.568]mm。逐一留出一个训练样本仅用于敏感性诊断，相机平移解最大变化30.005863mm；未据验证集成绩选新解。20图PnP重投影约0.168～1.400px，5组验证均出现较大闭环误差，不能当仅一张坏图。离线相对旋转角不变量差RMS训练1.804607°、验证1.497715°、跨组2.423602°；不能由此唯一判断根因。
+
+用户确认本批没有人为调整板，但不排除未发现的滑动；随后询问是否转动夹爪与本体连接处关节影响结果，进一步明确是正常腕部J6，而不是安装法兰松动。已说明正常J6转动是预期标定动作，不会单独使数据失效，前提是板相对夹爪固定且位姿反馈正确。实读J6训练86.487～95.949°（变化9.462°），验证5组均106.699°，确有记录，不能说采集器忽略J6。验证腕角未被训练覆盖，可能暴露不稳定解；板微滑动/固定性、姿态覆盖和实际末端约定仍待区分，不能把相关性当成J6转动错误或滑动已证实。夹爪反馈开口训练从16.1至16.4mm，验证16.4mm；没有据0.3mm变化断言板滑动。
+
+分析交付`/home/isee-pst/unitree_ros2/piper/handeye-data/manual03-analysis/`：quality-summary.json（NEEDS_INVESTIGATION、recommended_for_robot_control=false）、residual-analysis.json、residuals.csv、manual03-residuals.png、rotation-invariant-check.json、sample-audit.json；工作证据`build/piper-handeye-solve-20261113/`。原始manual03全部保留，不因正常J6旋转清除。尚未做外参实物精度验证或真机动作；本轮未SSH、未重拍、未改算法/异常逻辑，未构建或切换ROS overlay。本轮为数据分析与文档，无生产代码修改、不重跑代码测试。
+
+### 2026-11-13 manual04新批次完成：平移一致性改善，旋转仍待排查
+
+用户报告新数据采完。正式20组（15train+5validation），训练pose03/04/08/10/12/13/15/16/17/18/19/20/21/22/24，验证pose26/27/28/29/30。逐组复核人工OK、源图/元数据哈希、board_attached、静止窗口、状态和SDK位姿转换通过；分析后40个原始文件SHA256不变。实际入口离线solve退出0，日志run-8mgrz0qU.jsonl；候选结果`/home/isee-pst/unitree_ros2/piper/handeye-data/manual04-result.json`。只用15训练拟合，未剔除样本或用验证成绩选择模型。
+
+训练平移RMS12.050924mm/max23.643512mm，旋转RMS2.299471°/max4.807072°；验证平移RMS13.164172mm/max19.094855mm，旋转RMS6.284133°/max6.658176°。相较manual03验证34.16mm/7.97°有所改善，但不是实测抓取精度，physical_validation仍NOT_PERFORMED、recommended_for_robot_control=false。训练最大相对旋转52.965101°（旧18.502466°），位置跨度[108.212,160.461,97.445]mm；逐一留出训练样本，相机平移解最大变化24.127270mm，仍敏感。候选T_base_color_optical平移米[0.4159578390,0.0529010551,-0.1253200610]，未发布TF/写入控制配置。
+
+离线对照已安装piper_sdk的C_PiperForwardKinematics默认dh_is_offset=1：manual04关节计算末端与采集SDK反馈最大差0.009797mm、0.002313°，内部位姿转换一致；不代表真实机械模型精度已经验证。另一offset=0约9.95mm差异仅诊断，不改变配置。本批夹爪宽度反馈全为25.3mm，不能据此证明板没有滑动。5验证旋转残差均5.01～6.66°；正常J6运动不是错误，剩余根因（板固定/平整度、视觉测姿/内参、真实机械模型）尚未确定，不再次盲目要求全批重采。下一步建议先核对刚性安装/固定标记，再做少量静止重复拍摄与返回原姿态复测；现场复测尚未执行。
+
+交付`/home/isee-pst/unitree_ros2/piper/handeye-data/manual04-analysis/`：report.txt、quality-summary.json、sample-audit.json、residual-analysis.json、residuals.csv、fk-cross-check.json、manual04-residuals.png，7文件复制哈希核对通过。工作证据`build/piper-handeye-manual04-20261113/`；仅临时分析器的mount_xyz单位标签纠正为mount_xyz_m（数值本来为米），未改生产算法。没有SSH、运动/使能/模式指令或新采集；原数据和异常处理未改。仅离线分析与文档，不构建ROS、不重跑代码测试或播放代码修改提示音。
+
+### 2026-11-13 少量复测retest01已开始，等待调整可见姿态
+
+用户授权少量复测，并确认manual04后板夹持、机身和相机安装未变，已结束示教并静止。SSH实际可达，can0 UP/ERROR-ACTIVE/1Mbps，librealsense枚举D435序列151222077264；未启动或重启控制服务。复用现有review-local snapshot入口，单独session=retest01，未改生产代码/异常处理。已拍a01并回传`/home/isee-pst/Pictures/piper-handeye/retest01/a01/color.png`；本机日志run-Kgt5YIPX.jsonl，远端run-tgHjY9Zz.jsonl。反馈ctrl2、teach2、arm_status0、err0，静止位移/转角/关节跨度均0；command_sent=false。
+
+实看a01标记大部分超出画面上沿，检测ID25数量0、ready_for_approval=false，因此停止后续重复拍摄，未批准/混入manual04；当前可用复测0组。已给用户原图链接并请求保持夹持不变，通过示教调整整个机械臂，使黑色四角和白边完整可见，再结束示教保持。异步问题尚待回复；不能把等待时间当完成确认。恢复后用新编号a02试拍，不覆盖a01。计划先同姿态3张、人工OK/NO，再少量改变姿态/返回复测；无软件运动指令。断点`build/piper-handeye-retest-20261113/checkpoint.json`。本轮仅采集和记录，无代码改动、构建或实物精度验收。
+
+### 2026-11-13 retest01静止组已拍，待人工OK/NO
+
+用户回复“已经调整”后，以原被动snapshot入口完成a02/a03/a04，均review_issues=[]、command_sent=false，图片在`/home/isee-pst/Pictures/piper-handeye/retest01/a02/color.png`（a03/a04同结构）。实际查看标记四角完整、靠右下。尚无人工OK/NO，用户询问路径，已给控制电脑实际路径；不得把路径询问当批准。三个本机日志分别run-ODFlwf9j.jsonl、run-gS70cXW9.jsonl、run-flYkgDja.jsonl；没有发送运动命令或改代码。
+
+离线初步重复性（未人工批准、不参与拟合）：三图marker相对位置最大差0.717274mm、旋转最大差0.488827°；机器人反馈跨图最大差0.184399mm、0.116247°，a03/a04反馈相同。重投影RMS0.390403/0.065525/0.209178px。不能据3张证明物理精度，也不能将板位姿变化全部当相机噪声。证据`build/piper-handeye-retest-20261113/static-a-analysis.json`，含重新检测、两两差异和6文件哈希。checkpoint更新WAIT_HUMAN_IMAGE_REVIEW。下一步先收用户对a02～a04的OK/NO，再引导手动换B姿态并确认就绪后拍b01等；尚未进行换姿态或返回原姿态复测，manual04保持原样。
+
+### 2026-11-13 retest01静止A组三张已人工确认，等待B姿态
+
+用户明确“三张均OK，但三张照片一致”。已解释同姿态重复拍摄是预期设计，不是三个新标定姿态；三图SHA256不同、采集时刻不同。复用review.approve与loop.decide原逻辑，a02/a03/a04正式批准到`/home/isee-pst/unitree_ros2/piper/handeye-data/retest01/`，role=validation，仅诊断，不加入manual04或重新拟合。批准前复核6源文件hash不变，批准后human_approved和role正确，3个decision.json均OK。
+
+已请求用户通过示教摆B姿态（改变板朝向、完整可见，保持夹板/相机/机身安装不变），结束示教保持后回复；尚未收到就绪答复，未采B。下一编号b01。之后考虑返回A附近的复测，按实读关节差判断返回程度，不假定手摆能精确回到原位。checkpoint=WAIT_USER_POSE_B，3组已批准；分析static-a-analysis.json已注明人工批准和仅诊断用途。无生产代码修改、软件运动指令或TF发布。
+
+### 2026-11-13 retest01 B组完成并批准，等待返回A附近
+
+用户确认B摆好后，经现有snapshot入口采b01/b02/b03，全部review_issues=[]、command_sent=false；实看四角完整，三图均返回`~/Pictures/piper-handeye/retest01/bNN/color.png`。本机日志run-G5fr4JlB.jsonl/run-OHI8XKe9.jsonl/run-vamKOKVI.jsonl。用户明确“B组三张均OK”，批准前核对源hash，通过原review.approve/loop.decide保存到handeye-data/retest01，role=validation、不参与拟合。累计6组人工批准。
+
+离线重新检测：B组机器人反馈完全相同，视觉位移最大差0.784475mm、旋转最大差0.697864°，重投影RMS约0.875489/0.916978/0.857327px。A→B机器人旋转角15.222712～15.267476°，视觉13.934564～14.251362°，角度不变量差0.971350～1.288148°；不由此单独判定滑动或模型错误。marker与robot原点平移长度不应直接相等，不能拿两者长度差当误差。分析`build/piper-handeye-retest-20261113/ab-analysis.json`含6样本、两两差异和12源文件hash。
+
+已请用户参考a02图、手动示教回A附近，整个臂形/板朝向尽量接近，保持夹持不变；不要求精确回位，之后用真实关节差判断可比性。尚待就绪答复，未采C。checkpoint=WAIT_USER_RETURN_A，下一编号c01。无软件运动命令、无拟合/部署、未改生产代码或异常处理。
+
+用户随后确认已返回A附近并静止。试拍c01完成（本机run-Jl5omwYS.jsonl、远端run-K4CK6M2b.jsonl），但实图标记右侧被裁切、检测ID25为0，未批准；停止后两张。已回传c01图片链接并请用户保持夹板不变、微调整个臂姿让画面中标记向左/稍远、完整入镜。等待新就绪，checkpoint=WAIT_USER_C_VISIBILITY，下一c02；原A/B六组保留不变。
+
+用户确认微调后试拍c02（本机run-taRAm3DV.jsonl、远端run-hqOV3HCK.jsonl）。实图已向左，但标记下侧黑角被裁切，ID25仍未识别、review_issues非空，未批准。已给c02图片并请保持夹持、示教让板离相机远一些/缩小居中；下一编号c03，等待用户再次静止确认。没有持续无人值守重拍或改检测阈值。
+
+### 2026-11-13 retest01少量复测采集/分析完成：9张批准，根因未定
+
+中断恢复后核对已有状态，未重复已完成动作。用户明确可拍c03后完成c03/c04/c05（本机日志run-LBOQ6ZM6.jsonl/run-0INSB9Eo.jsonl/run-p7CEJXzA.jsonl），均review_issues=[]，实看标记完整。用户明确“C组三张均OK”，通过原review.approve/loop.decide保存为独立retest01验证数据。累计A(a02/03/04)、B(b01/02/03)、C(c03/04/05)共9张人工批准，只有三个近似姿态；a01/c01/c02裁切试拍保留但未批准。18个预览源文件hash和9个正式图源一致性验证通过；未重新拟合或把复测加入manual04。
+
+组内视觉最大两两差：A 0.717274mm/0.488827°；B 0.784475mm/0.697864°；C 1.020836mm/0.956124°。B/C机器人反馈完全相同，A反馈最大0.184399mm/0.116247°。跨姿态旋转角不变量差A-B 0.971350～1.288148°，A-C 2.126875～2.812692°，B-C 0.352067～1.078079°。C实际未精确返回A：末端位置差23.847919～23.970895mm，朝向差18.445649～18.475640°，单关节最大差17.309°；因此不能把C当相同物理姿态来判断滑移。不能要求用户继续盲目追同姿态或把手摆回位假定精确。
+
+固定manual04候选计算复测闭环：A平移26.60～27.01mm/旋转5.09～5.30°；B 25.46～25.52mm/5.11～5.53°；C 21.65～22.27mm/6.03～6.20°。均非实物定位精度。此次短时波动小于持续存在的旋转残差，但仅3张/组，不证明完整噪声分布、无慢漂移或无滑动。仍需区分板平整/刚性、视觉系统偏差/内参、机械臂物理模型、历史固定关系变化；不确认唯一根因，不把正常J6旋转归因错误。建议下一步先实物核对黑方块横纵尺寸是否均142mm、平整刚性和透明覆盖物反光/弯曲情况，再决定后续；调整安装须新批次。没有进一步采集安排。
+
+报告保存`/home/isee-pst/unitree_ros2/piper/handeye-data/retest01-analysis/`：report.txt、abc-analysis.json、residuals.csv、checkpoint.json，4文件复制hash通过。工作证据`build/piper-handeye-retest-20261113/`，checkpoint=RETEST_COLLECTION_AND_ANALYSIS_COMPLETE（仅复测任务完成，标定尚未通过）。没有运动/使能/夹爪/模式指令、TF发布或生产代码改动，原异常处理未变，不构建ROS/重跑代码测试/播放代码修改提示音。
+
+### 2026-11-13 按用户要求准备manual05：10组求解＋5组验证
+
+用户要求重新采集“10次采集5条验证”，按10个不同有效训练姿态+5个独立验证姿态处理。最小修改本机piper/handeye/loop.py：新增`--train-count {10,15}`默认15，collect接收train_count并用于显示、角色切换及完成计数；验证仍5。旧命令保持15+5，所有异常处理AST逐一核对完全一致，采集/批准/控制模块及shell入口hash未变。不修改ROS、远端代码或异常逻辑。
+
+新命令：控制电脑交互Bash进入`/home/isee-pst/unitree_ros2/piper`，执行`bash piper_handeye_loop.sh --session manual05 --train-count 10 --board-attached`。板先刚性固定、机身/相机安装不变；不需source ROS。保持终端，手摆不同姿态、结束示教静止后回车取图，再OK/NO；前10个有效样本train，后5个validation，NO不计数。Q暂停，续采必须保留同一完整命令含--train-count 10，不要在批次中改变目标参数；旧样本不重新分类。不会自动求解、使能或运动。
+
+两端manual05此前不存在：本机Pictures与正式data无目录，SSH只读检查远端reviews/manual05为MANUAL05_UNUSED。安装后实际PTY入口显示训练0/10、验证0/5和pose01待采提示，仅输入Q退出0；日志run-80JbLAYs.jsonl为PAUSED/command_sent=false。本机现仅创建空Pictures/manual05及.loop.lock，没有新图片/正式样本，远端未启动采集。此前manual04、retest01全保留。
+
+测试先增2项（10+5全流程含NO、10+4续采最后validation），原版9通过/新增2因不支持参数失败；修改后循环11通过。已安装标定套件58通过（原56+新增2），pytest仅有两条缓存目录无写权限警告，不影响测试；独立控制基线49项另进程通过。Python3.8语法、Bash语法、原异常处理AST和控制/采集/入口hash验证通过。首次stage测试曾因未链接standalone导入失败，补齐测试stage原依赖路径后完成红绿验证，未改生产导入。备份/stage/原hash在`build/piper-handeye-10plus5-20261113/`。安装3文件loop.py、test_loop.py、handeye/README.md；无需重建ROS或远端部署，入口按原root路径调用已验证解释器和本次loop.py。未提交Git；当前仅准备好新采集入口，尚未采样或标定通过。
+
+### 2026-11-13 manual05收齐10+5并离线求解：较manual04未改善
+
+用户报告完成采集，实读日志COLLECTION_COMPLETE=10train/5validation；从23次预览选出训练pose01/02/03/04/06/08/13/15/16/17、验证pose18/19/21/22/23。15组人工OK、固定声明、源图/元数据/decision哈希、静止窗口、状态和SDK转换复核通过；30原始文件分析后hash不变。
+
+实际入口`piper_handeye.sh solve --dataset handeye-data/manual05 --output handeye-data/manual05-result.json`退出0，本机run-UUk0EIyJ.jsonl。训练平移RMS34.993990mm/max48.927004mm、旋转RMS5.184146°/max6.869636°；验证平移RMS33.916591mm/max48.582316mm、旋转RMS7.708157°/max12.215974°。manual04验证13.164172mm/6.284133°，本批未改善；不能仅两批对比认定样本数减少是唯一原因。都是方程闭环残差，不是实物精度。physical_validation=NOT_PERFORMED，recommended_for_robot_control=false，未部署。
+
+训练最大两姿态旋转52.914262°，位置跨度[139.772,299.767,69.403]mm，15张重投影RMS均<1px。逐一留出训练样本仅用于诊断：留出pose04时core.solve拒绝非合法刚体变换，其他9次最大相机平移变化65.746181mm、旋转17.017885°（均留出pose13）；完整10条求解成功，未剔除样本或按验证成绩选择新模型。临时分析脚本首次因该ValueError终止，随后仅在临时分析器记录失败项再完成其余诊断，没有更改生产异常处理或算法。
+
+夹爪宽度反馈20.4～23.3mm，pose01=21.8、pose06=23.3、pose08=23.2、pose13=20.4mm。已询问现场，用户确认“没有主动调整，但可能有滑动”。这是待排查线索，不是已证实滑动根因；正常J6运动不当作错误。建议先改善板与夹爪刚性固定并核对平整度/尺寸，再少量复测，暂不盲目要求再次整批重采；安装变化应新批次。
+
+保存候选`/home/isee-pst/unitree_ros2/piper/handeye-data/manual05-result.json`；分析目录`manual05-analysis/`包含report.txt、quality-summary.json、sample-audit.json、residual-analysis.json、residuals.csv、manual05-residuals.png。工作证据`build/piper-handeye-manual05-20261113/`。6文件复制hash核对，用户答复随后同步补入两份报告。只有离线分析和文档；未SSH、未拍图、未发送运动/使能或发布TF，未改生产代码/原样本，不构建ROS或重跑代码测试。2D残差图已查看；matplotlib有3D扩展不可用提示，不影响2D图。
+
+### 2026-11-13 用户观察夹爪自行变宽，询问独立使能
+
+只读核对SDK0.6.2 GripperCtrl文档/实现及现有standalone接口：gripper_code=0x01为使能，调用同时携带目标开口与力矩，set_zero=0x00不设零；不是无目标的机械锁定，不能把默认开口0当纯使能。现有gripper动作已调用GripperCtrl(*target,0x01,0x00)，common.assess遇teach_status非0或ctrl_mode不在0/1时WAIT_CONTROL，未绕过/改逻辑。
+
+manual05全部15个采样snapshot的gripper_enabled均true，ctrl_mode=2、teach_status=2；开口20.4～23.3mm，力矩反馈约-0.025～-0.046（现有SDK换算值）。采样时使能不等于整个示教切换过程始终保持同一目标；反馈力矩也不是配置的夹持目标力矩，不能据此断言力矩设置过小。需区分示教期间控制变化、负载/接触滑动、机械间隙或其他控制来源，未确认根因。手眼标定建议将板刚性固定到末端不随开合移动的结构（合适安装支架/法兰），若用活动夹指则仍需验证开口/板固定关系。未SSH、未发使能/开合/清错/设零命令，不改代码。外部核对来源为agilexrobotics/piper_sdk官方gripper示例，现场以本机0.6.2源码为准。
+
+### 2026-11-13 新现场观察：J6旋转时夹板接触位置变化
+
+用户报告J6转动时可明显观察夹爪抓取板的位置变化，认为保持J6不变会好一些。应区分相机视角中板整体旋转与板相对夹指接触位置真正移动：后者违反固定末端到标记变换假设，是重要现场证据；尚不能把所有历史残差归于单一根因。可尝试手动保持J6角度，用其他关节提供至少两个不平行方向的末端旋转及位置变化；手眼标定不要求每个关节都变化。依据OpenCV4.11 calibrateHandEye文档的非平行旋转轴要求。保持J6不能代替板刚性固定，其他关节运动时也需检查接触位置；发生滑移前后不可混用。未将J6软件锁定、未修改脚本或发动作；后续采集批次与现场就绪尚未确认。
+
+### 2026-11-13 按用户要求准备manual06：保持J6角度，10+5重新采集
+
+用户要求再采一轮10条试验+5条验证，沿用10train/5validation，新批次manual06。两端只读检查本机Pictures/handeye-data及远端reviews/manual06此前均未使用。复用已验证入口，无代码修改：`cd /home/isee-pst/unitree_ros2/piper`后`bash piper_handeye_loop.sh --session manual06 --train-count 10 --board-attached`。实际PTY显示0/10、0/5及pose01待采，仅输入Q退出，日志run-Y8iX99lZ.jsonl；未启动相机/采样或发运动命令。本机只准备空Pictures/manual06及锁文件，原批次全保留。
+
+用户手动示教时尽量保持J6角度不变，其他关节提供不同位置/至少两个不平行旋转方向，每次结束示教静止再回车拍摄和OK/NO；保持夹板位置不变，若出现接触滑动则暂停该批次。没有软件锁定J6或新增运动门槛，后续需按采样反馈核对J6实际变化。续采使用同一完整命令含--train-count 10，10+5齐全后自动结束，仍需离线验证。此轮只准备入口，不构建/重跑测试。
+
+### 2026-11-13 用户明确采用manual04，保持代码不变
+
+最新用户指令“采用manual04”，后续接入以`/home/isee-pst/unitree_ros2/piper/handeye-data/manual04-result.json`为选定标定来源，不再把manual05或尚未完成的manual06作为默认替代。原文件SHA256=b8f843b4aee21b530e53c642d1ceaa16868c7680b16610504157135596433151；本轮核对三个SE3矩阵、正逆变换乘积、米制单位及15train/5validation数量通过，未改原结果或数据。
+
+采用的相机到Piper基座变换字段为T_base_color_optical（color optical -> SDK arm base），不是Go2 base_link/TCP变换；相机序列151222077264。适用前提是相机与机械臂基座安装关系保持不变，当前未重新实测安装。重新夹板后不能直接复用旧T_end_marker到新的板安装关系。用户采用决定不代表实物验收通过；保留physical_validation=NOT_PERFORMED及验证RMS13.164172mm/6.284133°原值。
+
+更正此前措辞：没有预先约定整轮残差的硬性验收阈值；后提出5mm/1°只是建议目标，不可回溯当作旧门槛。此前分析中的NEEDS_INVESTIGATION/不推荐控制为工程判断，不是脚本自动验收失败。现在按用户选择采用manual04作为后续接入来源，原分析证据不改写。代码搜索未见当前独立采集/控制栈读取手眼结果的运行配置，因此本轮完成选用记录，未宣称控制链路已加载；未改代码、未发布TF/启动控制或自动停止用户的manual06采集进程。旧批次全部保留。
+
+### 2026-11-13 静止Go2视觉抓取代码只读盘点
+
+用户询问Go2保持静态时后续抓取如何实施、piper目录有何可复用代码；本轮只读，不视为动作或改代码授权，继续保留原异常处理。已读实际main4/primitive3/aloha/ik_solver/pointcloud2/util及standalone和既有方案。
+
+可复用：piper_go2.sh→机载standalone/piper_control.py的check/inspect/joints/gripper及诊断；handeye/capture.py设备身份和被动反馈逻辑（现仅color，无depth）；agent/pointcloud2.py已有RGB-D、align到color、读取depth_scale和内参，但默认相机151222076721非实机151222077264，旧context需按已验证方式适配；agent/primitive3.py:grasp_object为开爪→预抓取→接近→闭合→抬升顺序参考；agent/ik_solver.py提供Pyroki solve→6关节度数；main4/vlm_agent可参考识别/分割/任务拆分。
+
+不可直接运行旧整链：primitive3导入即PiperRobot；piper_arm构造ConnectPort/EnableArm(7)，TCP固定0.135m；open/close会写MotionCtrl_2并用0/70mm固定目标；goto_joint超时break后仍返回目标，调用者不能据返回断言到位；抓取原语固定抬升0.18m且直接记持物，未充分证明抓住。util含旧相机外参、旧写死内参，未读manual04；IK路径/home/isee604且target link6、URDF旧版，须核对真实模型/TCP/单位，不把IK解当整条路径无碰撞。main4写死cuda:0/旧模型路径。旧main_robot是192.168.31.201:9999 socket方案，当前Go2 runtime仅注册导航start_find_target/get_task_status/cancel_task，没有抓取工具。
+
+本机co-nav-real用find_spec只读检查：jax/jaxlie/jaxls/yourdfpy/pyroki/autolab_core/segment_anything/pyrealsense2/pinocchio/casadi未找到，torch/open3d可找到；不是实际导入或GPU复验。Pyroki项目声明Python>=3.10，机载沿用历史Python3.8设备层，建议计算留控制电脑、RGB-D与CAN留Go2，用现有SSH通路传快照/明确命令；不逐帧SSH发控制，不改导航overlay。
+
+建议首版先人工指定图中目标→对齐深度取米制3D→manual04的T_base_color_optical变到Piper基座→实测TCP与姿态→IK及路径预览→分段抓取并确认持物；随后用VLM自动目标选择替换人工输入、封装独立抓取工具，暂不接导航/携带。需先验证夹爪正常模式的保持能力与示教退出流程，采用已选manual04但不声称实物精度已验收。没有额外引入残差硬性门槛。
+
+已异步询问首个物体类型/大小及台面或地面位置，尚待答复。若地面，先实测可达性，既有ground_reachability文档结论基于假设H/D不能当当前事实。未安装依赖、未执行旧入口、未SSH或发运动，本轮未改生产代码。
+
+### 2026-11-13 夹爪使能后可轻易手动开合：代码及输入离线复核
+
+用户报告机械臂与夹爪使能后，夹爪仍几乎无阻力地被手动改变开口。本轮只读核对本机standalone/piper_control.py、piper_common.py、piper_go2.sh、仓库开机/夹爪工具及已安装SDK0.6.2；未SSH或获取当前实机反馈。已询问此次具体使能入口及是否结束拖动示教，尚待回答。不能从历史使能位或当前手感单独判定硬件正常/损坏。
+
+确认开机工具仅调用EnableArm(7)，以六关节新反馈确认READY，没有GripperCtrl；独立夹爪入口在piper_control.py:188调用GripperCtrl(*target,0x01,0x00)，同时携带目标开口和力矩，不清错、不校零。输入宽度须有限且0..100mm，再检查设备70/100mm行程；力矩须有限且0.001..5N·m，转换均乘1000。SDK直接调用若只传gripper_code=1，默认effort仍为0；现有CLI要求显式正力矩，可避免这个遗漏，但数值合法不证明足够夹持。不能把反馈力矩当请求力矩，AT_TARGET也不是保持能力验收。
+
+模式语义补充：SDK0.6.2的ctrl_mode=2表示示教控制模式，teach_status=2明确表示结束示教记录（退出拖动示教模式），不能把teach_status非0直接解释成仍在拖动。现有common.assess在teach_status非0或ctrl_mode不为0/1时返回WAIT_CONTROL、不发送夹爪目标；本轮用替身确认(2,2)/(1,2)均等待，(0,0)/(1,0)允许尝试。此为现有行为，不证明当前实际模式，也未改原异常/等待策略。历史manual05全部15条使能为真且模式2/2，仅作线索。历史2026-11-06曾在模式0/0、10mm/0.5N·m目标及有界周期发送下仍无位置变化，不能仅凭示教或单发差异解释全部现象。
+
+本轮验证：独立控制基线49项、开机/夹爪基线66项全部通过；另一次性内存检查10组非法输入拒绝、3组合法单位转换、4组模式分支均通过（不是新增生产测试）。复跑既有sdk_offline_check.py，禁止socket、替身发送，0x159编码0000271001f40100（10mm/0.5N·m/code1/不设零）核对通过；其ERROR输出为预期故障注入，不是真实总线错误。未修改生产代码或部署，未重建ROS、播放代码修改提示音或重新进行实物试验。判断：正常位置保持下持续近乎无阻力且不恢复目标值得排查；仅使能不能证明保持功能正常，当前缺具体入口/请求值/实时模式和物理响应，根因待验证，不自动加力矩、切模式、重发或刷固件。
+
+
+### 2026-11-13 将用户选定 manual04 外参写入本机 Piper agent
+
+用户明确要求“将manul04的结果写入代码”，完成后输出相机到Piper基座外参。已将 `/home/isee-pst/unitree_ros2/piper/handeye-data/manual04-result.json` 的 `T_base_color_optical` 转换为现有 translation（米）及 quaternion（xyzw），更新 agent/util.py、agent/vlm_agent.py、agent/get_symmetric_center.py 三处重复常量。方向是 RealSense 彩色光学坐标系到 Piper SDK 基座；不是 Go2 base_link，也不是 TCP 或 T_end_marker。仅六处赋值和来源注释变化，全部其他 AST（含异常处理）保持一致；历史标定文件和结果状态未修改。
+
+安装后离线验证三文件语法、单位四元数、重建矩阵、逆矩阵与三个测试点转换全部通过；与源矩阵最大元素差 1.055e-15。源 JSON SHA256 仍为 b8f843b4aee21b530e53c642d1ceaa16868c7680b16610504157135596433151。备份、stage、原文件哈希及 verification.json 在 build/piper-manual04-apply-20261113/。纯 Python 常量修改，无 ROS 构建/overlay/启动入口变化；未导入含硬件副作用的旧 agent、未 SSH、未部署机载端、未发送控制或验证实物抓取。
+
+边界：选用 manual04 不改变其验证残差（平移 RMS13.164172mm、旋转 RMS6.284133°）或代表实物精度通过。旧抓取依赖、相机内参/序列号、TCP 尚需匹配。另只读发现 vlm_agent.axes_in_camera_from_tool_rotation 将全局四元数直接解释为世界到相机，且实际返回 x_w/y_w/z_w；本轮未修改该历史工具轴显示逻辑，后续接入需核对调用者及方向，不能仅因外参已写入就宣称旧抓取链可运行。
+
+
+### 2026-11-13 矿泉水瓶抓取现场只读检查：视野、距离与夹爪反馈待核实
+
+用户要求Go2静止抓取地面直立矿泉水瓶（约高23cm、宽6.4cm），倾向左前侧且无法精确摆放；给出分段验证方案后用户报告已放置并要求继续。本轮实际执行SSH取图、短时RGB-D采样和被动CAN反馈，无关节/夹爪/使能/模式/校零命令，无导航/站姿改变。未部署或修改生产代码。
+
+工作证据`build/piper-bottle-ground-20261113/`。复用既有review.snapshot采view01（机载run-P4L09zg6.jsonl），原地面场景只有瓶盖/上部入镜；用户随后垫约7cm盒子，view02（run-5vzC9Ijk.jsonl）可见上半瓶身，但底部/盒子仍裁切。RGB-D rgbd01共3帧；随后用户报告把瓶子移远，重新取rgbd02共3帧及被动配对机器人窗口，最新图为`rgbd02/frame00-color.png`。相机151222077264，640x480@15，真实depth_scale=0.0010000000474974513，原始深度与SDK对齐深度均保存；没有常驻订阅。每组7个源文件复制SHA256核对通过。机载临时源目录分别/tmp/piper-bottle-rgbd-lyt784da、/tmp/piper-bottle-rgbd-j03zh0ps，均保留。垫高场景不能记为地面抓取通过。
+
+离线用原始深度反投影、设备depth-to-color外参（column-major正确重建）、用户选定manual04转换；三帧结果接近不代表绝对精度。移远后可见瓶身表面中值基座坐标约[0.864,0.105,-0.159]m，标签表面约[0.853,0.107,-0.198]m，均不是瓶轴/TCP。候选模型肩部[0,0,0.123]m至法兰任意方向长度上界0.627741899m；肩部至可见瓶身约0.915m，因此候选模型需要至少约0.287m工具长度才能通过必要条件，旧未实测TCP为0.135m，当前初筛不通过。实际模型/TCP与manual04实物精度仍未验收，不把此初筛写成实机绝对不可达。此前让瓶移远仅改善视野，已明确修正建议、不再让用户继续盲目挪动。等待用户粗量Piper基座中心到瓶身中心的水平距离以核对视觉估计。
+
+两次图像配对反馈均ctrl_mode=0、teach_status=0、arm_status=0、err_code=0、六关节及夹爪使能true、无缺失反馈；机械臂窗口静止。但gripper_width_mm=-27.5。两端snapshot均直接按SDK grippers_angle/1000转换，未加偏移。被动CAN原始检查gripper-passive-03.log有20帧显式核验ID0x2a8、新鲜、标准数据帧；前4字节ffff9494按现有V2有符号int32转换均-27500，即-27.5mm。未确定零点/硬件/协议等根因，不取绝对值、裁零或自动校零。已询问实际两夹指内侧间距。临时第一次诊断误传str给load_serial导致Path类型异常，发生在CAN连接前；修正调用后成功，原始日志保留。第二次记录缺少frame ID且有一条不同值，不能逐条认定0x2a8，已由第三次显式ID检查取代；未修改原控制或异常处理。
+
+checkpoint=WAIT_PHYSICAL_DISTANCE_AND_GRIPPER_GAP。没有生成抓取中心/IK/无碰撞路径、没有实际开合或抓取，旧标定数据及结果不变；手眼review中缺marker警告是瓶子照片的预期，不批准或加入标定集。下一步先核对用户实测两值，再决定可达放置区域及夹爪排障；不要把历史动作授权或本轮被动采集当作自动校零授权。纯证据/交接更新，不构建ROS、不重跑产品测试、不播放代码修改提示音。
+
+
+### 2026-11-13 瓶子移近后候选定位完成；等待单次夹爪校零授权
+
+用户粗量原位置基座中心到瓶身约87cm，与视觉估计一致；同时确认夹爪实际闭合，-27.5mm不能当实际间距。不是对外参毫米级精度或完整机械模型的验收。没有自行加27.5mm软件补偿。
+
+离线候选URDF FK与当前SDK末端位置差0.074614mm（只一姿态、非物理TCP验证）。固定水平接近的9组候选未找到精确解；改为斜向下30/45/60/90度、距离55/60/65cm和基座Z=-0.16/-0.18m的24组，16组找到模型内姿态解。使用旧未实测TCP沿link6+Z 0.135m和公开URDF限位，无碰撞/整条路径检查，计算容差仅求解诊断、不新增现场门槛。JSON在build/piper-bottle-ground-20261113/candidate-placement-ik.json与candidate-placement-tilted-ik.json，不是可执行轨迹。
+
+据此请用户连同7cm盒子向机器人移近20～25cm、保持左前侧；用户已调整。采rgbd03（三帧及静止机器人窗口），7文件源SHA256核对通过。瓶盖/上中瓶身可见、底部仍裁切；不再要求为了全瓶入镜外移。标签上缘有效深度约91～92%，深度中值0.181m，透明瓶身ROI有效约65～70%。按用户近似半径0.032m、瓶轴近似基座Z假设，对标签上缘局部圆弧拟合，三帧候选中心约[0.63892,0.07863,-0.16005]m，水平64.37cm；拟合RMS0.45～0.51mm只是局部模型拟合，不是绝对抓取精度。需实测TCP/姿态/接近与碰撞验证；三帧未生成真机命令。证据rgbd03-surface-points.json、rgbd03-candidate-bottle-center.json。当前仍是垫高场景，不记地面抓取通过。
+
+两端SDK0.6.2在禁止socket且替身发送条件下验证GripperCtrl(0,0,0x00,0xAE)，仅编码0x159/00000000000000ae，即夹爪失能并设当前位置为零，不清错、不重新使能、不动六关节。结果zero-proposal-local-offline.json及zero-proposal-go2-offline.json。这一步尚未实发；已明确询问用户是否授权对空载完全闭合夹爪执行一次并随后只读核对，因其更改硬件零点，不能把先前抓取开合授权当作校零授权。checkpoint=WAIT_GRIPPER_ZERO_AUTHORIZATION。仍无生产代码改动、无关节或夹爪动作。
+
+
+### 2026-11-13 用户授权单次夹爪校零：反馈归零，保持失能，未抓取
+
+用户明确选择“授权一次夹爪校零并读取反馈”，范围为当前空载完全闭合夹爪，单次失能+当前位置设零，随后仅被动读取；不清错、不重新使能、不发送六关节动作。实际遵守此范围，未将历史抓取计划用于追加开合。
+
+执行前无其他已知Piper控制进程，指定USB对应can0为1Mbps/ERROR-ACTIVE；共用现有每USB控制锁。使用既有Reader的piper_init=False、start_thread=False连接，实发前保存唯一receipt，传输包装仅允许一次0x159/00000000000000ae；SDK GripperCtrl(0,0,0x00,0xAE)返回SEND_MESSAGE_SUCCESS。机载receipt=/tmp/piper-bottle-zero-20261113-01.json（O_EXCL，不重用/重发）。实际本次仅1帧；can0累计TX由1变2。约0.5秒内反馈从-27.5mm/使能true变为0mm/使能false；之后11条新鲜观察为0mm/false，持续约2.5秒，无缺失反馈、err_code=0。前后六关节角及SDK末端反馈完全一致，未发六关节指令。断开只结束观察，不重新使能。
+
+证据build/piper-bottle-ground-20261113/zero-authorized-execution.log、zero-authorized-remote-receipt.json、can-after-zero.json，远端receipt与本地最终记录逐字段一致并完成一次发送/目标帧/11条归零/关节不变断言。checkpoint=GRIPPER_ZERO_OBSERVED_DISABLED_NO_GRASP。只证明当前闭合位置零点反馈已恢复，不证明原负值唯一根因、重启持久性、开口比例、夹爪保持或抓取通过。当前夹爪保持失能，六关节原使能状态不变。
+
+瓶子仍在约7cm盒子上、最后估计中心水平64.4cm。未修改或部署产品代码、未重建ROS、未重跑产品测试。后续需在明确操作范围下验证夹爪实际开合/保持，并核实TCP和完整路径；不能直接使用候选坐标/旧0.135m工具参数执行抓取。
+
+
+### 2026-11-13 校零后10mm小开口未执行，用户建议核对校零流程
+
+用户说“继续”后，明确说明并执行一次10mm/0.2N·m夹爪目标，未动六关节。实际使用已部署piper-standalone-20261111/piper.sh gripper，三文件SHA256与本机一致；沿既有每USB锁、现有反馈/故障/实时行程检查。运行前can0正常，无其他已知控制进程；用唯一目录/tmp/piper-bottle-open10-20261113-01防止重复入口，12秒SIGINT结束监测（timeout状态124，程序EXITED），不将退出说成物理停止。尝试后夹爪保持使能，目标可能仍被控制器保留，未自动失能或重发。诊断终端按已有piper_go2.sh diagnostics打开。
+
+远端日志/home/unitree/.local/state/piper-standalone/gripper-stu9ve69.jsonl，本机open10-runtime.jsonl：1次COMMAND_ATTEMPTED，其后22次WAIT_TARGET，宽度全部0mm、使能true、ctrl_mode0/err_code0，无缺失反馈，六关节全程不变。can0累计TX2→4，与1次行程查询+1次夹爪命令一致，不是固件动作应答。用户也确认夹爪没有张开，随后两次提出“可能校零没做好”。未提高力矩、连发、清错、回零或修改原错误处理。
+
+已回应：刚才只确认反馈零点，不证明机械闭合基准正确，不能认定用户操作错误。SDK0.6.2官方piper_set_gripper_zero.py是GripperCtrl(0,1000,0x00,0)，等待1.5秒，再GripperCtrl(0,1000,0x00,0xAE)。本轮先前使用合并失能+设零，存在顺序差异，但未证明其为根因。拟按官方两步顺序、在失能后由用户确认空载完全合拢再单次设零并读取；不做六关节回零/重新设六关节零点、不清错或自动开爪。前一次单次校零授权已用完，因此已请求这次重新校零授权，尚未执行。
+
+官方同版本piper_ctrl_gripper.py调用ConnectPort/EnablePiper、夹爪失能清错及使能，然后周期发送夹爪目标；没有显式MotionCtrl_2。本地EnablePiper只EnableArm(7)，故ctrl_mode0是线索，不能直接认定待机导致夹爪不动；不执行整个官方demo，避免清错、循环50mm开合等越界动作。官方piper_ctrl_go_zero.py会发送六关节零角目标，是运动命令，不是本次需要的夹爪零位设置。来源：https://github.com/agilexrobotics/piper_sdk/blob/0.6.2/piper_sdk/demo/V2/piper_set_gripper_zero.py 及同目录两个示例。
+
+两步候选报文在本机SDK0.6.2禁止socket、替身发送下验证为0x159/0000000003e80000和0000000003e800ae，结果official-two-step-zero-offline.json；仅编码自检，无实发。checkpoint=WAIT_OFFICIAL_TWO_STEP_ZERO_AUTHORIZATION。无生产代码修改或构建；原目标仍为静止抓取，当前瓶子在约7cm盒子上、候选中心水平64.4cm，尚无物理抓取通过。
+
+
+### 2026-11-13 官方两步校零仅完成失能；用户随后自行按教程回零/校零
+
+用户授权“按两步流程校准一次”后，第一步仅发送GripperCtrl(0,1000,0x00,0x00)，唯一receipt=/tmp/piper-bottle-official-zero-20261113-01-disable.json，本地official-zero-disable-execution.log。仅一条0x159/0000000003e80000，观察约3秒确认夹爪使能false、宽度0mm、六关节不变。随后用户明确回复“空载完全合拢”，但在第二步设零执行前会话被中断，用户又报告“按照教程对机械臂进行了回零（校零）操作”。第二步从未发送，不能在恢复后自动补发或重做第一步。
+
+恢复后只读核对：机载当前启动时间2026-11-13 21:01:36，boot_id=851af1ce-00f5-4e38-a004-a3def6af6a4b；此前/tmp单次操作receipt已不存在，不能因文件消失推定动作未执行或重发。SSH别名本轮实际走备用地址192.168.1.100，SSH_CONNECTION为192.168.1.222到192.168.1.100，机载eth1；沿USB序列号发现can0，接口UP/1Mbps/ERROR-ACTIVE，累计TX为0（新启动/接口计数，不否定此前操作）。没有其他已知Piper控制进程。未改网络或服务。
+
+被动读取2秒收到40条完整反馈，最新六关节[0,0,0,0,0,0]度，SDK末端[56.127,0,213.266]mm、欧拉[0,84.999,0]度；ctrl_mode=1、teach_status=0、arm_status=0、err_code=0、六关节使能true，夹爪宽度0mm/力矩0/使能false。证据after-user-homing-01.json，command_sent=false。与此前待机mode0不同，但不据此认定旧故障根因或操作性质。
+
+已询问教程操作是六关节运动回到零姿态、重写六关节当前位置为零点，还是仅夹爪校零；不确定时提供教程链接/命令/按钮名。此前用户“空载完全合拢”确认已收到，但在其后新的硬件操作后不继续旧设零。checkpoint=WAIT_USER_HOMING_PROCEDURE_CLASSIFICATION。若只是回零运动，不据此要求重做相机外参；若重写关节零点，应核对新的反馈/模型物理对应，不能仅因为矩阵文件存在就继续旧轨迹，也不直接断言相机与基座的物理外参失效。原抓取目标保留，尚无抓取动作或通过结论。未修改产品代码/构建。
+
+
+### 2026-11-13 ArmRobotUA仅回零运动后，CAN模式小开口复测仍失败且夹爪未使能
+
+用户澄清：在另一台电脑使用ArmRobotUA让六关节运动回零姿态，没有重写关节零点；期间重启设备，机械臂从Go2换接该电脑，现已接回Go2。不能把这次操作当成重新标定关节零点，或据此要求重做固定相机外参。用户没有在ArmRobotUA里单独测试过夹爪。此前官方两步校零的第二步仍未执行，不补发。
+
+用户明确授权在回零后再做一次相同10mm/0.2N·m夹爪复测，观察约10秒；不校零/清错/六关节动作/自动重发。实际使用与本机SHA256一致的原standalone入口，唯一目录/tmp/piper-bottle-open10-20261113-02，12秒SIGINT结束只读监测。远端日志gripper-84861e7z.jsonl，本机open10-retest02-runtime.jsonl。1次COMMAND_ATTEMPTED、22次WAIT_TARGET；全部宽度0mm、力矩0、使能false、ctrl_mode1、err_code0、完整新鲜反馈，六关节始终0。无SDK ERROR或Traceback；can0累计TX0→2，与一次参数查询+一次目标一致，但不证明夹爪驱动收到/执行。用户确认未张开，且现能自由开合；此前使能时不能自由开合。不能用此前“使能true但不动”概括当前状态。
+
+随后被动采2秒CAN：0x2a1有401帧0100010000000000，0x2a8有400帧且全部0000000000000000，0x261有80帧00f000261f400000；该窗口无0x150/151/159/470/471控制报文。证据after-homing-passive-bus.json；只证明窗口内未见覆盖命令，不证明完全不存在其他控制源。SDK解析与原始报文一致，夹爪全零不能单独证明电机在线或机械零位校准正确，也不直接确诊供电/接线故障。
+
+用户说明已接回Go2后，再被动读取2秒40条完整状态，USB序列0046002F5246570520323934、can0匹配既有身份，六关节0/使能true、ctrl_mode1/teach_status0/err_code0，夹爪0mm/力矩0/使能false。证据after-user-reconnect-01.json。当前无已知控制程序，只有只读tail诊断；piper-boot.service为active/exited，不重启或修改服务。读取到的服务时间戳与启动时间不同，不据此推定新根因。
+
+已采更新场景rgbd04，三帧RGB-D/机器人窗口，7文件源hash验证通过；图像瓶子仍在近处、底部裁切，旧rgbd03候选坐标不可直接沿用为运动目标。当前暂停追加机械动作，建议下一步在ArmRobotUA的夹爪页面核对独立控制/驱动状态，先确定实际UI字段，再做官方软件对照；用户尚未执行该对照。SDK/固件/供电/末端通信等原因仍待区分，不继续盲目设零、加力、清错或刷固件。官方快速手册确认ArmRobotUA用于本体控制和外网反馈，说明六关节回零/模式转换与末端工具控制区别；其版本2024.09不作为当前UI/固件完全一致的保证。
+
+checkpoint=WAIT_ARMROBOTUA_GRIPPER_DIAGNOSTIC_VIEW。全程无产品源码修改/部署/构建，没有抓取成功。原请求仍为Go2静止夹取矿泉水瓶；当前瓶底约7cm垫高，不算地面验收。所有已结束单次动作授权均不得自动复用。
+
+
+### 2026-11-13 收到ArmRobotUA夹爪页截图：未使能、目标和扭矩均为0
+
+用户提供本地截图，已实际查看，证据另存build/piper-bottle-ground-20261113/armrobotua-gripper-user-view.jpeg；原图文件名包含会话查询参数，不在文档复述。软件V1.4.1.250905_release，已连接，底部CAN/正常/MOVE J。夹爪目标间距0.000mm，扭矩输入0.000（UI标签N/m）；右侧实际距离0.000mm、扭矩0.000、状态码0x0，夹爪状态控件显示“失能”。左侧行程限制输入70mm，右侧设备反馈100mm，不能将输入框当已生效配置或将100mm当机械实测开口。
+
+这些只说明截图当时没有有效开爪目标/使能状态，不能反推此前Go2的10mm/0.2N·m未发出，也不能认定零点故障。下一步给用户官方UI单独夹爪对照步骤：保留其他参数，先将扭矩数值设0.200，再设间距10.000mm，然后仅用夹爪状态控件切到使能一次，观察实际夹指、右侧间距和状态码；不点击顶部整臂使能、清错、设置零点或更改行程限制。界面改变数值可能立即下发，不把它说成仅编辑未执行；不在Go2同时发命令。若控件语义/界面与描述不同，先回传实际状态，不尝试猜测按钮。用户尚未报告此次UI测试结果，助手未发送新硬件命令。
+
+按既有SDK状态位，0x40为使能位、0x80为回零位；健康使能时可能0x40或0xC0，不能将任一完整码当唯一通过标准，更不能单凭使能位认定抓取成功。checkpoint=WAIT_USER_ARMROBOTUA_SMALL_OPEN_OBSERVATION。仅证据与文档更新，无产品代码修改/构建或抓取动作。
+
+
+### 2026-11-13 用户报告ArmRobotUA夹爪使能点击无反应
+
+用户报告“在夹爪状态点击使能没有反应”。已确认官方软件也出现用户可见的无响应，但尚缺点击后的按钮文字、右侧距离/状态码及10mm/0.200输入是否保留，不能直接断言使能位仍为0或电机离线。之前Go2复测有新鲜0x2a8全零反馈；已重新核对本地SDK0.6.2定义，使能与回零分别为bit6、bit7，不能以无动作或全零反馈确诊校零故障。下一步只需点击后夹爪页面截图，以及电机配置页面已有的夹爪/末端在线、版本或故障显示（若界面提供），不保存参数、不再次使能/校零/清错/刷固件、不通电插拔。供电、末端通信、软件/固件配置均仍是待验证假设。助手本轮未发送硬件命令、未SSH、未更改产品代码。checkpoint=WAIT_ARMROBOTUA_POST_ENABLE_FEEDBACK。
+
+
+### 2026-11-13 用户授权Go2接口低速小角度关节验证；当前CAN未启用
+
+用户确认机械臂连接Go2上位机，要求先确认能通过接口做低速小角度关节动作验证，作为当前测试授权，不扩展为抓取或校零。实际SSH复核standalone三个文件SHA256与此前一致；USB序列0046002F5246570520323934匹配can0，但can0为DOWN/STOPPED、RX/TX均0且未配置bitrate。原inspect入口4秒内仅WAIT_IO，command_attempted=false；监测正常退出，证据joint-small-motion-preflight01.jsonl（远端inspect-zqh5hilp.jsonl）。piper-boot.service为active/exited、ExecMainStatus0，进程检查仅见只读tail与本次检查，没有已知动作客户端；未重启服务。sudo -n -l返回需要密码，不是自动审批拒绝。
+
+当前没有新鲜关节姿态，尚未选定关节目标或发送任何模式/使能/运动命令；不使用历史零姿态构造目标。需用户在Go2上位机本地终端以sudo将can0配置1Mbps并启用，完成后继续被动读取，再按本轮授权完成一次小幅低速关节目标验证。不要把CAN链路恢复当运动测试通过；当前无需重启设备、改代码或重新构建。checkpoint=WAIT_CAN_UP_FOR_AUTHORIZED_SMALL_JOINT_TEST。
+
+
+### 2026-11-13 CAN配置busy后确认USB重新枚举，当前仍DOWN
+
+用户执行配置1Mbps与up的组合命令得到RTNETLINK Device or resource busy，之后提供ip详情为ifindex10/can0/DOWN/STOPPED且无bitrate。助手同期只读SSH确认相同状态，原inspect-v08z1ik9.jsonl仅WAIT_IO，未发送动作。journalctl内核日志显示21:44:03 can0 link becomes ready，21:44:22 USB device5断开（gs_usb shutdown err=-19），21:44:24同序列0046002F5246570520323934以device6重新枚举；前轮ifindex9变为10。不能把断开直接归因于用户插拔或硬件异常。Linux v5.10 drivers/net/can/dev.c can_changelink源码在IFF_UP时拒绝设置bittiming并返回EBUSY，符合先前busy的一种解释；组合命令实际哪一步失败未确定。下一步让用户在Go2终端逐条执行配置bitrate、up、读取状态，每步无报错才继续；不要求盲目down/up或重启设备，不清错/校零。低速小角度关节验证授权保留，仍未取得新鲜关节反馈或发送目标。checkpoint=WAIT_CAN_CONFIGURATION_STEP_RESULT。无产品代码修改。
+
+
+### 2026-11-13 CAN恢复UP/1Mbps但整臂无反馈，版本查询也未获得响应
+
+用户提供can0 UP/LOWER_UP/ERROR-ACTIVE、bitrate1000000。助手运行原inspect约4秒，所有关节/位姿/状态/夹爪反馈均缺失，command_attempted=false，证据joint-small-motion-preflight02.jsonl（远端inspect-4apwaok6.jsonl）；不设过滤器独立SocketCAN接收3.017秒共0帧，USB序列匹配0046002F5246570520323934。用户进一步确认本体已上电、指示灯亮、CAN线已连接。
+
+为区分无周期数据与查询不应答，使用现有SDK0.6.2 SearchPiperFirmwareVersion一次，源代码核对仅发送0x4AF/0100000000000000，不含运动/使能/零点/参数修改。ConnectPort关闭piper_init及接收线程，持既有USB控制锁，唯一O_EXCL记录/tmp/piper-joint-check-firmware-20261113-01.json，未重发。随后无过滤接收3秒仍0帧，GetPiperFirmwareVersion=-1199（SDK无版本字符串的哨兵值，不是机械臂故障码）。调用前后can0 RX/TX计数均0、仍ERROR-ACTIVE、未见SDK发送错误；不能将SDK调用返回当总线成功发送或设备收到，不能认定该状态证明电气链路正常。证据joint-check-firmware-query01.log。
+
+当前尚无六关节起始角，未选择目标、未发送任何关节模式/目标/使能，也未测试夹爪。不据此诊断夹爪零点或改固件。待核对适配器到本体实际端口接线及此前USB断开是否人为；本轮用户低速小角度验证授权保留，实际执行待链路恢复。未改产品代码/构建。checkpoint=WAIT_CAN_LINK_PHYSICAL_DIAGNOSIS。
+
+
+### 2026-11-13 重启后CAN恢复；低速J6目标一次实际尝试仍无角度变化
+
+用户重启Go2重新连接后再次设置bitrate遇busy。实际can0 ifindex7已UP/ERROR-ACTIVE/1Mbps，RX488196、TX1；开机服务日志ENABLING→READY，六关节全部使能，服务active/exited，boot_id=d8cba4f7-4dc8-4d25-9377-54ec78eb7d21。该次busy符合已启用接口不允许修改bitrate，不需要再down/up。原standalone三个文件SHA256与前轮一致，没有已知并发动作进程。新鲜被动反馈恢复：ctrl_mode0、arm_status0、err_code0、六关节使能true，稳定角度[0,-0.115,0,0,0,0]度，夹爪0mm且未使能。
+
+用户此前低速小角度测试授权延续，宣布J6+3度/5%且其余保持；先沿原入口以[0,-0.115,0,0,0,3]、容差0.3度启动12秒监测。日志joints-wx5t3f0g.jsonl共11 WAIT_RANGE（J2目标超限）和12 WAIT_LIMITS，无COMMAND_ATTEMPTED，未发送模式或关节目标；用户称未观察到、可能角度太小，已澄清实际原因是发送前校验等待。独立只查询一次设备限位，0x473原始结果见joint-small-limits01.json：J1[-150,150]，J2[0,180]，J3[-170,0]，J4[-100,100]，J5[-70,70]，J6[-180,180]度；六个max_speed均0.3rad/s。不将J2当前-0.115度当零点损坏证据，不改限位或零点。
+
+向用户明确说明J2目标调整到0（仅回调0.115度），J6仍+3度/5%，其他目标不变，随后原入口发送合法目标[0,0,0,0,0,3]一次。唯一请求记录joint-small-test02-request.json及远端持久receipt ~/.local/state/piper-standalone/joint-small-test-20261113-02.json。日志joints-ii43xh4q.jsonl：1 COMMAND_ATTEMPTED，22 WAIT_TARGET；后续ctrl_mode由0变1，arm_status/err_code0、六关节使能true，关节反馈始终[0,-0.115,0,0,0,0]度，J6没有趋近3度。没有SDK错误或Traceback；12秒SIGINT结束监测，timeout124并有EXITED，不表示物理停止或取消保留目标。没有回程、自动重发、夹爪、校零或清错。通过现有piper_go2.sh diagnostics打开诊断窗口；gnome-terminal退出0，伴dconf只读告警。所有请求/执行/运行日志已留本地build证据。
+
+用户问是否再次零位校准，已说明当前证据不足以支持重设零点；先查控制时序与目标执行。官方SDK0.6.2 piper_ctrl_joint.py周期5ms发送MotionCtrl_2与JointCtrl，现有入口模式和目标只紧邻发送一次；模式切换时目标是否被接受是待验证假设，不是已确认根因，未擅自改周期或跑官方全幅demo。当前CAN模式反馈1，但小角度运动仍未通过；第二次用户物理观察未收到，不能混用第一次观察。无产品源码修改/构建，不再发送动作。本轮低速单次实际运动目标尝试已结束，后续动作次数需按用户授权范围另行明确。checkpoint=JOINT_SMALL_TEST_NO_MOTION_SEQUENCE_DIAGNOSIS。
+
+
+### 2026-11-13 关节不动作排查：当前固件、状态及两端实际SDK编码核对
+
+用户要求“进行排查”。本轮只做本地代码检查、官方资料核对和一次固件查询，未发送新运动/模式/使能命令。查询得到S-V1.8-2（原始版本片段保留于joint-diagnosis-firmware-state01.json），3秒0x2a1约601帧、各关节反馈约600帧，六关节低速状态各120帧；CAN/MOVE J原始0x2a1=0100010000000000，teach_status0、arm_status0、err_code0，六关节使能true，角度仍[0,-0.115,0,0,0,0]。夹爪0x2a8全零。未见该接收窗口内其他控制帧，不能证明永远无其他控制器。
+
+本机与Go2均使用实际SDK0.6.2，禁止socket并替换物理发送器，以捕获的真实状态/限位驱动原Command.step；断言通过。目标[0,0,0,0,0,3]、速度5编码严格为0x151/0101050000000000，0x155/0000000000000000，0x156/0000000000000000，0x157/0000000000000bb8。再次step不会重发；单位和编码正确，但离线结果不证明前次四帧均成功上总线或目标被固件接受。证据joint-diagnosis-encoding-local.json和joint-diagnosis-encoding-go2.json。
+
+明确待验证差异：原Command.step紧邻调用MotionCtrl_2和JointCtrl，没有等新鲜模式反馈；官方0.6.2 piper_ctrl_joint.py为5ms周期模式+目标。模式切换时单发目标被忽略是候选原因，尚未确诊，不把官方周期示例当必须200Hz或自动连发授权。下一项最小对照拟在模式已稳定CAN/MOVE J时，以相同[0,0,0,0,0,3]/5%再次单次目标，同步记录原始0x151/155/156/157和0x2a1/2a5/2a6/2a7，观察约10秒，不加角度/速度、不校零/清错/回程；前次单次测试已结束，按AGENTS次数边界请求新对照授权。
+
+资料补正：官方最新V2接口明确V1.5-8及以后max_joint_spd原始值单位0.01rad/s，之前SDK0.6.2旧注释按0.001换算导致joint-small-limits01.json中的max_speed_rad_s=0.3仅为旧解码结果。当前S-V1.8-2、raw=300应按新说明为3rad/s；没有更改该参数，运动入口只使用限位，不使用此换算派生速度。官方Q&A另提示未配置夹爪行程可导致全零反馈，但现有夹爪行程曾读100mm，不能据此确认其为本机原因或自动修改行程。来源：https://github.com/agilexrobotics/piper_sdk/blob/0.6.2/asserts/Q%26A.MD 、https://github.com/agilexrobotics/piper_sdk/blob/master/assets/V2/INTERFACE_V2.MD 。无产品代码修改/构建，校零必要性和运动故障根因仍未证实。checkpoint=WAIT_MODE_STABLE_SINGLE_TARGET_COMPARISON_AUTHORIZATION。
+
+
+### 2026-11-13 用户重设六关节零点后，SDK低速J6小幅往返验证通过
+
+用户明确报告按教程摆好机械零位后重新设置六关节零点，并要求再次通过Piper_interface低速运动。新鲜被动读取稳定角度[0,0,0,0,0,0]，CAN模式1、六关节使能true、无故障，can0 UP/ERROR-ACTIVE/1Mbps；当前boot_id仍d8cba4f7-4dc8-4d25-9377-54ec78eb7d21，但USB曾重新枚举，ifindex10。不是只做运动回零，不能沿用校准前关节目标或假定旧运动学对应已验证。
+
+新授权test03：先被动确认CAN/MOVE J模式已稳定，随后原standalone入口单次[0,0,0,0,0,3]、5%、容差0.3度，12秒监测。底层SDK0.6.2 C_PiperInterface_V2，MotionCtrl_2(1,1,5,0)，JointCtrl(0,0,0,0,0,3000)。joints-xtx3ls4u.jsonl：1 COMMAND_ATTEMPTED、22 AT_TARGET；J6从0到2.931度，其他关节0，状态/故障码0，保持约10秒。独立原始CAN0x2a7记录42次值变化，峰值2.948、最后2.931度；0x2a1运动状态0→1→0。该次用户没有确认正向实物观察，而是要求“重新进行尝试”。
+
+据用户新要求，先再次读取J6=2.931度，再明确宣布test04为5%速度回0度、幅度约3度。原入口单次JointCtrl(0,0,0,0,0,0)，同模式设置，不动夹爪、不改零点、不发送下一段。用户明确回复“看到了反向转动”。joints-3g8fandw.jsonl到位状态及最终角度记录在joint-small-test04-runtime.jsonl，独立raw在joint-small-test04-can.json；末次所有角度误差均小于0.3度，断言通过。test03/04均退出监测timeout124且原程序EXITED，不将进程退出当物理停止。每次唯一持久receipt ~/.local/state/piper-standalone/joint-small-test-20261113-03/04.json，local request/execution/runtime/can证据保留。
+
+原始监听器未捕获本地主机的0x151/155/156/157回显（control_frames为空），因此不声称已完成实际TX逐帧核验；SDK调用记录、设备新鲜角度/运动状态变化和test04现场观察共同支持当前小幅关节控制通过。本次仍是原单次SDK入口，未改成周期发送；校准和起始模式等条件同时改变，不能单独归因于校零或模式时序，也不能据此声称必须周期发送。原夹爪仍0mm/未使能，夹爪开合和瓶子抓取未验收。
+
+用户询问具体接口：Go2侧/home/unitree/piper-standalone-20261111/piper.sh→standalone/piper_control.py，C_PiperInterface_V2通过SocketCAN；反馈GetArmJointMsgs/GetArmStatus，由现有被动CAN解析路径更新。本次SDK目标单位0.001度，3度=3000；模式参数5是百分比，非5度/秒。无产品代码修改、无部署或构建。checkpoint=JOINT_SMALL_MOTION_VERIFIED_AFTER_USER_ZERO_CALIBRATION。
+
+
+### 2026-11-13 六关节校准后夹爪复测实际张开并保持，10mm目标尚有反馈偏差
+
+用户明确要求“那么再进行夹爪尝试”。先被动确认CAN模式1、六关节角度全0/使能true/无故障，夹爪0mm/未使能；保留原入口与独立诊断窗口，沿原standalone只发送一次10mm/0.2N·m、观察约10秒，不清错/校零/六关节动作。底层GripperCtrl(10000,200,0x01,0x00)。唯一receipt ~/.local/state/piper-standalone/gripper-small-test-20261113-03.json；原日志gripper-uq7fq9de.jsonl，本地open10-retest03-request/execution/runtime/can/preflight文件已保存。
+
+用户现场确认“张开约1cm并保持”。原始0x2a8从0逐步增大，最终8.3mm，状态码0x40（使能），六关节始终全0。请求10mm与最终8.3mm差1.7mm，超过原入口±1mm判据，因此不能把这次写成精确10mm到位；最终仍WAIT_TARGET。实际开爪与空载保持已有用户观察和新鲜反馈双证据，夹爪已不再是此前全零不使能的状态。未据反馈力矩推断瓶子夹持力，未自动增加力矩、重发、闭合或测试全开口。
+
+行程反馈0x47e=6464070000000000（原始记录保留，当前最大行程100mm）；相比早期助力等级字段变化，但发生在用户外部操作期间，不能归因或自行更改。监听仍无本机控制报文回显，不把control_frames空列表解释为控制未发送。监测12秒timeout124/EXITED，仅退出软件，不自动失能或取消目标；夹爪保持使能。前后校准及模式/设备操作同时变化，不将恢复动作单独归因于校零。
+
+当前确认C_PiperInterface_V2既可执行局部J6往返，也可使夹爪张开并空载保持；闭合、瓶子所需开口、负载保持和抓取路径尚未验收。无产品代码修改/部署/构建。checkpoint=GRIPPER_OPEN_AND_HOLD_OBSERVED_TARGET_ERROR_REMAINS。
+
+
+### 2026-11-13 夹爪空载闭合验证通过，用户确认合拢并保持
+
+用户要求“验证闭合”。原inspect确认当前8.3mm/使能true、CAN模式1、六关节0度/使能true/无故障后，宣布空载0mm/0.2N·m单次目标并提醒手和物体离开夹指。沿原standalone入口GripperCtrl(0,200,0x01,0x00)，不校零/清错/加力/六关节动作，监测12秒（约10秒目标反馈）。独立receipt ~/.local/state/piper-standalone/gripper-close-test-20261113-01.json，原日志gripper-zhu4e2x5.jsonl，本地close00-test01-request/execution/runtime/can/preflight均已保存。
+
+日志1 COMMAND_ATTEMPTED、22 AT_TARGET，反馈从8.3mm降至0.9mm并保持，末次反馈力矩-0.207N·m、使能true、状态码0x40，六关节始终0度，arm_status/err_code0。原始0x2a8宽度变化一致。用户明确回复“已合拢并保持”。因此空载闭合及短时保持有现场与反馈双证据；0.9mm满足现有±1mm到位容差，不把它写成精确零位或物理间隙0.9mm，也不据此自行再次校零。
+
+命令只发一次、无自动再开爪/重发；timeout124且EXITED仅代表监测结束，夹爪仍使能并保留目标。无源码修改/部署/构建。当前小开口与空载闭合均有实物观察，但64mm瓶子所需开口、负载夹持、重新置零后的模型/TCP对应与抓取路径未验证。checkpoint=GRIPPER_EMPTY_OPEN_CLOSE_HOLD_OBSERVED。
+
+
+### 2026-11-14 下一阶段瓶宽开口验证：CAN当前关闭，未发送目标
+
+用户要求“进行下一部分验证”。承接空载小开口/闭合成功，明确说明下一步计划一次75mm/0.2N·m空载开爪，以核对能否容纳约64mm瓶身；不夹瓶或移动六关节，提醒空出夹指运动范围。本轮核对分支go2-cooperative-task-layer/HEAD323d5c5及现有改动，原standalone三文件hash未变。SSH发现新boot_id=1ae23188-abe9-4b8e-8b3c-f53995340f84；can0 ifindex10 DOWN/STOPPED、无bitrate、RX/TX0，现无已知Piper动作进程。原inspect约3秒仅WAIT_IO，command_attempted=false，证据open75-20261114-preflight01.jsonl（远端inspect-ikvonw_d.jsonl）。
+
+piper-boot服务active/exited，当前boot日志曾READY，但该历史服务状态不能证明当前重连接口已UP。sudo -n -l提示需要密码，无法自主完成特权接口配置；不是自动审批拒绝。需用户Go2本地终端逐步设置can0 1Mbps、up并查看状态，如busy则先查看当前状态而非强制down。尚未取得当前姿态/开口或新鲜行程，未发送任何运动或夹爪命令，不沿用前日状态当实测。75mm目标还须由原入口核对设备实时行程，配置恢复后在现有授权范围继续该次测试。无代码修改/构建/部署，checkpoint=WAIT_CAN_UP_FOR_BOTTLE_WIDTH_OPEN_TEST。
+
+
+### 2026-11-14 75mm空载开口未到位；按用户要求只读确认六关节均为零
+
+用户恢复CAN后核实can0 UP/1Mbps/ERROR-ACTIVE，原inspect新鲜反馈六关节全0/使能true/无故障，夹爪0mm/使能true。沿原standalone入口只发送一次75mm/0.2N·m目标（GripperCtrl(75000,200,1,0)），通过原设备行程检查，不发六关节动作。原日志gripper-9lk8l2tz.jsonl，本地open75-20261114-test01-request/execution/runtime及preflight02已保存；remote持久receipt ~/.local/state/piper-standalone/gripper-open75-20261114-01.json。运行1 COMMAND_ATTEMPTED、22 WAIT_TARGET，监测内开口0→12.8mm，反馈扭矩约0.2N·m，六关节始终全0。用户反馈“张开了，但宽度不足或无法判断”。监测12秒timeout124/EXITED，仅结束读取，目标未取消；没有自动加力/重发/关闭。
+
+后续仅查询夹爪参数并读取2秒（400帧0x2a8），得到开口27.2mm、状态0x40、故障低6位0、0x47e=6464070000000000即当前行程100mm。证据open75-20261114-diagnosis01.json。说明12.8mm是原观测窗口内结果，不能认定此后不再移动或把12秒退出当停止；力矩限制/阻力仅为假设，未确诊。用户目视确认没有异物，并要求先查看各关节是否回零。
+
+按最新指示只运行原inspect约3秒，5个完整新鲜快照均J1..J6=[0,0,0,0,0,0]度，六关节使能true、ctrl_mode1、arm_status0、err_code0；当前夹爪27.2mm/使能true，末次反馈扭矩0.22N·m。证据joint-zero-read-20261114-01.jsonl（远端inspect-bnm8270e.jsonl）。这确认当前反馈相对于用户重设零点均为0，未发回零或再次校准，也不独立证明物理机械零位准确。75mm大开口仍未达到；不能据27.2mm宣称能容纳64mm瓶身，原目标可能继续执行。无产品源码修改/部署/构建，文档diff检查通过。checkpoint=JOINTS_ZERO_CONFIRMED_WIDE_OPEN_NOT_REACHED。
+
+
+### 2026-11-14 用户要求75mm复测，但USB重连后CAN再次未启用
+
+用户要求“重新尝试”，已明确沿用75mm/0.2N·m一次开爪，不加力。实际仅执行原inspect约3秒，全部WAIT_IO且command_attempted=false，证据open75-20261114-retest02-preflight.jsonl（远端inspect-vbf1kgdf.jsonl）。can0 ifindex由10变11，当前DOWN/STOPPED、无bitrate、RX/TX0；boot_id仍1ae23188-abe9-4b8e-8b3c-f53995340f84。内核记录11:32:02 USB device6断开、11:34:38同序列0046002F5246570520323934以device7重新连接。sudo -n -l需要密码。
+
+未发送本次夹爪目标、使能或六关节动作；没有把之前27.2mm当作当前实测。已询问此次断开是否主动拔插/换接，以区分操作和异常掉线；恢复接口需用户本地sudo逐步配置1Mbps/up并检查状态，不能把恢复通信当大开口通过。本次单次复测授权尚未消耗，接口恢复后继续。无代码修改、构建或部署。checkpoint=WAIT_CAN_UP_FOR_AUTHORIZED_OPEN75_RETEST。
+
+
+### 2026-11-14 恢复CAN后75mm/0.2N·m复测未达目标，随后SSH不可用
+
+用户说“继续”，can0 ifindex11已UP/1Mbps/ERROR-ACTIVE；新鲜inspect六关节均0度/使能true、CAN模式1、无故障，夹爪变为0mm/未使能（与断线前27.2mm/使能true不同，外部操作细节未知）。按前轮未执行的复测授权，原standalone入口只发送一次75mm/0.2N·m目标，不改零点/力矩/六关节。唯一receipt ~/.local/state/piper-standalone/gripper-open75-20261114-02.json；原日志gripper-xo7exz5u.jsonl，本地open75-20261114-test02-request/execution/runtime及retest02-preflight-restored已保存。
+
+日志1 COMMAND_ATTEMPTED、22 WAIT_TARGET；反馈0→11.7mm，整个约10秒观察窗口随后保持11.7mm，末次反馈扭矩0.208N·m、使能true，六关节仍0，arm_status/err_code0，无SDK错误。timeout124/EXITED只结束监测，目标未被取消，未自动重发。已询问本次实物开口观察，尚待回答；前次用户未见异物不能当当前完整验收。两次同参数仅开小段、反馈力矩接近请求限制，低力矩不足以克服阻力是待验证假设，不是已确诊根因，未据此自行加力。
+
+随后只读inspect约3秒返回日志路径inspect-elmylmvz.jsonl；取回该文件时SSH exit255，一次只读重试仍报Connection timed out during banner exchange / UNKNOWN port65535。本地没有取得该后续文件内容，不能报告后续开口或是否仍保持；当前状态未知。没有重启服务、改网络、使能、校零或自动重放。本次复测命令已执行，重连后不能重复使用它的单次授权。先前USB断开是否主动拔插也未获回复。无代码修改/构建/部署，checkpoint=OPEN75_RETEST_NOT_REACHED_SSH_UNAVAILABLE。
+
+
+### 2026-11-14 第三次75mm开爪仍不足；按用户转向要求J6测试反馈到位
+
+用户要求“再次尝试”。SSH已恢复，can0 ifindex12 UP/1Mbps/ERROR-ACTIVE，无已知并发控制进程；原inspect新鲜角度全0、使能true、无故障，夹爪9.5mm/使能true。发送一次相同75mm/0.2N·m目标，唯一receipt ~/.local/state/piper-standalone/gripper-open75-20261114-03.json，日志gripper-i9ywm32s.jsonl。本地open75-20261114-test03-request/execution/runtime/preflight保留。1 COMMAND_ATTEMPTED、22 WAIT_TARGET；夹爪9.5→10.1mm、反馈扭矩约0.208N·m，六关节未动，无SDK报错。用户回复“没有动作，先尝试控制机械臂关节吧”，将此视为未观察到明显开爪，不抹掉反馈0.6mm变化。
+
+按用户新要求先做关节验证，明确宣布J6+3度、速度5%、其余保持、不再发送夹爪命令。新inspect-fgi8qyaq.jsonl核对关节全0、夹爪10.1mm；随后原入口单次目标[0,0,0,0,0,3]、容差0.3度，唯一receipt ~/.local/state/piper-standalone/joint-small-test-20261114-01.json，日志joints-5jg224yk.jsonl，本地joint-small-20261114-test01-request/execution/runtime/preflight保留。1 COMMAND_ATTEMPTED、22 AT_TARGET；J6到3.032度（误差0.032度），其他五轴0，保持约10秒，六轴使能true、arm_status/err_code0，夹爪仍10.1mm。用户本次关节实物观察尚待回复，不沿用前日观察当此次证明。
+
+两次命令均监测12秒退出（timeout124且EXITED），不自动回程、重发、校零/清错或加力；当前J6目标3度保留，夹爪先前75mm目标也未取消。关节新鲜反馈支持当前关节控制链路可执行，夹爪大开口仍未通过，不将所有问题归于CAN链路，也不未经证实认定机械卡阻/力矩/零点根因。无产品代码修改/构建/部署。checkpoint=JOINT_FEEDBACK_PASS_GRIPPER_WIDE_OPEN_FAILED_WAIT_VISUAL。
+
+
+### 2026-11-14 用户再次要求关节测试，J6反向返回实物与反馈均确认
+
+用户在J6+3度测试观察询问中回复“再次尝试”。明确说明新的单次动作是5%速度从约3.032度返回0度，其他关节不变、不发夹爪命令。先inspect-493thcmd确认当前J6=3.032度、其他五轴0、夹爪10.1mm、全部使能、无故障，再沿原入口单次全0目标。唯一receipt ~/.local/state/piper-standalone/joint-small-test-20261114-02.json，日志joints-q0y_4nov.jsonl，本地joint-small-20261114-test02-request/execution/runtime/preflight保留。
+
+用户明确“看到了反向转动”。日志1 COMMAND_ATTEMPTED、22 AT_TARGET，最后六关节[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]度，状态和故障码0，夹爪反馈11.0mm。因此当前J6小幅关节控制有反馈与实物观察双证据；不能据此声称全六轴轨迹验收或夹爪故障解决。只发送本次一个关节目标，未自动重复/回程或改零点/力矩。原75mm夹爪目标未取消，软件监测退出不代表驱动停止。无产品代码修改/构建/部署。checkpoint=JOINT_SMALL_RETURN_VERIFIED_GRIPPER_WIDE_OPEN_UNRESOLVED。
+
+
+### 2026-11-14 再次夹爪验证变为未使能全零，等待两轮间操作信息
+
+用户明确要求“再次进行夹爪验证”。宣布仍75mm/0.2N·m单次目标、不加力/校零/六关节动作。原inspect-0ubzk6pd新鲜反馈六关节全0/使能true、CAN模式1、无故障，但夹爪已变为0mm/未使能，区别于上次J6回程末次11mm/使能true；未确认外部期间操作，不能猜测根因。沿原入口执行一次，唯一receipt ~/.local/state/piper-standalone/gripper-open75-20261114-04.json，日志gripper-1lo7i534.jsonl，本地open75-20261114-test04-request/execution/runtime/preflight保存。
+
+日志1 COMMAND_ATTEMPTED、22 WAIT_TARGET，全部夹爪0mm、力矩0、使能false；反馈新鲜完整、六关节均0/使能true、arm_status/err_code0，无SDK异常。用户选择“没有动作或出现异常”，尚未区分完全不动或实际有声音/抖动。12秒监测正常EXITED/timeout124，不发送停止、清错或失能。没有自动加力、再校零或重发。
+
+已说明当前优先排查使能未生效，不能把此前0.2N·m下开口不足的候选解释直接套用。已询问上次成功J6回程到本次间是否断电、拔插、校零或ArmRobotUA夹爪操作，并要求若有异响/抖动补充。本次单次授权已执行完，尚无大开口或抓取通过。无产品代码修改/构建/部署。checkpoint=GRIPPER_ENABLE_NOT_EFFECTIVE_WAIT_INTERVENING_ACTION_DETAILS。
+
+
+### 2026-11-14 按用户要求保持当前开口使能，夹爪仍未使能；用户澄清只设置六轴零点
+
+用户表示进行过零位校准，并要求先使能确保已经使能。已解释SDK夹爪使能必须携带位置/力矩，按新鲜当前0mm开口作为保持目标、0.2N·m，一次GripperCtrl(0,200,1,0)，不沿用75mm开爪目标、不重设零点、不发六关节动作。原inspect-xjoy5_qg确认0mm/未使能、六关节全0/已使能/无故障。原standalone入口日志gripper-qcv8aqfo.jsonl，唯一receipt ~/.local/state/piper-standalone/gripper-enable-hold-20261114-01.json，本地gripper-enable-hold-20261114-01-request/execution/runtime/preflight保存。
+
+结果1 COMMAND_ATTEMPTED、22 WAIT_TARGET，所有后续新鲜反馈夹爪仍0mm/力矩0/使能false，六关节均0/使能true、arm_status/err_code0。没有SDK报错，不把命令返回当使能成功。随后只接收2秒，0x2a8共400帧、最新0000000000000000；0x2a1共401帧、最新0100010000000000，与SDK状态一致，不是单纯界面缓存。证据gripper-enable-hold-20261114-01-raw-check.json。未清错、加力、重复使能或开爪。
+
+用户澄清本次校准仅“六个关节的设置零点”，不是夹爪设置零点；不能把本次问题直接归因于夹爪校零操作，也不建议继续重复六轴校零。当前六轴控制已曾现场验证，但夹爪使能尚未生效；全零主控反馈不独立证明夹爪驱动在线或供电正常，下一步应核对末端驱动状态/连接及配置，不能以默认全零无故障作为硬件健康结论。此次目标和监测结束均不作为夹爪通过，未继续抓取。无产品代码修改/构建/部署。checkpoint=GRIPPER_ENABLE_HOLD_FAILED_RAW_CONFIRMED。
+
+
+### 2026-11-14 用户要求重新开合验证，当前CAN再次DOWN，尚未发送动作
+
+用户明确要求“重新进行夹爪开合验证”。已宣布一轮小幅空载开合：10mm/0.2N·m单次开爪，确认响应后再0mm闭合；使能未生效时停在该步记录，不连发、不动六关节。原inspect-ka20u617仅WAIT_IO、command_attempted=false，证据gripper-cycle-20261114-01-preflight.jsonl。can0已是ifindex14（此前12），当前DOWN/STOPPED、无bitrate；boot_id仍1ae23188-abe9-4b8e-8b3c-f53995340f84，sudo -n -l需要密码。接口已经重新创建，但本轮未获取内核事件，不确定是主动拔插还是异常。没有发送任何夹爪或六关节动作、使能或校零。需用户Go2本地sudo恢复1Mbps/UP，保持连接后继续已授权开合，无需重复授权。无代码修改/构建/部署。checkpoint=WAIT_CAN_UP_FOR_AUTHORIZED_GRIPPER_SMALL_CYCLE。
+
+
+### 2026-11-14 用户指定20mm后改70mm，两次0.2N·m均未到位；准备单变量力矩对照
+
+用户中断仅含只读inspect的检查，明确通信已恢复无需单独验证、当前0mm、要求直接张开20mm；遵从该要求不再额外预检通信，保留原入口自带身份/健康/行程检查。单次20mm/0.2N·m命令，receipt gripper-open20-20261114-01.json、原日志gripper-3myqats5.jsonl；1 COMMAND_ATTEMPTED、22 WAIT_TARGET，最后10.0mm/使能true/力矩约0.212N·m，六关节均0，无故障。所有证据open20-20261114-test01-*保留。原10mm开后闭合计划由用户新指令替代，未执行闭合。
+
+用户回复“张开到70mm”，先澄清是新目标还是实测，用户明确“要求下一步把目标改为70mm”。于是只发送一次70mm/0.2N·m，不加力/校零/六关节动作。receipt gripper-open70-20261114-01.json，日志gripper-d185e890.jsonl；1 COMMAND_ATTEMPTED、22 WAIT_TARGET，全窗口10.0mm，末次力矩0.202N·m/使能true，无故障，六关节全0。用户确认“仍只有约1cm或明显不足”。不能把70mm当用户已观察到的开口。证据open70-20261114-test01-*。两次监测均timeout124/EXITED，不停止或取消保留目标。
+
+连续增大位置目标未改善，启用状态下力矩反馈接近0.2N·m，低力矩不足以克服阻力是候选原因，尚不能排除机械/驱动问题。下一项拟只将力矩限制改0.5N·m，目标保持70mm，空载一次、观察约10秒；不继续加力、重复、校零、清错或发六关节目标。实际本机SDK0.6.2禁止socket、替身发送离线核对GripperCtrl(70000,500,1,0)编码0x159/0001117001f40100通过，证据open70-effort05-proposal-offline.json；没有向硬件发送该候选指令。提高力矩超出前次单次0.2参数范围，需用户明确授权后才能执行。无产品代码修改/构建/部署。checkpoint=WAIT_AUTHORIZATION_OPEN70_EFFORT05_COMPARISON。
+
+
+### 2026-11-14 用户授权70mm/0.5N·m单变量对照，大开口实际张开并保持
+
+用户明确“允许”一次70mm/0.5N·m空载开爪对照。直接沿原standalone入口执行、保留内置健康/实时行程检查，不再额外通信预检。GripperCtrl(70000,500,1,0)，唯一receipt ~/.local/state/piper-standalone/gripper-open70-effort05-20261114-01.json；原日志gripper-g6t9hjt9.jsonl，本地open70-effort05-20261114-test01-request/execution/runtime保留。1 COMMAND_ATTEMPTED、22 WAIT_TARGET，开口10→68mm并保持约10秒，末次反馈力矩0.523N·m、使能true、六关节始终0、arm_status/err_code0。用户确认“张开到约7cm并保持”，未报告异常。
+
+大幅开爪与保持有现场及反馈双证据，但70mm目标与68mm反馈差2mm，超过原±1mm判据，不能改写成精确到位或修改容差掩盖。与前次同70mm/0.2N·m停在10mm相比，结果支持当前0.2N·m限制不足以克服开爪阻力；这不是机构健康/零点精度完整验收，也不能归纳解释之前夹爪未使能全零的另一状态。仅把力矩限制这一变量从0.2改0.5，不再继续加力或自动重发/闭合。
+
+观察到的68mm与约64mm瓶宽仅差4mm总余量，实际夹指净距、瓶身定位误差/接近路径仍需核实。此次0.5N·m是空载开爪测试，不当作矿泉水瓶闭合夹持参数；负载保持、抬升、TCP与六关节零点重设后的运动学对应仍未验证。timeout124/EXITED仅停止监测，夹爪仍使能保留目标，无自动失能/回程。无产品源码修改/构建/部署，文档diff检查通过。checkpoint=WIDE_GRIPPER_OPEN_OBSERVED_AT_EFFORT05_TARGET_ERROR_REMAINS。
+
+
+### 2026-11-14 用户确认准备流程并切换蓝色积木，更新视觉及离线端点可达性
+
+用户现场总结：ArmRobotUX中完成机械臂零位校准和使能、单独使能夹爪、设置合适力矩后可控制。将其记录为本次现场准备流程，不推广成每次启动均需重新设零，也不把此前所有异常归于单一根因。本轮未发送校零、使能、夹爪或六关节命令。原inspect-xvgfaccp及本轮相机配对被动反馈均显示六轴0度且已使能、夹爪68mm且已使能，arm_status/err_code0。
+
+用户将目标改为实心蓝色长方体积木，约高10cm、宽6cm、厚4cm，先垫高10cm，再额外垫高8cm，累计约18cm；不是地面直接抓取验收。使用既有handeye.capture.Reader/paired_feedback被动接收CAN，RealSense435序列号151222077264、640x480/15fps RGB和深度，分别抓取3帧。证据build/piper-bottle-ground-20261113/blue-block-rgbd01与blue-block-rgbd02，各7个原始文件SHA256核对通过；首次scp目录点路径被拒后改显式文件名传输，未重新采样或发动作。初次积木下部裁切，额外垫高后的第二组完整看到积木轮廓和支撑物。
+
+blue-block-rgbd02-geometry.json用手选正面四角、内部对齐深度平面、原manual04外参做候选计算：可见正面中心约基座[0.6034,0.0975,-0.0919]m，正面宽约4.24cm、高约11.72cm；三帧内部平面残差约0.36mm不等于绝对精度。宽度更接近用户4cm短边，隐藏深度暂保留4/6cm两个假设，未把任一中心作为执行目标；已询问正面尺寸方向和实际法兰端面至夹指接触中心沿伸出方向距离。原瓶子圆柱中心算法不再适用。
+
+blue-block-rgbd02-candidate-ik.json仅离线候选：沿用官方候选URDF和未实测旧TCP135mm，夹爪横向沿可见正面宽度方向，向下30/45/60度，分别检查退后80mm预抓端点及抓取端点，两种隐藏深度共12项；30/45度的8项端点均找到限位内数值解，60度预抓2项有解、抓取2项位置误差7.78/15.27mm不满足1mm/1度数值判据。不表示直线/关节插补路径或自碰撞、Go2腿/护架/支撑物碰撞已验证；实际TCP、校零后物理FK及外参绝对精度仍需核实，不发布这些关节角到硬件。当前68mm开口对4cm夹取方向余量优于6cm，但实物净距、闭合力矩、带载保持和抬升仍未验证。0.5N·m仅有既往空载开爪成功证据。
+
+本轮没有产品源码修改、构建、部署或真机运动；checkpoint更新为BLUE_BLOCK_SCENE_LOCALIZED_WAIT_TCP_AND_FACE_DIMENSIONS。
+
+
+### 2026-11-14 用户确认积木正面6cm、前后4cm，尺寸差异待核实
+
+用户明确正对相机宽约6cm、前后深约4cm，撤销之前根据视觉宽4.24cm猜测正面为4cm短边的解释。此前端点IK的夹指闭合方向沿可见正面宽度，按用户尺寸实际为6cm；不能将原IK称为夹4cm方向，换夹取方向需重算。原geometry及candidate-ik保留历史数值，新增execution_eligible=false和尺寸纠正说明。当前最近68mm反馈与60mm正面宽仅差8mm总余量，尚未测实物净开口。
+
+本轮仅离线核对已有blue-block-rgbd02三帧：按原始深度内参反投影、depth_to_color列优先旋转/平移，再投影RGB内部区域，每帧约8060个点。原始点变换至彩色坐标Z中位约0.18663m，与SDK对齐深度中位0.186m差约0.67mm，不能解释4.24cm与6cm约29%的尺寸差。证据blue-block-rgbd02-depth-crosscheck.json；此一致性不证明近距离深度绝对准确，也不证明用户尺寸有误，未按比例强行缩放或更改外参。需尺量复核正面宽高，并补充实际法兰至夹指接触中心TCP。尚无新运动/硬件采样/参数修改，未构建或部署；文档diff检查通过。
+
+
+### 2026-11-14 用户尺量修正积木正面4.2cm、厚2cm，更新中心候选
+
+用户重新测量明确正面约4.2cm、厚约2cm，替代此前6/4cm数据。正面宽与已存三帧深度估计4.24cm相符，前轮尺寸矛盾按此次实测得到解释；这不独立验证外参绝对精度或全部深度范围。本轮未修改深度比例、相机内参或外参。
+
+沿已拟合可见正面内法向偏移厚度一半10mm，得到候选积木中心基座坐标约[0.6133,0.0971,-0.0932]m，水平半径约0.6209m；三帧结果保存build/piper-bottle-ground-20261113/blue-block-rgbd02-corrected-dimensions.json。沿可见正面宽度方向闭合对应实际42mm；最近68mm开口反馈给出总名义余量26mm、居中每侧13mm，不等于实测净开口。此前按隐藏深度4/6cm算的IK只保留历史结果，不直接用作本次2cm厚度目标。
+
+实际法兰端面至夹指接触中心TCP仍未收到，不能直接使用旧135mm工具长度。后续需按测量TCP重算接近点和整条路径，并核实物理标定、碰撞及带载夹持。当前高度仅有此前用户约10cm和视觉约11.7cm估计，未新测。本轮仅更新离线证据和交接，无硬件读取、运动或产品源码修改，无构建/部署；文档diff检查通过。checkpoint=BLUE_BLOCK_DIMENSIONS_REMEASURED_CENTER_UPDATED_WAIT_TCP。
+
+
+### 2026-11-14 用户暂定TCP9cm，完成离线接近采样与零位展开诊断
+
+用户表示法兰到夹指接触区域中心距离“暂且算作9cm”。接受为本轮显式暂定参数，不称为实测TCP，不改永久外参/产品配置，也不继续要求先精确测TCP才做离线工作。保持积木正面42mm、厚20mm及最近配对图像，采用局部+Z轴向90mm工具偏移。
+
+证据blue-block-tcp90-candidate-path.json：沿可见正面宽度闭合，相对积木表面向下0/15/30/45/60度，分别从夹持中心沿接近轴后退80mm至中心，每10mm一个点，共45个IK采样；0/15/30/45度各9点均满足位置1mm/旋转1度数值判据，60度最终点约15.02mm/3.02度不通过。30度/45度最大相邻关节变化分别约7.57/5.31度；采样有解不证明连续轨迹、奇异性、动力学或碰撞通过。
+
+blue-block-tcp90-zero-to-pregrasp-diagnostics.json针对30/45度，各201点假设同步关节线性插补，从最近记录全0角至预抓端点，仅检查FK轨迹范围。45度候选预抓TCP基座[0.564612,0.100087,-0.029761]m，法兰[0.509862,0.103434,0.041592]m；候选关节[13.232,145.777,-103.033,-33.055,18.762,43.054]度。J2需约146度展开，不能当作已验证J6±3度小动作的简单重复，也不直接一次下发。假设展开中TCP最高约0.294m、最低-0.0298m，腕部/法兰原点最低约0.0416m；原点不是连杆/夹爪包络，且此插补不保证等同SDK真实轨迹。30度候选法兰终点高度约0.0102m，45度较高但这不是安全通过判据。
+
+还缺本机机械臂、Go2前腿/护架及目标支撑物的实际相对空间信息，需现场侧面视图/空间核对后准备分段非接触验证；未批准或执行本次完整路径。9cm误差会沿工具轴直接影响夹持位置，暂定值的第一步应为非接触几何核对而非直接闭合抓取。本轮无硬件采样或运动、无产品代码修改/构建/部署，文档diff检查通过。checkpoint=BLUE_BLOCK_TCP90_PROVISIONAL_IK_SAMPLED_WAIT_CLEARANCE_REVIEW。
+
+
+### 2026-11-14 用户授权有人看管实际尝试，5段低速展开已到预抓位
+
+用户明确“不要过于严谨和保守。如果有可用姿态就进行尝试，有人看管”，因此不再等待侧面照片，采用既有45度方案、暂定TCP90mm、5%速度现场分段尝试。新鲜原入口被动inspect-sq3g7w0j确认六轴全0、已使能、夹爪68mm已使能、故障0。按同一预抓关节向量比例，先J2=10度，再40/80/120度，最后完整预抓J2约145.777度；每段沿standalone piper.sh joints单次发送，入口保留实时设备限位/健康检查与锁，不重发、不自动使能、不校零/清错、不发夹爪命令。用户逐段明确前四段平稳且无干涉、可以继续。
+
+唯一远端receipt ~/.local/state/piper-standalone/blue-block-approach-20261114-01.json至05.json；日志依次joints-_gkm_vap.jsonl、joints-geb36vq5.jsonl、joints-kh2kagwd.jsonl、joints-drwvxe9w.jsonl、joints-l5ojfqgv.jsonl。本地build/piper-bottle-ground-20261113/blue-block-approach01至05的request/execution/runtime完整保存，summary汇总。每段1 COMMAND_ATTEMPTED，末段28 AT_TARGET；五段末次最大关节误差均<0.3度。最后角度[13.232,145.713,-103.057,-33.089,18.774,43.127]度，SDK法兰[510.081,103.515,42.361]mm，夹爪68mm/已使能/力矩反馈约0.518N·m，arm_status/err_code0。第一二段URDF对SDK数值位置差0.076/0.082mm，只是数值一致性不代表物理标定通过。
+
+预抓位置为沿接近轴距候选积木中心80mm，尚未执行最后接近、闭合或抬升。第五段实物对准与无接触观察待回复，正在额外抓取有限3帧配对RGBD核对。监测均timeout124并EXITED，只结束日志监测，不停止、取消目标或失能，当前保持预抓姿态。无产品代码修改/构建/部署，证据/交接按追加更新。
+
+
+### 2026-11-14 预抓实际碰倒积木，已回退；用户最终指定更水平夹取
+
+用户第五段实物观察：夹爪把积木碰倒，已重新立起，朝向不适合。更正上一节仅反馈到位：本次预抓物理验证失败，不能报告无接触成功。立即停止原后续接近；保持开爪，以5%发送一次上一停靠点关节目标[10.892,120,-84.814,-27.209,15.444,35.441]附近（精确目标见retreat01-request），无自动闭合/回零。blue-block-retreat01-request/execution/runtime保存；末次[10.859,119.963,-84.804,-27.23,15.477,35.448]度，SDK法兰[461.028,77.13,178.689]mm，夹爪68.4mm已使能，无故障，反馈到位。用户未明确单独回复回退观察，不将其写为实物确认。
+
+预抓后与回退后各有限3帧RGBD分别blue-block-pregrasp-rgbd01、blue-block-after-retreat-rgbd01，各7源文件hash验证通过。用户重立后积木在画面位置明显改变，旧中心不再使用。9cm暂定TCP的预抓预测投影与可见夹指区域不符，证据blue-block-pregrasp-tcp-projection-diagnostic.json；黑色夹指部分深度缺失，不据此定量标定TCP或直接改外参。实际TCP、校零后外参对应、目标变化等根因尚未分离，不认为“有逆解/反馈到位”证明物理坐标准确。
+
+用户先回答需更竖直，随后明确纠正为“更接近水平方向夹取”，最新纠正优先。竖直方案仅离线计算blue-block-upright-at-retreat-plan.json，未发送任何竖直调整；最终端点还有5.44mm/3.79度残差，保留为未采用证据。重新求水平姿态，目标法兰保持回退位置[0.460996,0.077075,0.178601]m，工具伸出轴落在基座XY平面、约向前偏左9.49度。候选关节[9.492,122.380,-72.276,0,-45.108,0]度，数值位置/朝向残差均小于判据。证据blue-block-horizontal-at-retreat-plan.json；对9/13.5/18/25cm假设轴向长度做关节插补尖端高度敏感性检查，不当作机构碰撞认证。按用户已授权有人看管试验，宣布分两半、5%调整方向，先执行horizontal01；不向积木下探、不发夹爪命令，等待本段反馈与用户观察。
+
+
+### 2026-11-14 半程水平调整后按现场观察对正，等待前后偏差方向
+
+horizontal01第一半段反馈到位，末次关节[10.181,121.156,-78.548,-13.628,-14.819,17.756]度、SDK法兰[466.24,89.309,173.338]mm、夹爪68.4mm已使能、故障0。用户说方向改善但位置偏左、容易碰倒，故原水平调整第二半段未执行。blue-block-half-horizontal-rgbd01三帧/7源文件hash核对通过，新图确认夹指空隙在积木左侧、画面右夹指靠近积木左上缘；不能直接下降。回退后目标重定位blue-block-after-retreat-geometry.json给出候选中心[0.6165,0.0336,-0.0936]m，宽约41.75mm，高约117.5mm，相比原候选横向变动约64mm；位置改变来自用户重立及碰撞后现场状态，不自动修正外参。
+
+在已有看管试验授权内明确宣布固定朝向先抬20mm、再沿基座-Y（画面右）20mm，5%执行，两阶段分别单次原入口命令，第一阶段反馈到位且无故障才发送第二阶段；证据blue-block-lift-right-plan和lift-right01/02-request/execution/runtime。用户确认仍偏左但未接触，随后固定高度/朝向再次右移20mm（right-extra01-plan/request/execution/runtime），用户确认“基本对准，悬空未接触”。两次右移累计约40mm，尚不将视觉对正当作绝对标定校正。
+
+随后明确宣布只下降20mm，保持前后和朝向、开爪；blue-block-lower01-request/execution/runtime，单次命令、21 AT_TARGET，最后关节[4.354,120.301,-76.970,-31.053,-17.188,32.186]度，SDK法兰[466.208,49.416,173.237]mm、RPY[166.144,66.064,178.799]度，夹爪68.4mm已使能，arm_status/err_code0。用户回答“左右对准，但前后位置没对准”，尚未明确本次是否发生接触，不能把该选项解读成无接触实证。现在保持位置/开口，已询问积木相对夹指更远需前伸，还是夹指伸过需回收，以及约差几厘米；不猜测方向继续推进。
+
+本节所有动作原入口各只发一次，5%速度，未发夹爪闭合/增力/校零或Go2底盘动作。timeout124/EXITED只结束监测，不取消保持目标。无产品代码修改/构建/部署，文档diff检查通过。checkpoint=BLUE_BLOCK_LATERAL_ALIGNMENT_CONFIRMED_WAIT_FORE_AFT_DIRECTION。
+
+
+### 2026-11-14 用户指导前伸和下调后允许轻夹，0.2N·m闭合仍不足
+
+用户明确前后需要“向前伸”。新鲜inspect-9afm7dcl确认此前关节/68.4mm开口保持、无故障后，保持高度和朝向，沿基座+X10mm、5%单次forward01，反馈到位，SDK法兰约[476.005,49.782,173.260]mm。用户随后两次分别要求“向下一点”“还需要下降一点”，分别执行lower02与lower03每次-Z10mm，5%，保持前后/朝向/开爪，均单次且反馈到位。末次关节[4.296,124.232,-78.909,-28.320,-19.013,29.113]度，SDK法兰[476.249,49.884,153.501]mm，RPY[166.373,66.138,179.126]度。用户最后明确“位置合适，可以轻夹”。
+
+按用户许可保持六关节，单次夹爪目标36mm、限制0.2N·m，观察约10秒；receipt blue-block-grasp-light-20261114-01.json，原日志及request/execution/runtime保存在blue-block-grasp-light01-*。1 COMMAND_ATTEMPTED、22 WAIT_TARGET；反馈68.4→67.9mm，末次扭矩-0.216N·m（闭合方向），夹爪使能true、六关节不变、arm_status/err_code0。尚未形成明显闭合，更不能当夹持成功；已询问现场两指是否贴住、未合上或推动积木，等待答复，不抬升、不自动加力。前伸及下调证据blue-block-forward01-preflight/request/execution/runtime、blue-block-lower02/03-request/execution/runtime完整保留。
+
+所有原入口命令各只发送一次，监测timeout124/EXITED不取消保持目标；当前夹爪保留36mm/0.2N·m闭合目标。无产品代码修改/构建/部署，文档diff检查通过。checkpoint=BLUE_BLOCK_ALIGNED_LIGHT_CLOSE02_INSUFFICIENT_WAIT_VISUAL。
+
+
+### 2026-11-14 有人看管、人工微调后的积木夹持及20mm抬升成功
+
+用户确认0.2N·m下“没有合上”。在本轮已授权有人看管抓取、使用合适力矩范围内，明确宣布目标仍36mm、力矩改0.5N·m，仅一次闭合、不动六轴/不立即抬升。blue-block-grasp-effort05-01-request/execution/runtime保存；1 COMMAND_ATTEMPTED、22 WAIT_TARGET，反馈67.9→52.8mm、末次扭矩-0.523N·m、使能true、故障0。用户确认“两侧已贴住并保持，积木未偏移”。有物体时目标36mm未达到不独立等于夹持失败，仍保留原位置状态WAIT_TARGET，不修改判据或伪造AT_TARGET。
+
+随后在抓取任务范围内宣布保持夹持/朝向，以5%速度沿基座+Z20mm，单次loaded-lift01，receipt blue-block-loaded-lift-20261114-01.json，request/execution/runtime完整保存；1 COMMAND_ATTEMPTED、21 AT_TARGET。SDK法兰由[476.249,49.884,153.501]mm到[476.309,49.859,173.087]mm，即[+0.060,-0.025,+19.586]mm；末次关节[4.296,122.039,-80.152,-34.053,-15.987,35.113]度，夹爪52.8mm保持、扭矩-0.525N·m、使能true、arm_status/err_code0。用户明确“已离开支撑面，悬空稳定保持”，因此本次有人看管、人工指导微调后的积木夹持和小幅抬升有实物与反馈双证据。不是仅用SDK位姿或夹爪误差判定成功。
+
+结果汇总build/piper-bottle-ground-20261113/blue-block-supervised-grasp-result.json，checkpoint=SUPERVISED_BLUE_BLOCK_GRASP_AND_SMALL_LIFT_CONFIRMED。当前保持36mm/0.5N·m夹持目标及抬升后的六关节目标，未追加闭合、放回/松爪、回零或失能。限定结果：物体垫高约18cm，不是直接地面抓取；此前计算预抓碰倒积木，经过现场逐步修正才成功，不能称自主视觉抓取通过。90mmTCP仍暂定，物理外参/校零对应仍待验证；未测试放置、搬运或长时间负载保持。无产品代码修改/构建/部署。正在额外保存一次有限RGBD静止样本作为保持证据，采集不发动作。
+
+保持样本blue-block-grasp-hold-rgbd01已完成：1帧RGB+深度+metadata共3源文件SHA256校验通过，配对被动反馈仍52.8mm开口、使能true、故障0；未发送动作。文档diff检查通过。
+
+
+### 2026-11-14 按用户要求直接释放积木并返回初始六关节零位
+
+用户明确“直接松开积木并回到原位，不用担心积木掉落”。解释并执行先开爪、再5%分段运动回本次抓取前六关节全0姿态，未重新设置任何零点。开爪单次70mm/0.5N·m，blue-block-release01-request/execution/runtime保存，反馈52.8→68.1mm，用户明确“积木已脱离夹指”；目标差1.9mm仍保留WAIT_TARGET，释放成功依据用户实物确认，未修改到位容差。
+
+物体释放后，先向后上方收回到原展开J2=80度停靠点，再40度、10度和全0，共4段5%目标。blue-block-return-plan.json保存候选端点及简化FK高度检查，不声称完整碰撞认证；每段原standalone入口仅发一次，前段新鲜AT_TARGET/无故障后才发送后段。每段独立receipt blue-block-return-20261114-01.json至04.json，request/execution/runtime保存为blue-block-return01至04-*。最终新鲜反馈六关节[0,0,0,0,0,0]度、SDK法兰[56.127,0,213.266]mm、RPY[0,84.999,0]度，夹爪68.1mm仍张开且已使能，六轴均使能，motion_status/arm_status/err_code0。用户本轮要求已完成，不额外闭爪/失能/再抓取。
+
+汇总blue-block-release-return-result.json，checkpoint=RELEASE_CONFIRMED_AND_INITIAL_JOINT_POSE_REACHED。此前成功的人工指导积木夹持/抬升记录继续保留，不因释放覆盖历史，也不宣称自主抓取或TCP标定通过。本轮无产品代码修改/构建/部署，文档diff检查通过。
+
+
+### 2026-11-14 独立自主视觉抓取方案已交接，尚未实施
+
+用户明确要求把视觉与控制接通，源码放VLM_Nav内、先作为独立功能，不接导航，在另一个对话实施；本轮仅交付[执行方案](../superpowers/plans/2026-11-14-piper-standalone-visual-grasp.md)。拟采用蓝色RGB-D检测与成功抓取参考的相对平移修正，固定成功朝向，不把暂定90mm或旧135mm当TCP。方案含真实证据来源、迁入仓库的参考/测试资产、4个功能模块、独立入口、6项实施任务、构建安装与现场验收步骤，以及可粘贴到执行对话的启动说明。未新增产品代码、未构建/部署/启动现场试验。
+
+方案前只读核实机载 `/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python`：Python3.8.10、NumPy1.17.4、SciPy1.3.3、OpenCV4.12.0、pyrealsense2 2.55.1.6486、piper-sdk0.6.2、python-can4.5.0；Rotation没有from_matrix/as_matrix，只有from_dcm/as_dcm，least_squares可用，已写入兼容要求。检查仅导入数学/图像库与读取包版本，未连接CAN或相机。首次shell引号错误在本机解析失败，改用SSH标准输入脚本后成功，无硬件命令。
+
+最近真机状态仍以此前release/return结果为准：用户已确认积木释放，六轴反馈全0，夹爪68.1mm张开并使能；本轮未重新读真机反馈，不能当成当前持续状态保证。文档链接与diff检查完成，等待用户在另一个对话执行计划，不自动提交。
+
+### 2026-11-14 独立蓝色积木视觉抓取已实现，等待最终安装核对
+
+本轮用户明确授权按[独立视觉抓取计划](../superpowers/plans/2026-11-14-piper-standalone-visual-grasp.md)实施源码、测试、构建和运行文档，不自动提交或启动真机。分支仍为go2-cooperative-task-layer，HEAD323d5c52737477962a874ae012db117be5a93f34；保存任务开始时全部已有改动的SHA256，除本任务必要的CMake和文档追加外不覆盖既有工作。
+
+新增 `tools/piper_vision_grasp/` 四模块、`scripts/piper_vision_grasp.sh`、四份配置与必要来源、真实RGB-D fixtures及定向测试。入口提供check/observe/preview/run/diagnostics；`preview --input`只读存档且不连接设备，真实run不接受离线输入。功能不接导航/ROS/DDS/旧Agent，不调用VLM/SAM。采用HSV连通域、完整可见面内部深度拟合及三帧中位数，固定成功夹取朝向做视觉相对平移；不用90/135mm TCP。原manual04外参不变，物理验证仍NOT_PERFORMED。
+
+来源从build/piper-bottle-ground-20261113与候选URDF按hash提取，参考仅使用after-retreat闭合前图像，half-horizontal交叉核对；hold图像仅作抬升后不足证据测试。真实样本约3.48MB；自动检测参考宽44.75mm、高118.23mm，同位置中心差约0.11mm，均非绝对精度。H95..130/S≥160/V≥30由样本验证，原候选阈值纳入过多背景青色。参考关节与源记录逐项核对，FK与同期SDK位置做数值一致性检查。
+
+离线路径发现从展开姿态直接进行朝向插值会选到受J4限位约束的另一分支，保留1mm/1°判据，改为从成功姿态向上建立局部分支，再连接空载关节过渡。规划记录端点、相邻采样和假设插补轨迹；未做物理碰撞认证。运行保留同USB控制锁、固件限位/反馈过滤、5%关节速度和0.5N·m夹爪限制，无自动六轴使能/校零/清错/加力/松爪。run/cycle/stage尝试持久化后才写SDK；重复ID/部分发送不重放。反馈中断或短故障会重新累计稳定时间，恢复后重新定位，目标变化进入WAIT_REPLAN，不继续旧目标。
+
+运行手册：[piper_vision_grasp_runbook.md](piper_vision_grasp_runbook.md)；完整构建命令仅追加主[go2_runbook](go2_runbook.md)。独立构建输出 `build/piper-vision-grasp-20261114/overlay`，源码发现含根包和cooperative_ws/src。首次三包构建成功（27.1s），安装及最终用例数见下一条交付记录。导航默认overlay和launch无须改变，新入口通过相对路径使用自己的安装模块/配置。
+
+开发机原系统Python缺硬件依赖，既有Piper venv缺视觉计算依赖；仅新建build/piper-vision-grasp-20261114/check-venv，复用系统数值库并安装piper-sdk0.6.2/python-can4.5.0/pyrealsense2 2.55.1.6486，用于离线check，不复制给Go2。机载候选解释器与部署目录本轮未SSH核实。未提交、部署、运行ROS/相机/CAN或发送任何运动；本轮不能报告现场自主抓取通过。
+
+### 2026-11-14 独立视觉抓取离线交付完成
+
+最终新增定向pytest **56项通过**，原Piper boot/gripper基线 **66项通过**。新输出内colcon定向ctest **3个包装均通过**，`colcon test-result`显示125条为122个实际pytest用例加3个包装，不是125个新增用例。三包首次完整构建与最终增量构建退出0；仅原有CMake变量/PCL发现提示，无构建错误。Python3.8语法检查、旧SciPy旋转API兼容用例、Bash语法、新文档链接/新增文件空白和git diff --check均通过。
+
+最终安装路径 `build/piper-vision-grasp-20261114/overlay/install/vlm_nav/share/vlm_nav`；从这里运行check→CHECK_OK、离线preview→PREVIEW_READY，CAN发送0，事件记录的模块/config路径均为本次安装。23个运行源码/config/helper及来源文件逐字节与源码一致，证据 `build/piper-vision-grasp-20261114/evidence/installed-source-comparison.json`。安装入口独立查找相对路径，没有修改CoVLM_env、Cooperative_env或导航launch，未用外部Piper源码补依赖。
+
+最小分发目录 `build/piper-vision-grasp-20261114/package/`，26个文件含SHA256SUMS、SOURCE_MANIFEST和使用说明；归档 `build/piper-vision-grasp-20261114/piper-vision-grasp-20261114.tar.gz`，SHA256=`3ade7db7b14a394ec5438fdc14faab89891df582896d5d1a7586b15af81b1073`，43777字节。分发目录独立check也通过，全部清单哈希一致；未分发到远端。归档不含测试图像、虚拟环境或导航栈；运行参考与必要原始来源已包含，真实样本仍在Git可跟踪的test/fixtures中。
+
+本轮复核修复了短暂故障跨越稳定窗口、目录持久化不足、同目录第二次周期覆盖和采样配置未生效等问题，并添加回归。没有自动重发、松爪或回零；部分SDK发送进入COMMAND_UNCERTAIN。原始已修改文件的本轮变化仅CMakeLists与两份runbook/交接的必要追加，其余初始哈希保持。
+
+未执行：全库ROS/硬件测试、机载Python3.8实际运行与依赖复核、SSH/部署、真实相机/CAN、真机自主抓取或多位置重复性。碰撞、真实SDK插补、夹指遮挡下可见性与物理标定仍待现场验证；不能把离线/fake通过写成真机通过。后续按独立runbook核实机载目录/环境、完成被动observe与preview，再在新的明确现场授权内run。checkpoint=PIPER_VISION_GRASP_OFFLINE_AND_INSTALL_VERIFIED_NO_DEPLOYMENT。
+
+### 2026-11-14 用户机载observe的RealSense全局context类型错误已做离线修复
+
+用户已按运行步骤自行部署至 `/home/unitree/piper-vision-grasp-20261114`，提供诊断确认check为CHECK_OK，机载解释器 `/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python`，包版本与计划中的Python3.8环境一致。随后observe不退出，用户日志反复WAIT_VISION，reason=`global config-file/context: expecting an object; got ""`，command_attempted=false。这是用户提供的现场证据；开发端未SSH或连接设备。
+
+核对本机代码与历史交接4696节发现：原手眼capture使用 `rs.context('{"inherit":false}')`，历史记录已确认机载 `.realsense-config.json` 的context为空字符串；新独立入口遗漏该适配，默认 `rs.pipeline()` 继承全局配置。已在capture_rgbd显式创建独立context并传给pipeline，保持其他参数/流程不变，不修改远端全局文件。当前远端文件本轮未重新读取，日志与历史已知问题一致；不能声称机载新取图已通过。
+
+新增1项回归先复现同样错误，再修复通过；原2项相机fake同步适配context构造。视觉测试57项（上一版56+本轮新增1）、boot/gripper基线66项全部通过；三包新输出构建26.8秒成功。新输出 `build/piper-vision-context-20261114/overlay`，旧输出不改；定向ctest3包装通过，colcon126条为123个pytest+3包装。安装入口check→CHECK_OK、离线样本preview→PREVIEW_READY；模块/config加载路径在新安装下。Python3.8 AST、Bash语法、git diff --check及补丁本地应用的全清单哈希校验通过。
+
+补丁 `build/piper-vision-context-20261114/piper-vision-context-fix-20261114.tar.gz` 仅包含vision.py及更新的SOURCE_MANIFEST.json/SHA256SUMS，适配用户刚部署的原版分发目录，不覆盖配置或原日志。归档SHA256=`e281000b3f7b692031b7909c8083e02944de7698e180ca6ac3d580bd722557af`；新vision.py SHA256=`481ef3037b0a549d3220cef7d490e6edc4b3c17f6a185a9e0c8301a85f099443`。证据在同目录evidence（regression-red、pytest、build、colcon-test、install-cli、patch-verification）。完整构建参数仍只维护主runbook，独立手册追加分终端更新/校验/check/observe步骤。
+
+已告知用户先Ctrl+C退出旧observe再更新，终端B诊断可保持。尚未由开发端上传补丁、部署或启动任何现场程序，不自动提交；修复后observe与其他可能的等待原因仍须现场确认。checkpoint=PIPER_VISION_CONTEXT_FIX_OFFLINE_VERIFIED_WAIT_USER_UPDATE。
+
+### 2026-11-14 observe重复帧处理修复，待机载复测
+
+用户提供run_id=observe-20261114-163033-553009cf，WAIT_VISION，reason=`non-increasing camera frame numbers`，command_attempted=false。已进入帧序号检查，说明该次不再阻塞于全局context解析。旧日志未记录具体帧号，无法区分现场是单/双路重复还是倒退；本轮没有SSH或连接机载设备。
+
+核对capture_rgbd及acquire调用链：原for循环每次要求两个流都递增，任一重复即异常，外层重启采集/暖机。RealSense官方pipeline接口说明允许同步帧组复用较慢流的上一帧（https://github.com/realsenseai/librealsense/blob/master/wrappers/python/pyrs_pipeline.cpp）。本轮先用fake复现重复/倒退/停滞，新增7个参数化场景在旧代码失败；最小修复为同一pipeline内跳过重复，仍只存三组双路严格递增帧，每组等待限3秒。帧号倒退立即失败，持续不更新超时，错误记录previous/current（color,depth）。不改相机FPS/曝光、检测阈值、运动参数或全局配置，不放宽acquire三帧和新鲜度检查。
+
+视觉测试64项（上一版57+新增7）、boot/gripper基线66项全部通过；ctest3个包装通过，colcon133条=130实际pytest+3包装。三包构建26.6秒成功，输出build/piper-vision-frames-20261114/overlay，保留前两版输出。安装入口check=CHECK_OK、存档preview=PREVIEW_READY，模块/config均取本次install；23个运行/配置来源文件与源码一致。Python3.8语法、Bash语法、git diff --check通过。主runbook构建/检查输出及独立手册安装路径已更新，独立手册末节提供停旧进程、传输、备份、哈希校验、check、observe依赖步骤。
+
+补丁build/piper-vision-frames-20261114/piper-vision-frames-fix-20261114.tar.gz只含vision.py、SOURCE_MANIFEST.json、SHA256SUMS，兼容首版及context版分发目录，包含context修复。归档SHA256=a74e02a711a159c3c640a7f6938362b0cec1827edae627ebec1afdd60bfff615；vision.py SHA256=b1b51e654319b62a96e514916c64facc1909fee647315185aed756f2970219a1。本地应用后全清单通过；evidence保存修改前文件、red/green、build/ctest、install-cli及patch-verification。没有覆盖配置、日志或用户其他改动。
+
+未提交、上传、部署或启动真机。用户仍需更新后重跑observe；不能声称现场根因已排除、目标检测或抓取已通过。checkpoint=PIPER_VISION_DISTINCT_FRAMES_OFFLINE_VERIFIED_WAIT_USER_UPDATE。
+
+### 2026-11-14 Piper语义抓取接入、部署及首轮现场识别
+
+用户要求颜色与描述作参数、尺寸自动测量；读取外部 `/home/isee-pst/unitree_ros2/piper/agent` 后，用户选定描述→SAM→RGB-D→绝对抓取位姿→TCP换算方法，明确不增加门控/其他限制，随后明确授权“接入后启动真机，你直接调用抓取”。这更新了本任务此前不启动真机的限制；不授权自动重复抓取或扩大到其他物体/任务。实施计划见../superpowers/plans/2026-11-14-piper-semantic-grasp.md。未提交，保留原全部dirty工作和旧分发/安装。
+
+新增semantic.py/semantic_server.py、semantic.json、test_piper_semantic.py、绿色盒子现场深度/mask fixtures；主入口增加serve、--color、--description，原蓝色config.json保持可用。语义模式不套蓝色HSV/尺寸/局部参考位移限制；使用实际内参及manual04完整外参，顶抓方向-Z，135mm工具偏移与合并-13mm基座Z偏移来自旧代码且明确未物理标定；预抓100mm，抬升20mm，闭爪目标=实测宽度减4mm，不小于0。保留现有5%/0.5Nm、反馈、IK与一次发送/等待恢复语义，没有新增审批开关。
+
+开发机没有可用CUDA，Go2无torch/SAM；采用开发机CPU Qwen/SAM服务+SSH localhost反向隧道，机载不装重依赖。build/piper-vision-semantic-20261114/model-venv通过.pth复用co-nav-real与原check-venv，仅安装segment-anything1.0；SAM权重复用外部piper的sam_vit_b_01ec64.pth。凭证仅由原provider配置读取到进程环境，没有写入包/日志、没有导入会连接或使能机械臂的旧Agent。旧快照模型调用404；读取同provider /models只返回可用视觉模型qwen3-vl-plus及OCR版本，切换qwen3-vl-plus后真实存档调用成功（每帧约7.3–7.5秒）。说明链接 https://www.alibabacloud.com/en/notice/model_studio_update_notice_for_qwen3vlplus_and_qwenplus_models_669 。
+
+实际推理发现SAM边缘深度背景污染最大/最小尺寸，增加深度IQR离群点处理并先红后绿测试，存档积木测得约18×47×119mm、夹取方向47mm。现场原始模型建议点同一盒子逐帧跳动最大约50mm，触发原WAIT_STABILITY；改为有效分割范围的像素中心+邻域深度，模型建议点仅作诊断保留。真实绿色盒子3帧深度/mask回归现为DETECTED，未放宽原3mm稳定判据。mask和标注图随输出保存，隐藏厚度不声称已测得；语义frame_max_age_s=120容纳CPU/网络推理且保留真实接收时间。
+
+最终本轮12项新增语义测试通过，前版64项视觉和66项Piper基线均通过，总142 pytest；四个ctest包装通过，colcon146=142+4，不是146个实际用例。三包初次构建26.8秒、后续增量成功；当前输出build/piper-vision-semantic-20261114/overlay，26个运行/配置来源文件逐字节与源码一致，Python3.8语法/Bash语法/diff检查通过。安装legacy-check/semantic-check=CHECK_OK，legacy-preview=PREVIEW_READY；实际模型存档语义识别DETECTED，但该存档绝对顶抓规划WAIT_IK，不能声称语义规划/抓取全部通过。
+
+分发包build/piper-vision-semantic-20261114/piper-vision-semantic-20261114.tar.gz，最新SHA256=a6f9b3c516e423d9a3f37d7cbdbca6ebc715c82da4d8a2afc7a16bec736ee81d。已获授权部署到Go2 `/home/unitree/piper-vision-semantic-20261114`，26文件清单校验通过；旧 `/home/unitree/piper-vision-grasp-20261114` 未覆盖。机载解释器仍 `/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python`，semantic-check-20261114-01=CHECK_OK，加载新目录的模块/config。中心修复更新前校验原清单，备份semantic.py.before-centerfix，再更新清单，全部通过。
+
+现场连接初次WAIT_IO: USB identity match count=0，用户主动重启Go2；重启后192.168.123.18无路由，但现有unitree-go别名的备用192.168.1.100可达。已确认ubuntu、can0 UP、USB-CAN序列号0046002F5246570520323934恢复，相机实际有限取图成功。不得把USB Hub序列号153223022502替代RealSense实际设备序列号151222077264。
+
+semantic-observe-20261114-01采到绿色小垃圾桶形盒子，第一次因模型建议点跳动WAIT_STABILITY，command_attempted=false，已结束；完整证据回传evidence/semantic-observe-20261114-01。同组真实数据用修正后中心计算DETECTED，尺寸基座范围约18×84×107mm，夹取宽81–85mm；顶抓TCP约[665.8,35.4,-118.9]mm、135mm转换法兰约[665.8,35.4,16.1]mm，IK残差约98mm/21度，WAIT_IK。当前可见夹取宽度也大于硬件70mm开口。已告知用户向机械臂移近并旋转窄侧，等待摆放回复；这不是新增门控，不得用放宽IK或虚报物体尺寸强行发送。
+
+当前模型服务service04（安装入口）与SSH127.0.0.1:18765反向隧道运行中；现场中心修复版semantic-observe-20261114-02已启动等待最新结果。当前尚未发送运动命令、尚未执行run抓取、尚未确认实物夹持。后续状态须追加真实证据，不把存档/测试/旧人工成功作为本次通过。evidence含red/depth-red/keypoint-red、pytest-final3、build-final3、colcon-test-final3、安装CLI、实际模型及现场图像和green-remeasured-plan-final。
+
+### 2026-11-14 红色方块斜向接近与开爪力矩调整（现场进行中）
+
+绿色盒子semantic-observe-20261114-02最终OBSERVED、CAN发送0；用户随后明确改抓红色方块。红色实测夹取宽约49.5mm，TCP约[664.6,35.1,-147.2]mm，90°顶抓WAIT_IK。新增语义--approach-pitch-deg，默认90°不变，现场用30°斜向接近：同组目标法兰约[547.7,34.2,-79.7]mm，规划PLANNED。135mm工具偏移随旋转换算，不改目标检测位置。新增1项角度回归后13项语义测试通过；143实际pytest与4个ctest包装通过，三包构建成功。该版归档SHA256=6f8dde97aee0d52660c15f0baa3c8322bfa40afdbd1aa2266abe181549d3565d已部署。
+
+semantic-red-grasp-20261114-01在90°WAIT_PLAN，未发运动；已结束。semantic-red-grasp-20261114-02采用30°，已发一次70mm/0.5Nm开爪，持续WAIT_OPEN。反馈开口0mm、力矩约-0.008至0.026Nm、ctrl_mode=0、故障0、六轴和夹爪使能true；关节仍[0,0.107,0,0,0,0]，未发关节运动。Ctrl+C结束02且核实运行进程退出，原receipt保留；不能把进程退出当作物理急停。
+
+用户明确“将力矩稍微调高才能打开夹爪”，后补充“一般跳到1-2Nm才可打开这个宽度”。先采用下限1.0Nm。增加可选gripper.open_effort_nm，仅开爪读取；semantic.json=1.0，闭爪effort_nm保持0.5；旧配置缺省仍0.5。IO按对应阶段配置校验，SDK目标与持久化receipt一致；原一次发送/不重放语义不变。候选0.6仅离线验证，未下发硬件。新增2项开/闭爪力矩回归，145实际pytest通过（66视觉、13语义、66boot/gripper基线），4个ctest包装通过，colcon149=145+4；三包构建成功、Python3.8语法/Bash语法/git diff检查通过。安装文件26项与源码一致，包SHA256=cc28951902086059c7a0c89f3c891284d4053cd26dcaf1ce46c73a97672ab69b，更新到同一语义目录前校验并备份旧文件。模型服务与反向隧道保留。当前尚未确认新力矩实物开爪或抓取，后续追加真实结果。
+
+现场后续：semantic-red-grasp-20261114-03已发送70mm/1.0Nm，仍WAIT_OPEN，0mm/约0.02Nm/ctrl_mode0。停止该run后，单独持同一控制锁发送一次MotionCtrl_2(1,1,5,0)，不发送关节/夹爪新目标；唯一mode-attempt.json落盘后才调用。ctrl_mode切至1，原保留开爪目标随即执行，反馈由0→46.4→68.3mm，六关节没有变化、故障0。这确认本次待机模式阻止开爪，不能把先前不打开全部归因于力矩；也不能由此判断0.5Nm在CAN模式下是否足够。当前产品入口尚未自动完成开爪前的模式初始化，重启后的修复待后续接入；本次现场已完成一次初始化。
+
+用户随后要求先35mm，暂停抓取，仅单次GripperCtrl(35000,1000,1,0)，semantic-open35-20261114-01使用现有PiperSession及durable receipt；12秒反馈最后35.8mm、ctrl_mode1、故障0、六关节仍[0,0.107,0,0,0,0]。用户明确“观察到夹爪正常开启，可以抓取”，继续授权本次红色目标，已启动semantic-red-grasp-20261114-04，70mm/1.0Nm开爪、0.5Nm闭爪、30°接近、5%速度。mode/open35脚本与远端证据已回传evidence；此处尚不能声称抓取完成。
+
+semantic-red-grasp-20261114-04已OPEN_READY，重新三帧识别期间偶发深度中心漂移约6mm，自动重取后通过；第一次关节entry-1已实际移动。目标[0.329,10.024,-5.191,0.441,-2.406,-0.207]度，反馈长期[0.274,9.980,-5.197,0.401,-2.445,0]度，最大差0.207°，但motion_status=1持续超过60秒，原wait_snapshot因此一直不返回，未发送entry-2/闭爪。核对固定SDK0.6.2枚举：0=REACH_TARGET_POS_SUCCESSFULLY、1=REACH_TARGET_POS_FAILED；该字段不是速度。停止04，保留目标/receipt；没有回零或释放动作。
+
+本轮最小修复main.wait_snapshot不再用固件到位位替代实际位置判断；wait_joints仍依原0.3°误差判断，拍照与规划仍核对前后关节变化0.3°，故障/使能/反馈新鲜度检查不变。离线preview相同处理，不能把motion_status1直接等同运动中。新增完整fake周期motion_status1回归及超差先WAIT_TARGET再位置到位的回归；147实际pytest（67视觉、14语义、66旧boot/gripper）通过，4个ctest包装，colcon151=147+4。三包构建成功、Python3.8语法/diff检查通过。包SHA256=97b1f7cc122a04f6166dad62fcf723186ef111fb7f798c10ab57ffdd17b67c4e，26安装来源一致；远端更新前全清单通过、备份main/manifest后更新且再次全清单通过。已发5秒提示音。semantic-red-grasp-20261114-05从实际当前关节重新识别/规划启动，未自动重放04的stage；新进度待追加。
+
+semantic-red-grasp-20261114-05现场：从当前位置完成全部25段无载关节到位（entry/pregrasp/grasp），27个receipt为开爪+25关节+闭爪；没有lift receipt。最终抓取关节反馈[4.066,169.597,-116.982,10.161,-17.850,-7.954]度，SDK法兰[547.641,33.998,-79.818]mm，状态/故障0，motion_status0。按测得宽49.4657mm下发close45.4657mm/0.5Nm一次，实际反馈47.0mm、-0.5Nm。原接触判据要求反馈>目标+2mm，此次差约1.53mm，因此WAIT_CONTACT且尚未抬升；不能仅凭力矩或差值认定抓牢。已通过异步问题询问用户实物是否位于两指之间并夹紧，等待现场回复；此前“可以抓取”不是夹持后确认。
+
+有限单帧只读图像red-contact-view-20261114-01已采集（无CAN写），本地evidence/red-contact-view.png显示相机视线被机械臂遮挡，无法从该图确认方块与夹指接触。05完整证据已回传evidence/semantic-red-grasp-20261114-05（该次快照含188条WAIT_CONTACT；后续日志仍增长）。模型服务与隧道仍运行；05执行进程仍在WAIT_CONTACT，保持目标、不重发、不抬升、不自动松开。后续必须根据用户实物反馈继续判断，不将该状态写为抓取通过。当前待办：现场接触确认；入口重启时CAN模式初始化仍未集成；手眼/TCP试验参数的物理准确性、遮挡下自动抬升验证尚未完成。
+
+### 2026-11-14 用户确认抓空，抬升200mm后重新计算；当前等待目标移近
+
+用户明确“机械臂未夹住方块，抬起机械臂”，并要求“然后重新计算夹取”。因此05不能记为成功；已Ctrl+C退出其WAIT_CONTACT并确认无该run控制进程。后续用户补充现场偏差“最终偏低”。未自动追加闭爪、松爪或重新抓取。
+
+复用geometry.plan_motion/solve_ik、PiperSession持久化一次发送和main到位反馈，先由实时关节计算竖直100mm、保持末端朝向的10段路径，5%速度执行semantic-user-raise100-20261114-01。SDK法兰Z=-79.939→20.674mm，实测增量[0.134,0.013,100.613]mm，全部10关节receipt到位，无夹爪命令。当前视线仍被机械臂遮挡，semantic-red-replan-20261114-01反复requested object not found，已停止。向用户说明后，为完成抬起及重新取图再执行同方向100mm的10段路径semantic-user-raise100-20261114-02；最终关节[4.066,140.472,-105.197,86.524,-3.074,-84.799]度，SDK法兰[547.605,34.045,119.987]mm，故障0、motion_status0、开口46.3mm。累计法兰Z增加199.926mm，夹爪目标未改。抬升过程保持世界末端朝向；J4/J6在第二次抬升时有较大补偿旋转，均按既有限位和连续IK执行，不把逆解结果当碰撞证明。
+
+上述两次抬升各在执行前做离线路径断言、执行后核对真实feedback/10个receipt；一轮脚本及现场证据见build/piper-vision-semantic-20261114/evidence/raise-arm.py、raise-arm-clear-view.py和两个semantic-user-raise100目录。是复用现有控制代码的一次现场操作，没有修改产品源码/配置，没有提交；未为文档及现场证据重跑全库构建。
+
+第二次抬升后图像red-after-raise200.png已清楚看到直立红色方块及上方夹指。重新计算期间旧SSH反向隧道会话退出143，机载WAIT_VISION connection refused；本地模型服务仍监听18765，已恢复相同127.0.0.1:18765反向隧道。semantic-red-replan-20261114-02最终完成三帧DETECTED，但WAIT_PLAN absolute grasp IK unavailable，已停止只读循环；没有CAN运动写入。完整资料已回传evidence/semantic-red-replan-20261114-02。有效观测before-d365e7da：camera point=[0.011273864,0.073238667,0.318000015]m，可见基座范围约10.3×51.1×49.0mm，夹取宽51.05mm；仍不能声称测到隐藏厚度。旧参数抓取TCP=[740.779,24.544,-155.706]mm，比前次TCP的基座X约远76mm，原因未确定，不假定是用户移动或被夹爪推走。
+
+重计算在开发机纯数值进行：原-13mm Z偏移与当前新观测，检查90/60/45/30/20/15/10/5/0/-10/-20度均WAIT_IK。根据用户“偏低”，候选方案先取消旧grasp_offset_base_m=[0,0,-0.013]下移项，改为[0,0,0]，使目标回到测得中心，上调13mm；这只是待验证候选，尚未改生产semantic.json或下发该目标，不声称修正了物理标定。随后模拟物体沿基座-X移近0..100mm，每10mm一档，扫描30/15/45/0/60/90度：40mm开始30度PLANNED；60mm时30/15/45度均PLANNED。证据red-replan-after-raise-comparison.json、red-height-and-reach-comparison.json；假设移动坐标不是现场实测坐标，不得直接发送。
+
+已请求用户将红色方块向机械臂移近约6cm并保持直立，等待回复后重新识别计算，不能把时间流逝当已摆好。当前机械臂在抬起后的姿态保持，无抓取控制循环；模型服务及恢复的隧道运行。剩余事项：接收新摆放、核实实际目标位置、按确认的高度修正生成可审阅方案；本次抓取失败根因与真实TCP/外参误差尚未分离，重启CAN模式初始化仍为已知待办。
+
+### 2026-11-14 六轴回零完成；按用户限制转为纯离线摆放空间计算
+
+用户最新要求“现在将6个关节的位置全部回到零位，然后并不操作真机，计算给出可以抓取的空间范围，以便放置物体”。它替代此前等待移近目标并继续抓取的现场流程；回零完成后不再采相机/CAN、运动或现场验证。按实时关节[4.066,140.472,-105.197,86.524,-3.074,-84.799]，5%速度15段等比例关节插补到0，复用既有发送/反馈/限位/receipt；未重新校零、未发夹爪命令。semantic-user-return-zero-20261114-01最终ZERO_REACHED，关节[0,0.094,0,0,0,0]度，SDK法兰[56.276,0,213.173]mm，故障0、motion_status0、开口46.3mm。15条receipt及result已回传evidence；SDK与当前模型FK差约0.074mm仅说明数值一致性。真机操作到此结束。
+
+离线复用当前geometry.py和本地模型/存档相机内外参，在build/piper-workspace-20261114保存脚本/JSON/CSV/PNG/PDF。扫描1200个Y=0平面姿态组合、420个局部三维组合，再对候选区按10mm网格细查216个位置。约50mm方块、135mm试验TCP、30°向下接近、闭合轴基座Y、预抓100mm/抬升20mm，候选夹持点X600–650/Y0–50/Z-125至-75mm的216样本全部完整规划通过且八角落在存档相机视野。示例中心[625,25,-100]mm。原点为Piper基座模型安装面中心，Y向机器人自身左侧，Z向上；不是相机或Go2基座。相机可见检查不含实际遮挡/深度质量，几何通过不等于夹持实测通过。
+
+本轮候选计算取消旧-13mm基座Z下移，将目标设为计划夹持点；未修改生产semantic.json或部署此变更。TCP135mm仍未物理标定，手眼physical_validation仍NOT_PERFORMED，碰撞、载荷与上次偏低根因仍未验证。不改关节限位、不加运行门控；候选范围不是限制真实运动的配置。当前未允许再次抓取或启动真机验证。完整结果见docs/multi_agent/piper_grasp_workspace_20261114.md。没有产品源码修改或构建，保留全部dirty工作、不提交；只更新计算证据和文档。
+
+### 2026-11-14 用户重新摆放后授权新一轮红色方块抓取
+
+用户最新“现在移动了位置，尝试抓取”明确恢复本次现场识别/运动授权，更新上一轮回零后纯离线的限制。未沿用假设摆放坐标，启动新的相机识别与规划。核实没有遗留run/preview/回零控制进程，模型服务及127.0.0.1:18765反向隧道均监听正常。新建独立运行配置 `/home/unitree/piper-vision-semantic-20261114/config/piper_vision_grasp/semantic-height0-trial-20261114.json`，仅把基座Z偏移-0.013改为0，其他配置完全一致；不覆盖原semantic.json/安装包或用户源码。SHA256=e841523dfeaf6090f465459b26e92c9c4064555c682a3f8bb78a8dd1ff547905，副本已保存在evidence，差异断言通过。
+
+通过同一安装入口先check，再启动semantic-red-grasp-20261114-06，红色/方块、30°接近、5%速度、70mm/1Nm开爪、测得宽减4mm/0.5Nm闭爪；本次运行配置与离线候选的取消下移条件一致。尚无本轮现场抓取结论，后续追加实际观察和命令receipt。无产品代码改动、未提交。
+
+### 2026-11-14 取消下移后仍抓空；按现场修正后转为三维排障
+
+semantic-red-grasp-20261114-06完成开爪与全部接近阶段，闭爪目标45.6028mm/0.5Nm，反馈46.6mm/约-0.39Nm，WAIT_CONTACT，未抬升。用户确认“没有夹住，夹的位置偏下”，本轮抓取失败，已退出等待进程。用户进一步明确“还需上抬13cm”，不是13mm。复用现有控制模块单次开70mm/1Nm，再以5%分13段向基座+Z移动130mm，semantic-red-align-up130-20261114-01反馈SDK法兰Z=-66.249→63.822mm，ΔZ130.071mm，未闭爪。用户确认“高度对了，需要水平调整”；根据有限图像与现场反馈向画面右侧/基座-Y平移40mm，semantic-red-align-right40-20261114-01共4段，SDK实际ΔY约-39.56mm，末次法兰[532.55,-8.409,63.337]mm、关节[-0.974,143.948,-97.649,-2.116,-11.17,1.921]度，开口68.3mm，故障0。未再次闭爪/抓取，也未把130mm/-40mm经验修正写入外参或生产配置。
+
+用户随后要求将VLM语义分割标识的空间点、目标形状与机械臂模型放入一张3D图排障，因此保持该姿态转为可视化。有限采集red-diagnostic3d-20261114-01三帧RGB-D及被动前后反馈，CAN发送0；新反馈J4=-2.217°，前后变化<0.3°。用户没有确认右移后的最终夹持对准，不把该姿态记为抓取成功。
+
+成果build/piper-diagnostic3d-20261114：可内联旋转图piper-spatial-diagnostic.html、含Plotly的离线独立diagnostic-standalone.html、静态PNG/PDF、scene/evidence/findings JSON与复算脚本。详述docs/multi_agent/piper_grasp_3d_diagnostic_20261114.md。VLM建议像素反投影点、SAM中心/可见点云/形状外包络/夹取轴、历史抓取前点云与目标/关节链、当前真实反馈关节驱动的URDF/STL模型、试验135mm TCP与坐标轴同图。URDF法兰与现有FK断言一致；外形显示简化，隐藏物体几何不补造。
+
+新三帧中心最大距离1.029mm，夹取轴最大差79.113°，合并WAIT_ORIENTATION；当前模型TCP相对新SAM中心为[-58.56,-18.66,+135.05]mm，现场此前已确认上抬后高度对准，二者不一致仍待定位。VLM与SAM中心高度差<0.45mm，不能用建议点选择差异解释13cm。物体历史/当前X位置也不同，尚未确认是否物理移动。没有修改标定、TCP或识别算法，没有把可视化解释写成确诊结论。
+
+坐标有限/网格索引/Plotly schema/JS语法/文档链接/diff检查通过，CDN3.7.0 HTTP200，静态图已查看；无可用浏览器，未验证真实交互渲染。无产品源码修改、无构建部署/提交。当前无运动控制进程，夹爪保持张开，后续先依据三维图排查；不得自动继续闭爪或抓取。
+
+### 2026-11-14 用户再次要求六轴回零，最终反馈全0
+
+用户明确“将机械臂所有关节回零”。确认无遗留运动进程、六关节使能/无故障，起始反馈[-0.974,143.948,-97.649,-2.217,-11.17,1.921]度。复用此前回零方法，以5%速度分15个等比例关节目标返回0；run_id=semantic-user-return-zero-20261114-02，每段单次持久receipt且不重放，不发夹爪指令、不重设零点。
+
+执行结束首次ZERO_REACHED时J2=0.104°（其余0），在原0.3°容差内，motion_status1；随后独立只读5次反馈复查，末次六关节精确报告[0,0,0,0,0,0]度，motion_status0、arm_status0、err_code0、READY，SDK法兰[56.127,0,213.266]mm。夹爪保持68.3mm张开。15条receipt、5次被动postcheck及result全部回传build/piper-vision-semantic-20261114/evidence/semantic-user-return-zero-20261114-02，断言检查通过。
+
+当前机械臂回零保持，无活动运动控制进程；3D排障图仍是先前右移后的历史姿态快照，不是实时机械臂显示。本轮未继续抓取或更新标定/产品代码，未构建或提交。
+
+### 2026-11-14 用户指定相机外参基座Z增加130mm并授权重试
+
+用户明确“直接调整标定的外参，将机械臂坐标下的相机位置向上提高13cm,旋转不变。然后重试夹取过程验证”。本轮仅修改独立视觉抓取配置的T_base_color_optical平移Z，由-0.12532006100896664m变为+0.004679938991033361m，精确增加0.130m；X=0.4159578390386031、Y=0.0529010550714366及全部旋转元素保持不变。原manual04-result.json未改；新增provenance/manual04-user-z130-20261114.json记录父来源/哈希、用户指定基座位移、派生正逆变换，extrinsics.json更新source_file/sha。原加载校验保留，没有绕过来源核验或新增门控。physical_validation仍NOT_PERFORMED，这是用户指定的人工外参修正，尚不能称为标定或抓取通过。
+
+新增1项回归先失败后通过：核对旋转/X/Y精确保留、Z+0.130m，并验证多个相机点在基座下只发生同样的Z平移。定向148实际pytest通过（67视觉、15语义、66boot/gripper），4个ctest包装通过，colcon152=148+4。三包构建成功；安装入口semantic-check=CHECK_OK；27个运行/配置来源与源码逐字节一致。新包SHA256=e523d1bb800d6d8e9b503e7491ec2ce6767d0b45d97891b365e044370072c788。机载更新前旧清单通过，备份原外参/manifest到/tmp/piper-semantic-before-extrinsic-z130-20261114.tar.gz，再展开新包，27来源清单通过。源外参旧副本保存在本地evidence/extrinsics-before-z130.json。未改外部piper项目、导航、相机旋转、TCP或其他运动参数，保留全部dirty工作，不提交。
+
+继续使用已有semantic-height0-trial-20261114.json（本轮未改其文件，仍取消旧-13mm抓取下移），共享extrinsics.json现加载新外参；CLI红色/方块/30°，5%速度，1Nm开爪、0.5Nm闭爪。新增semantic-extrinsic-z130-check-20261114-01后启动semantic-red-grasp-20261114-07，按新RGB-D重新定位/规划，不沿用旧物体坐标或人工横移40mm。当前尚无本轮抓取结论，后续补充真实feedback/receipt。旧3D图和工作空间图保留原外参历史含义，不能当作新外参下实时结果。证据pytest/colcon/build/deploy-extrinsic-z130与source派生文件已保存，已发5秒提示音。
+
+semantic-red-grasp-20261114-07现场已执行到闭爪：按新外参重新识别，目标模型TCP=[620.063,32.888,-0.151]mm，目标法兰=[503.347,39.671,67.349]mm；测得夹取宽49.5936mm。全部23个关节阶段AT_TARGET，开爪/关节/闭爪共25个receipt，没有lift receipt。闭爪目标45.5936mm/0.5Nm，实际46.6mm、约-0.37Nm，原接触判据未满足，当前WAIT_CONTACT，尚未抬升或验证抓取成功。最终关节[5.981,138.901,-87.492,26.888,-17.980,-21.127]度，SDK法兰[503.393,39.967,67.686]mm，motion_status0、arm_status0、err_code0。已回传该时刻日志/计划/receipt至evidence/semantic-red-grasp-20261114-07；控制进程仍等待、不重复下发，后续日志可能继续增长。已询问用户高度是否对准、是否夹住及残余偏差，等待实物反馈，不将WAIT_CONTACT或到位反馈写成夹取通过。
+
+### 2026-11-14 用户要求抬起后重新识别夹取，收集进一步外参修正证据
+
+用户明确“将机械臂抬起并重新识别夹取，以进一步修正外参”。已退出07闭爪等待并核实无旧控制进程；07仍未获得现场夹持成功确认。复用既有上抬脚本，semantic-red-reobserve-raise100-20261114-01从实时关节规划，单次70mm/1Nm开爪后以5%速度分10段保持末端方向上抬100mm。实际SDK法兰Δ=[-0.070,+0.008,+100.069]mm，最终[503.323,39.975,167.755]mm，关节[5.981,127.151,-90.811,82.249,-8.090,-77.678]度、开口68.2mm、故障0。10段AT_TARGET及11个receipt（含开爪）已回传，规划方向/位移断言和执行结果检查通过；脚本evidence/red-reobserve-raise100.py。上抬是重新观察准备，不是新增外参补偿。
+
+已启动semantic-red-grasp-20261114-08，继续semantic-height0-trial-20261114.json/红色方块/30°及现有基座Z+130mm外参，从新RGB-D重新定位规划。尚未更改外参其他分量、旋转或TCP；进一步修正需结合新识别与现场偏差，不能把模型预测自身当作真实标定误差。本轮无产品源码配置修改、无构建提交，当前运行结果待追加。
+
+08多组识别中心稳定约基座[645.785,33.023,-1.787]mm，但旧框宽高启发式选择右侧近竖直边，投影水平后夹取轴约[-0.99,0.1,0]、宽15–21mm；反复WAIT_PLAN/WAIT_ORIENTATION。离线0/15/30/45/60/90度均WAIT_IK。退出08并核实无控制进程，未生成attempts、无新的接近闭爪动作。用户随后明确“先不修正，按照现有外参夹取，在此轮中观察”，因此本轮外参继续原+130mm、不增加横移/旋转补偿。
+
+为完成此次现有外参下的夹取，仅修正semantic.measure方向选择：从相同有效RGB-D中估计框上边/右边的3D端点，取基座XY投影较长的边，不再按图像框宽高决定边；目标中心、外参、TCP、状态检查与接触阈值不变。原因：旧规则在153×138像素框上选了近竖直边，把几毫米深度变化归一化成前后夹取方向。新增2项回归覆盖宽框及相机滚转90°，旧实现一项失败、新实现全通过；150实际pytest=67视觉+17语义+66boot/gripper，四ctest包装通过，colcon154条目0错误0失败。三包构建成功，安装check=CHECK_OK、Python3.8语法/diff检查通过。08三组真实存档回放全部DETECTED/PLANNED，目标中心不变、夹取宽51.92–52.47mm；证据red-reobserve-axis-replay.json。仅测可见形状，不补造隐藏厚度，方向修正并不证明真实夹持。
+
+新包SHA256=580a26235a9c6ef4e4dd86a12bdf85479f181c8afced25dd2fc6a9d5ec98717e，27个源码/安装来源一致。远端旧清单通过并备份semantic.py/manifest/README至/tmp/piper-before-axis-projection-20261114.tar.gz后更新；29文件校验全通过。外参SHA256=4440502eb5f0f9c4f54fba38f45917e771bbc25050e0cf21cf18aa0dc161c822，本轮外参未改。机载semantic-axis-check-20261114-01后启动semantic-red-grasp-20261114-09，使用同一height0试验配置、红色方块、30°、5%速度，重新现场取图；08存档目标仅用于离线验证。已发5秒提示音、未提交，09结果待追加。
+
+09现场新图像已DETECTED并完成规划：模型TCP=[645.785,33.023,-1.787]mm，目标法兰=[534.336,68.346,65.713]mm，测得宽51.8827mm。15个接近/抓取关节阶段全部AT_TARGET，17个receipt=开爪+15关节+闭爪，没有lift。闭爪目标47.8827mm/0.5Nm，实际48.9mm、约-0.39Nm，因此当前WAIT_CONTACT，尚未抬升、不能确认夹持成功。末次关节[11.378,146.380,-103.673,80.725,-25.071,-64.407]度、SDK法兰[534.315,68.707,65.762]mm，motion_status/arm_status/err_code均0。日志/计划/receipt快照已回传evidence/semantic-red-grasp-20261114-09；该进程仍等待、不重复下发。已询问用户当前是否夹住及偏差方向/距离；本轮外参没有进一步修改，等待现场观察，不把闭爪到达或离线规划当成抓取验证通过。
+
+### 2026-11-14 外参−Y110mm及光轴对齐，用户随后授权继续夹取
+
+用户要求“相机外参再向piper y-移动11cm，令相机z+绕相机x+旋转与piper x+平行”。数值确认两条件不能同时精确满足：严格绕原相机X旋转−10.0463°仍有3.0856°残差；用户明确选择优先完全同向，允许相机X略变。已退出09等待并核实无旧控制进程。相机位置变为[0.4159578390386031,-0.0570989449285634,0.004679938991033361]m，在上一轮基础上仅Y减0.110m、保留Z+0.130m。围绕相机原点最小旋转10.5048148466°使R第三列=[1,0,0]（约1e-15误差），没有绕基座原点旋转平移向量。新来源provenance/manual04-user-z130-y110-alignx-20261114.json保留父来源hash、增量与逆矩阵；原manual04/z130记录未改，physical_validation仍NOT_PERFORMED。
+
+新增1项回归先失败后通过，覆盖基座平移、光轴方向、正交/行列式、最小旋转及光轴点转换；原z130测试改为核实历史派生文件。151实际pytest=67视觉+18语义+66boot/gripper，四ctest包装通过，colcon155条目0错误0失败；三包构建与本地安装check通过。新分发包28源码/安装来源一致，SHA256=49fba4a903ff689ad2f7ceb88b436cc7e8a24f38d2858d6664085ff1ee5e3ee0。远端旧清单通过、备份/tmp/piper-before-extrinsics-y110-align-20261114.tar.gz后展开，30文件校验通过；semantic-extrinsics-y110-align-check-20261114-01=CHECK_OK且command_attempted=false。源/机载外参SHA256同为b662534aa1f222638b63641c9867b4666ed854602b57c0889e8bcc9c96e4d99d。旧外参备份和两候选比较保存在evidence/extrinsics-before-y110-rotation.json等；已发5秒提示音，未提交。
+
+用户追加“完成调试参数后再尝试夹取”，授权按新外参重新现场识别/运动。当前09保持姿态直接上抬100/80mm纯离线规划无逆解（腕部限位附近），60/50mm可规划；未下发失败路径。选择6段60mm保持朝向上抬，先单次70mm/1Nm开爪，沿用5%速度和原反馈检查，semantic-red-reobserve-raise60-20261114-01已启动；脚本evidence/red-reobserve-raise60.py离线方向/位移断言通过。上抬后重新取图，不使用旧抓取坐标。后续实测结果待追加。
+
+semantic-red-reobserve-raise60-20261114-01已完成：实际SDK Δ=[+0.036,-0.008,+60.234]mm，末次法兰[534.351,68.699,125.996]mm，关节[11.378,139.519,-104.722,97.701,-24.972,-83.112]度、开口68.3mm、状态/故障0。6段关节到位及7个receipt（含开爪）已回传并断言核实。随后启动semantic-red-grasp-20261114-10，使用现有height0配置、新Y−110mm/光轴对齐外参、红色方块/30°/5%，首轮识别规划及OPEN_READY已通过，正在开爪后再次取图，尚未记录本轮抓取结果。
+
+semantic-red-grasp-20261114-10已按新外参完成本轮接近和闭爪。新RGB-D目标TCP=[640.958,-63.734,-40.975]mm，目标法兰=[526.747,-38.743,26.525]mm，测得夹取宽53.128mm；19个关节阶段AT_TARGET，21个receipt=开爪+19关节+闭爪，无lift。闭爪目标49.128mm/0.5Nm，反馈50.1mm、约−0.36Nm，当前WAIT_CONTACT且尚未抬升，不能确认夹持成功。末次关节[-2.749,148.405,-97.242,27.971,-17.782,-22.001]度，SDK法兰[526.777,-38.346,26.938]mm，motion_status/arm_status/err_code均0。完整当前日志/计划/receipt快照已回传evidence/semantic-red-grasp-20261114-10，并核对19到位/21receipt/无lift；控制进程仍只等待、不重发。已询问用户本轮是否夹住及剩余偏差方向/距离。现外参及位置修正的现场有效性仍待用户反馈，未自行再次调整或重复抓取。
+
+### 2026-11-14 当前外参再沿基座+Z增加30mm并重试
+
+用户明确“再将相机中心向piper z+方向移动3cm，然后测试夹取”。已退出10等待并核实无旧控制进程；10没有夹取成功确认。外参在z130-y110-alignx基础上仅T[2,3]增加0.030m，相机位置现为[0.4159578390386031,-0.0570989449285634,0.03467993899103336]m；X/Y与R逐元素保留，光轴仍对齐基座+X。新来源provenance/manual04-user-z160-y110-alignx-20261114.json保留父哈希/增量/逆变换；旧外参另存evidence/extrinsics-before-extra-z30.json。累计相对原始标定Z+160mm、Y−110mm，physical_validation仍NOT_PERFORMED。
+
+更新现有外参回归先失败后通过，新增断言R与上一轮完全相同；本轮未增加测试数量，151实际pytest=67视觉+18语义+66boot/gripper全部通过，四ctest包装/colcon155条目0错误0失败。三包构建、安装check及diff检查通过；29源码/安装来源逐字节一致。新包SHA256=246682456e84f9216f6d808f09caac5397ebeb86311b3e446662087c21234773。机载旧清单通过并备份/tmp/piper-before-extrinsics-z30-20261114.tar.gz后更新，31文件校验通过，semantic-extrinsics-z30-check-20261114-01=CHECK_OK；源/机载外参SHA256一致为8b74d07ee417ff3403a1f51a82c920255d4be16b7860f8575c1e469f12987c94。已发5秒提示音，不提交。
+
+准备重试：以10末次反馈为离线核对种子，保持朝向上抬100mm的10段路径PLANNED。复用现有脚本evidence/red-reobserve-raise100-03.py，run semantic-red-reobserve-raise100-20261114-03，运行时从新鲜反馈重新规划；先单次70mm/1Nm开爪，再以5%上抬，非新的外参补偿。上抬与随后的新图像抓取结果待追加。
+
+semantic-red-reobserve-raise100-20261114-03完成，上抬SDK Δ=[−0.054,+0.084,+100.353]mm，末次法兰[526.723,−38.262,127.291]mm，关节[−2.749,135.659,−97.172,68.989,−8.771,−63.916]度、开口68.3mm、状态/故障0；11个receipt（含开爪）已回传并核实。
+
+随后semantic-red-grasp-20261114-11（30°）重新识别方块，深度约0.287m，当前目标基座TCP约[702.958,−73.493,−29.413]mm，比10测得目标X更远约62mm；不能把此变化归因为单纯外参+Z或未经确认的物体运动。连续WAIT_PLAN，原因local entry branch unavailable/absolute grasp IK unavailable，command_attempted=false；没有接近/闭爪。根据本轮存档离线扫描接近角（evidence/red-z30-retry-pitch-scan.json），25/35/20/40/15/0°可完整规划，30/45/60/90°失败。保持外参不变，选择距原30°最近的25°，已向用户说明并退出11，启动semantic-red-grasp-20261114-12重新现场取图，非发送存档坐标；速度/力矩/检查均不变。12实际结果待追加。
+
+
+## 2026-11-14 完成提示音乐调整
+
+按用户要求，以 `build/piper-vision-grasp-20261114/evidence/completion.wav` 原5秒音频为周期，生成 `assets/audio/work_complete.wav`：原音高、+1半音、+2半音，各5秒，共15秒。使用本机既有librubberband保时长移调，未安装依赖；首周期PCM与原音频逐字节一致，三周期帧数检查通过。AGENTS.md已更新后续播放规则与paplay命令。仅修改音频资产和文档，不改机器人代码，不构建或启动ROS/硬件。
+
+12（25°）现场完成16个关节阶段，18个receipt含开爪/闭爪，无lift。新目标TCP=[702.958,−73.493,−29.413]mm、目标法兰=[583.491,−47.083,27.641]mm、测得宽54.2615mm；闭爪目标50.2615mm/0.5Nm、实际51.3mm/约−0.37Nm，WAIT_CONTACT。末次关节[−3.290,160.737,−123.788,51.661,−10.564,−47.306]度，SDK法兰[583.389,−46.644,27.150]mm，状态/故障0；日志/计划/18receipt回传核实。用户未确认夹住，而继续要求“将z再上调2cm”；因此不将12记为成功。本轮外参+30mm阶段测试已完成到闭爪，继续按新指示追加+20mm并重试。
+
+### 2026-11-14 按现场要求再上调20mm，累计基座Z+180mm
+
+用户在12夹取后要求“将z再上调2cm”，作为当前调参/夹取测试的继续。已退出12等待并核实无控制进程。仅将当前相机平移Z再加0.020m，现T平移=[0.4159578390386031,−0.0570989449285634,0.05467993899103337]m；旋转/X/Y完全保留，累计相对原manual04 Z+180mm/Y−110mm。新来源provenance/manual04-user-z180-y110-alignx-20261114.json链接z160父来源与哈希/逆矩阵，旧值备份evidence/extrinsics-before-extra-z20.json。physical_validation仍NOT_PERFORMED。
+
+现有外参测试更新为累计平移+50mm（相对z130文件），先失败后通过；151实际pytest（67视觉+18语义+66boot/gripper）通过，4ctest包装通过、colcon155条目0失败0错误。三包构建、安装check与diff检查通过；30源码/安装来源一致。新包SHA256=fa4306fa07ec123c070acf546740ebd404b521f819cb10ca09ed71e59d003690。机载旧清单通过并备份/tmp/piper-before-extrinsics-z20-20261114.tar.gz后更新，32文件校验通过；semantic-extrinsics-z20-check-20261114-01=CHECK_OK。源/机载外参SHA256一致为940d2583e3d3eea034e354f48bf3fc766ac40b8d83829b52996e5c952adb30c7。已发5秒提示音，不提交。
+
+12当前姿态纯离线检查上抬100mm在腕部限位附近无逆解，未下发；60mm六段完整规划通过。复用evidence/red-reobserve-raise60-02.py启动semantic-red-reobserve-raise60-20261114-02，先单次开70mm/1Nm再以5%速度上抬，随后延续25°重新识别夹取；无新门控、无其他外参/算法改动。实际抬升和下一轮抓取结果待追加。
+
+semantic-red-reobserve-raise60-20261114-02完成，SDK Δ=[+0.061,−0.098,+59.748]mm，末次法兰[583.450,−46.742,86.898]mm，关节[−3.290,153.034,−121.773,83.726,−8.378,−79.738]度，开口68.3mm、状态/故障0，7receipt已回传核实。随后启动semantic-red-grasp-20261114-13，延续height0配置/25°/5%并加载z180新外参，首轮现场识别规划及OPEN_READY已通过，正在重新定位执行；本轮结果待追加。
+
+### 2026-11-14 第13轮闭爪后转为最新三维可视化
+
+13现场完成20个关节阶段，22receipt（开爪+20关节+闭爪），无lift。目标TCP=[617.958,−82.790,16.423]mm、目标法兰=[496.315,−69.636,73.477]mm、测得宽51.4769mm；闭爪47.4769mm/0.5Nm，反馈48.7mm/约−0.41Nm，WAIT_CONTACT。最终关节[−8.391,137.762,−84.588,−5.011,−23.270,3.668]度，SDK法兰[496.147,−70.011,73.666]mm，motion_status/arm_status/err_code均0。用户没有确认夹住，改为“将现在的结果可视化”。已退出13等待且pgrep核实无活动抓取进程，没有新增移动/开闭爪/回零。
+
+新成果build/piper-diagnostic3d-20261114-run13，含内联piper-current-grasp.html、离线diagnostic-standalone.html、整体/夹指局部PNG及PDF、scene/evidence/findings JSON、冻结config-resolved/extrinsics与反馈、复算脚本。详见docs/multi_agent/piper_grasp_3d_run13_20261114.md。全部离线使用13抓取前最后一组DETECTED三帧RGB-D与闭爪后最后反馈（相隔约85.1秒），未新增相机采样/CAN发送；不伪称闭爪后实时目标真值。旧3D图保留。
+
+新外参位置[415.958,−57.099,54.680]mm、光轴+Z平行基座+X；目标表面、三帧VLM/SAM点、夹取轴、目标TCP/法兰/路径、实际反馈关节的URDF/STL机械臂和48.7mm夹爪同图。反馈模型TCP=[617.778,−83.256,16.552]mm，与程序目标差[−0.180,−0.466,+0.129]mm、距离0.516mm；这只核对软件与模型，不证明实物TCP/手眼或夹取成功。三帧SAM最大距离1.026mm，VLM-SAM Z差≤0.336mm。形状只表示可见深度，隐藏厚度未推断。
+
+URDF/FK一致、坐标/网格索引/Plotly schema/JS语法检查通过，静态图已查看；内联约485KB，离线Plotly3.7.0内嵌约6.1MB，无外部脚本依赖。无浏览器，未实测交互。未改产品代码/配置，未构建提交。当前机械臂保持13闭爪姿态，无活动抓取控制进程；需要新指示再运动。
+
+### 2026-11-14 相机沿基座+Y平移70mm并重新夹取
+
+用户明确“将相机位置向piper y+方向移动7cm，再次夹取”，恢复当前真机重试授权。13可视化后无遗留控制进程。外参仅Y增加0.070m，当前相机平移=[0.4159578390386031,+0.012901055071436609,0.05467993899103337]m，X/Z/R保持不变，光轴仍对齐基座+X；相对原manual04累计Y−40mm/Z+180mm。新来源provenance/manual04-user-z180-y40-alignx-20261114.json链接z180-y110父来源/哈希/逆变换，旧外参备份evidence/extrinsics-before-yplus70.json。physical_validation仍NOT_PERFORMED；第13轮图保留历史含义。
+
+更新现有外参回归先失败后通过；151实际pytest=67视觉+18语义+66boot/gripper通过，4ctest包装通过、colcon155条目0失败0错误。三包构建、安装check、diff检查通过；31源码/安装来源一致。新包SHA256=c1a7df0c6d81d68966317f50fe32a0d3a275a4aa2761c2910447f2f442d527b7。机载旧清单通过并备份/tmp/piper-before-extrinsics-yplus70-20261114.tar.gz后更新，33文件校验通过；semantic-extrinsics-yplus70-check-20261114-01=CHECK_OK。源/机载外参SHA256一致为ce7a8dca08b2049a2ed7e8e9ed9a56de8aadc9a905b0efd54c247220c1375533。提示音已发、不提交，保留其他dirty与新增assets。
+
+发现旧模型服务及反向隧道均已退出，已复用内存取凭据的launcher恢复service-yplus70-20261114-01，MODEL_READY/cpu/127.0.0.1:18765；恢复同地址SSH反向转发，机载监听核实通过。没有打印或写入API密钥。准备重试：从13末次反馈离线规划保持朝向上抬100mm，10段PLANNED，脚本evidence/red-reobserve-raise100-05.py复用原控制模块；semantic-red-reobserve-raise100-20261114-05已启动，先单次开70mm/1Nm、5%速度上抬，运行时从实时反馈重新规划。随后延续25°、新RGB-D重新抓取，实际结果待追加。
+
+semantic-red-reobserve-raise100-20261114-05完成：SDK Δ=[−0.108,−0.014,+99.790]mm，末次法兰[496.039,−70.025,173.456]mm，关节[−8.391,125.701,−87.780,−14.053,−8.094,13.057]度、开口68.2mm、状态/故障0，11receipt回传核实。随后启动semantic-red-grasp-20261114-14，height0配置/25°/5%、新Y+70外参，首组三帧WAIT_STABILITY、command_attempted=false，正在重采样。尚未产生本轮抓取结论。
+
+14开爪后多组WAIT_STABILITY，存档中中心跳动约9mm，少数组约0.33mm；图像方块可见，部分帧中心附近有效深度点偏移。保持原判据重采样后通过，完成15个关节阶段/17receipt含开闭爪，无lift。目标TCP=[617.958,−13.453,16.261]mm、目标法兰=[496.947,4.610,73.315]mm，宽51.8455mm、闭爪47.8455mm/0.5Nm，反馈48.9mm/约−0.38Nm，WAIT_CONTACT。末次关节[2.334,137.392,−83.597,23.544,−25.206,−16.878]度、SDK[496.881,4.762,73.069]mm，状态/故障0。日志/计划/17receipt已回传。用户未确认夹住，继续要求“将相机再向y-移动2cm并重新抓取”；已退出14并核实无控制进程，未改变识别/稳定性逻辑。
+
+### 2026-11-14 相机沿基座−Y再移动20mm并重试
+
+当前外参仅Y从+0.012901055071436609减0.020m，变为−0.007098944928563392m；X=0.4159578390386031、Z=0.05467993899103337与R完全保留。累计原始基座Y−60mm/Z+180mm，光轴仍平行基座+X。来源provenance/manual04-user-z180-y60-alignx-20261114.json链接上一轮y40父来源/哈希/逆变换；旧值备份evidence/extrinsics-before-yminus20.json，physical_validation仍NOT_PERFORMED。
+
+更新现有回归先失败后通过，151实际pytest（67视觉+18语义+66boot/gripper）/4ctest包装通过，colcon155条目0错误0失败。三包构建、安装check与diff检查通过，32源码/安装来源一致。包SHA256=77889b7394e043336e7ed8d5d3d4f29203916a392db18ec7b090998c366cb84e。机载旧清单通过、备份/tmp/piper-before-extrinsics-yminus20-20261114.tar.gz后更新，34文件校验通过；semantic-extrinsics-yminus20-check-20261114-01=CHECK_OK。源/机载外参SHA256一致fa0ecdd3281a4ef4a4b6a09280badf993b98aa217316574b2f78e7e51db4aae1。已发5秒提示音，无提交。
+
+从14末次反馈纯离线核对上抬100mm十段PLANNED，evidence/red-reobserve-raise100-06.py复用既有控制；semantic-red-reobserve-raise100-20261114-06已启动，先单次开70mm/1Nm再5%上抬，从新鲜关节重新规划。随后沿用25°、height0配置和新外参重新现场识别夹取。实际结果待追加。
+
+semantic-red-reobserve-raise100-20261114-06完成，SDK Δ=[+0.004,+0.110,+99.716]mm，末次法兰[496.885,4.872,172.785]mm，关节[2.334,125.236,−86.756,51.014,−12.551,−45.721]度，开口68.2mm、状态/故障0，11receipt已回传并断言核实。随后启动semantic-red-grasp-20261114-15，使用height0配置/25°/5%及新相机Y=−7.0989mm，现场首轮识别规划与OPEN_READY通过，正在开爪后再次取图；本轮结果待追加。
+
+
+### 2026-11-14 第15轮结束；按用户要求六轴回零并终止
+
+15完成21个关节阶段、23个receipt（开爪+21关节+闭爪），无lift。目标TCP=[643.958,−42.793,7.800]mm、法兰=[523.720,−65.436,64.853]mm；测得宽51.877mm，闭爪目标47.877mm/0.5Nm，反馈49.0mm/约−0.40Nm，WAIT_CONTACT，未确认夹住。末次关节[−10.341,143.969,−96.160,−50.721,−24.852,38.789]度，SDK法兰[523.755,−65.476,65.285]mm，状态/故障0。证据保存在evidence/semantic-red-grasp-20261114-15。用户观察怀疑旋转矩阵问题、需要重新标定；此为待验证假设，未将其写成已确认根因。已退出15等待。
+
+最新用户明确“将机械臂所有关节都回零并终止，后续重新标定”。核实无抓取进程后复用return-zero02流程，仅更换run_id为semantic-user-return-zero-20261114-03；脚本evidence/return-zero03.py，从新鲜反馈以5%速度、每段不超过10度分15段回零，没有开闭爪或零点重标定命令。离线分段断言通过，现场15段AT_TARGET与15个joint receipt全部核实。程序退出后另开纯只读反馈会话，连续5组六轴反馈均为[0,0,0,0,0,0]度、motion_status=0、err_code=0，夹爪开口49.0mm；关节仍使能保持，不等同断电。证据含before/plan/events/result/attempts/postcheck，位于build/piper-vision-semantic-20261114/evidence/semantic-user-return-zero-20261114-03。
+
+回零进程退出码0；本轮模型服务与18765反向SSH隧道已终止，机载核实无抓取/回零控制进程、18765无监听。当前外参保留y60/z180/alignx版本，未再次修改或执行重新标定；后续重新标定需另行继续。无产品代码修改、无构建/提交，保留全部既有修改和历史标定。
+
+
+### 2026-11-17 开始新手眼标定，等待CAN恢复和板完整入画
+
+用户要求重新手眼标定，并确认原ArUco ID25、黑方块横纵142mm、已平整刚性固定，可手动摆姿态。沿用已有手动逐张review/approve，计划独立recalib20261117批次10train+5validation；两端核实批次未用，不混入manual04/manual05及人工调参结果。当前外参和机器人控制代码保持不变，没有发送运动/模式/使能/夹爪命令。SSH到unitree-go成功；机载check日志run-HzX7JAHw.jsonl为CHECK_OK，相机151222077264、板配置一致。
+
+通过原review.snapshot以自定义本地保存根目录build/piper-handeye-recalib-20261117/reviews拍摄pose01，远端reviews/recalib20261117/pose01、日志run-9aLTrhcG.jsonl。图片已回传并实看，板上半部超出画面、ID25检出0；can0为DOWN/STOPPED，无位姿配对，review_issues两项，尚无正式批准样本。CAN TX采样前后0→0，USB序列0046002F5246570520323934正确。sudo -n true/-l均要求密码，不能自主完成接口恢复；不是自动审批拒绝。请用户在Go2终端配置can0为1Mbps并UP，同时手动摆姿态让黑色四角及白边完整入画，完成后再用pose02重拍。当前无持续采集进程，不重启带使能的boot服务。checkpoint.json保留上述事实。未改产品代码/构建/提交；旋转矩阵是否为抓取偏差根因仍待实测验证。
+
+用户确认CAN已设置后，只读核实can0为UP/ERROR-ACTIVE/1000000bit/s，TX0。原review.snapshot完成pose02，远端日志run-IxzZ8Lxh.jsonl，图片与元数据保存build/piper-handeye-recalib-20261117/reviews/pose02。图像前后反馈完整、平移/旋转/关节跨度均0，ctrl_mode=2/teach_status=2/arm_status=0/err_code=0。位姿关节[−3.988,126.735,−113.820,−4.741,38.721,86.922]度，SDK XYZ=[512.160,−40.427,247.518]mm；夹爪宽反馈−28.2mm原样保留，未作为有效物理开口解释或修改零点。图像实看黑方块上边和右上角仍超出画面，ID25检出0，故未批准，正式样本仍0。采样后TX0，无运动/模式/使能命令。已请用户保持安装关系不变，手动调整整臂使板移远、在图中下移左移并静止，再采pose03；采集已退出，无持续进程，checkpoint更新WAIT_BOARD_FRAMING。
+
+用户确认已移动后完成pose03，日志run-6tX73TtY.jsonl，原图/元数据保存同批次reviews/pose03。相比pose02板占画面已变小，但黑色标记上边及两个上角仍超出顶边；ID25检出0，未收录，正式数量仍0。图像配对成功，平移/旋转/关节跨度均0、反馈完整、err_code=0，SDK位置[540.588,−39.160,236.500]mm。TX仍0→0；无控制命令，采集正常退出。需继续让整个黑色方块在图中下移、上边外侧白边也可见，下一张pose04；checkpoint保持WAIT_BOARD_FRAMING。
+
+用户要求打开RViz实时查看相机。核对无相机占用后，复用机载ROS Foxy既有realsense2_camera（v4.55.1/链接librealsense2.53.1）发布仅RGB 640x480@15，serial151222077264，关闭depth/infra/imu/pointcloud/TF；无机器人命令，CAN TX仍0。机载eth0 DOWN，当前链路eth1=192.168.1.100；发布进程仅临时Domain0/CycloneDDS绑定eth1，未改系统或协同配置。相机SSH会话93674，日志rviz-camera.log，进程4929/4964。
+
+本机RViz默认GLX初始化失败；LIBGL_ALWAYS_SOFTWARE=1单独不足，加入__GLX_VENDOR_LIBRARY_NAME=mesa后OpenGL4.5/llvmpipe成功。远端X转发试验窗口未形成可用预览且已退出（会话3949退出143），本机前两次失败显示进程均已退出。enp4s0上有192.168.123.222及192.168.1.222，按网卡名绑定时跨机数据接收未通过；当前进程明确绑定同一enp4s0上的192.168.1.222后收到递增图像，未切换wlo1、未改路由。运行RViz会话43362，本机Display :1，配置build/piper-handeye-recalib-20261117/camera.rviz只含Image显示，不含导航/发布点工具。临时环境ROS_DOMAIN_ID=0、RMW_IMPLEMENTATION=rmw_cyclonedds_cpp、CYCLONEDDS_URI=<CycloneDDS><Domain><General><NetworkInterfaceAddress>192.168.1.222</NetworkInterfaceAddress></General></Domain></CycloneDDS>，LIBGL_ALWAYS_SOFTWARE=1、__GLX_VENDOR_LIBRARY_NAME=mesa、QT_X11_NO_MITSHM=1、MESA_SHADER_CACHE_DIR=/tmp/piper-rviz-mesa-cache；RViz日志rviz-mesa-address.log。
+
+机载有限订阅验证5帧递增，本机10秒有限检查收到4帧（原断言要求5而超时，不记成5帧PASS），已独立核实保存4帧时间戳严格递增及640x480。RViz窗口截图rviz-window.png已实际看到彩色标定板画面；图像位于左侧Piper calibration live RGB，右侧3D空白是仅配置Image显示的预期。实时预览保持运行，正式样本仍0；继续pose04前必须退出本轮相机预览释放USB，再用原采集器配对图像和位姿。无产品代码修改、无构建提交；旧手眼与抓取外参保持。
+
+用户要求RViz改为0.5Hz。已说明RViz只订阅ROS图像，USB竞争来自RealSense驱动与标定器同时直接开设备；降频不能释放相机，正式采集前仍须关闭预览驱动。两端无topic_tools，复用现有ROS依赖编写仅本轮使用的build/piper-handeye-recalib-20261117/preview_half_hz.py：订阅原RGB，2秒定时发布最新收到帧到/piper/handeye/preview，消费后清空，无新帧则WAIT_IMAGE，不持续重发旧帧，不接CAN。RViz配置改订阅该话题，名称Piper RGB - 0.5 Hz；原相机仍640x480@15，采样与生产代码不改。Python3.8语法及配置检查通过，无ROS产品包修改，因此未重建overlay。
+
+原预览会话已退出：相机93674退出0，RViz43362退出134。本轮第一次恢复相机78836时驱动退出−11、转发87819退出255，首次有限验证无图像；证据日志保留，未记通过。随后仅重启本轮相机与转发，用nohup独立于SSH保持，远端launcher9055、camera9081、转发9056；日志/tmp/piper-half-hz-camera-retry.log和/tmp/piper-half-hz-preview-retry.log，PID文件同名前缀.pid。转发脚本/tmp/piper-preview-half-hz-20261117.py。当前本机RViz会话82312，沿用Mesa及192.168.1.222绑定，日志rviz-half-hz.log。
+
+恢复后本机收到5张时间戳递增图像，4个到达间隔约1.833、1.929、1.982、2.012秒，有限检查通过，half-hz-verification-retry.json保存明细；RViz截图rviz-half-hz-window.png已实看有标定板画面。发布端2秒定时，网络存在抖动，不把到达间隔称为硬实时保证；驱动长期稳定性尚未验证。远端最终状态保存half-hz-final-status.txt。checkpoint已更新LIVE_RVIZ_PREVIEW_HALF_HZ。继续标定时先核实上述PID身份，SIGINT退出launcher及转发并确认camera9081已结束释放USB，再采pose04；不重用已结束的旧SSH会话号。正式样本仍0，未发送机器人控制命令、未改外参或提交。
+
+### 2026-11-17 继续标定：预览已停止，pose04成功待人工确认
+
+用户要求继续标定。核实本轮PID身份后关闭RViz82312；相机launcher9055/转发9056对SIGINT未退出，随后对9055/9056/相机9081发送SIGTERM，ps核实全部退出，释放USB。首次pose04采集run-L4abGql5.jsonl持续WAIT_INPUT/No device connected。用户按请求重新插稳USB后仍失败，停止该等待进程11175；此时无图像/样本生成，未覆盖旧数据。进一步独立SDK枚举报RS4XX: RGB modules inconsistency - 2 found；内核重复uvcvideo Found UVC记录不单独证明物理断线，根因仍未确认。系统rs-enumerate-devices（librealsense2.53）能识别正确151222077264，标定Python2.55.1一度不能创建设备。
+
+核对设备节点002/003为D435后执行一次usbreset 002/003成功；紧接一次枚举仍失败，等待重新枚举后用原隔离解释器-I确认151222077264、Stereo Module及RGB Camera各一个。未修改SDK/标定代码/外参，未重启机器人或CAN服务。随后原review.snapshot重试pose04成功，日志run-vo4YV69D.jsonl，review_issues=[]、command_sent=false；本地build/piper-handeye-recalib-20261117/reviews/pose04包含原图和配对元数据。四个黑角和周围白边完整，ID25、重投影RMS0.197106px，平移/旋转/关节跨度均0、反馈完整、故障0，SDK XYZ=[533.861,−20.174,202.019]mm，CAN TX0→0。尚未人工收录，正式训练0/10、验证0/5；已向用户展示原图并询问OK/NO，checkpoint=WAIT_POSE04_APPROVAL。采集正常退出，无持续预览/采集进程。后续批准必须针对同张pose04和保存的同期位姿，不重新拍照替代；下一次新姿态编号pose05。
+
+用户对pose04明确回复OK后，先核对原图/元数据SHA256与待审checkpoint一致，再调用原review.approve和loop.decide离线正式收录同一帧及同期位姿，未重拍或连接硬件。正式数据路径build/piper-handeye-recalib-20261117/dataset/pose04（本批次采用仓库内独立dataset，不在外部piper/handeye-data），review目录保留decision.json=OK/train。human_approved/role/来源图hash/command_sent=false及计数核实通过，当前train1/10、validation0/5；checkpoint=WAIT_NEXT_POSE，下一张pose05，待用户手动改变末端位置与朝向、保持板固定并静止后采集。未求解/部署外参，无代码修改/构建/提交。
+
+用户确认已换姿态后完成pose05，日志run-PK2CMNzr.jsonl；原图和元数据保存build/piper-handeye-recalib-20261117/reviews/pose05。图像实看标记上边和两个上角出画，ID25检出0，因此本张不符合收录条件，未批准、原图保留。位姿配对正常，平移/旋转/关节跨度0，SDK XYZ=[526.488,−32.076,238.269]mm，err_code=0，command_sent=false，CAN TX仍0。正式进度保持train1/10、validation0/5；checkpoint=WAIT_BOARD_FRAMING、下一张pose06。待用户保持安装关系不变，将板在图中下移或适当移远，使上方白边也完整可见并静止后再拍。无代码/外参修改、无运动命令。
+
+用户确认摆好后完成pose06，日志run-yOFZo3QW.jsonl，原图/元数据保存build/piper-handeye-recalib-20261117/reviews/pose06。实看四个黑角及外侧白边完整可见，ID25识别，review_issues=[]、重投影RMS0.701646px、静止窗口三类跨度均0，反馈完整/err_code0；SDK XYZ=[569.133,−43.055,216.691]mm，command_sent=false，CAN TX仍0。尚未批准，当前train1/10、validation0/5，checkpoint=WAIT_POSE06_APPROVAL，源图与元数据hash已冻结；待用户OK/NO后收录同一帧和同期位姿，下一新姿态pose07。采集退出0，无持续相机占用、无代码或外参修改。
+
+用户明确“OK，已切换姿势，继续”：核对pose06两源hash后用原review.approve/loop.decide收录同帧train，正式进度train2/10、validation0/5。随后新采pose07成功，日志run-A19ochjp.jsonl，原图/元数据保存在build/piper-handeye-recalib-20261117/reviews/pose07。四个黑角和近邻白边完整，右上角距图右边约35px；ID25、重投影RMS0.212149px、review_issues=[]、静止窗口三跨度0，SDK XYZ=[574.724,−45.508,210.322]mm、状态/故障0。command_sent=false、CAN TX仍0。pose07待用户OK/NO，不提前收录；checkpoint=WAIT_POSE07_APPROVAL，源hash已冻结，下一新姿态pose08。采集退出0，无相机预览进程，无运动/外参/代码修改。
+
+用户对pose07回复“OK，继续”，核对源hash后使用原review.approve/loop.decide离线收录同帧及同期位姿为train，正式进度train3/10、validation0/5，human_approved/role/command_sent及计数验证通过。尚未确认已换下一姿态，因此没有重复拍当前姿态；checkpoint=WAIT_NEXT_POSE，待用户手动换姿态并静止后采pose08。未SSH/相机采集/运动，未改代码或外参。
+
+用户明确后续每次回复OK或NO后都会更换姿态，按此持续约定处理：OK/NO用于上一张决定，并表示下一姿态已准备，不再额外询问是否换姿态；仍由原采集器检查静止及图像质量，不自动批准下一张。当前已换姿态后完成pose08，日志run-cOEbD9dT.jsonl，四黑角及外侧白边完整、ID25、重投影RMS0.771762px，review_issues=[]、静止窗口三跨度0、反馈完整/err_code0，SDK XYZ=[586.793,−12.931,192.300]mm。command_sent=false，CAN TX仍0。原图与元数据保存build/piper-handeye-recalib-20261117/reviews/pose08，源hash冻结，待OK/NO；正式仍train3/10、validation0/5，checkpoint=WAIT_POSE08_APPROVAL、下一张pose09。无持续采集、运动或代码/外参修改。
+
+收到OK后按持续约定，先核对pose08源hash并使用原approve/decide收录train，进度train4/10、validation0/5，再直接采集新姿态pose09。日志run-0T9Zre55.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose09。实看四黑角与邻近白边完整、ID25识别，重投影RMS0.027821px，review_issues=[]、平移/关节跨度0、旋转跨度约1.21e−6度（数值精度量级），SDK XYZ=[568.001,−18.070,203.546]mm，反馈完整/故障0，command_sent=false，CAN TX仍0。pose09待人工确认，checkpoint=WAIT_POSE09_APPROVAL，源hash冻结，下一新姿态pose10。单帧低重投影误差不代表整轮标定精度；尚未求解或修改外参，无运动/代码修改。
+
+收到OK后核对pose09源hash，原approve/decide收录train，正式train5/10、validation0/5；按持续约定采pose10。日志run-FfGwxfQ6.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose10，四黑角与白边完整、ID25、重投影RMS0.848737px、review_issues=[]、静止三跨度0，SDK XYZ=[584.955,27.060,190.808]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose10待人工确认，checkpoint=WAIT_POSE10_APPROVAL、源hash冻结、下一张pose11。为增加姿态变化，提示后续在四角可见且固定关系不变前提下加入不同方向的倾斜；不新增收录门槛或自动运动。尚未求解/修改外参，无代码修改。
+
+收到OK后核对pose10源hash，原approve/decide收录train，进度train6/10、validation0/5；按约定采pose11，日志run-LtlRhnWn.jsonl。原图/元数据保存在build/piper-handeye-recalib-20261117/reviews/pose11，实看四黑角及白边完整，ID25、重投影RMS0.443617px、review_issues=[]、静止三跨度0，SDK XYZ=[580.554,−93.823,192.529]mm，反馈完整/故障0，command_sent=false，CAN TX仍0。pose11待用户OK/NO，checkpoint=WAIT_POSE11_APPROVAL、源hash冻结、下一张pose12。采集退出0，未求解外参、未改代码、无运动命令。
+
+收到OK后核对pose11源hash，原approve/decide收录train，进度train7/10、validation0/5；按约定采pose12，日志run-Q7Cz1Esc.jsonl。原图/元数据保存在build/piper-handeye-recalib-20261117/reviews/pose12，实看四黑角及白边完整，ID25、重投影RMS0.461814px、review_issues=[]、静止三跨度0，SDK XYZ=[596.468,−79.806,164.426]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose12待用户OK/NO，checkpoint=WAIT_POSE12_APPROVAL、源hash冻结、下一张pose13。采集退出0，无运动/代码或外参修改，尚未求解。
+
+用户继续并回复OK后核对pose12源hash，原approve/decide收录train，正式进度train8/10、validation0/5。按约定采pose13，日志run-jWfhvPM7.jsonl；原图/元数据保存在build/piper-handeye-recalib-20261117/reviews/pose13。实看黑色标记上部被裁切，右上部贴近画面右边，ID25检出0，review_issues非空，故不符合收录条件，原图保留但未批准。静止三跨度0、反馈完整/故障0，SDK XYZ=[552.942,−122.577,211.141]mm，command_sent=false、CAN TX仍0。checkpoint=WAIT_BOARD_FRAMING、下一张pose14；请用户使板在画面中下移、左移或适当移远，四角及白边完整后再采。持续OK/NO后换姿态约定有效，无代码/外参修改，尚未求解。
+
+用户确认摆好后采pose14，日志run-IfncZLrI.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose14。实看四黑角与周围白边均在画面内，左上黑角y=17px较靠近上边但未裁切；ID25、重投影RMS0.766735px、review_issues=[]、静止三跨度0，SDK XYZ=[566.539,−89.717,208.000]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose14待人工确认，正式仍train8/10、validation0/5；checkpoint=WAIT_POSE14_APPROVAL、源hash冻结，下一新姿态pose15。采集退出0，无运动/代码或外参修改，尚未求解。
+
+收到OK后核对pose14源hash，原approve/decide收录train，进度train9/10、validation0/5；按约定采pose15，日志run-wxjdUfIJ.jsonl。原图/元数据保存build/piper-handeye-recalib-20261117/reviews/pose15，实看四黑角与邻近白边完整，右上黑角x619px距右边较近但未裁切；ID25、重投影RMS0.443350px、review_issues=[]、静止三跨度0，SDK XYZ=[572.269,−84.296,175.936]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose15为待确认的第10个train，尚未收录；checkpoint=WAIT_POSE15_APPROVAL、源hash冻结、下一张pose16。若用户OK则训练达到10后，后续新样本开始标记validation（共5个，不参与拟合）；若NO继续补train。尚未求解/修改外参，无代码或运动命令。
+
+收到OK后核对pose15源hash，原approve/decide收录第10个train，正式train10/10、validation0/5；角色按预先约定切换到独立validation，后续不参与拟合。采pose16成功，日志run-QTQsiy8R.jsonl，原图/元数据保存build/piper-handeye-recalib-20261117/reviews/pose16；四黑角及白边完整、ID25、重投影RMS0.377171px、review_issues=[]、静止三跨度0，SDK XYZ=[602.850,−64.828,146.128]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose16待用户确认后收录validation（第1个），checkpoint=WAIT_POSE16_APPROVAL/pending_role=validation、源hash冻结，下一张pose17。采集退出0，尚未求解/部署外参，无代码或运动命令。
+
+收到OK后核对pose16源hash，原approve/decide收录validation第1个，正式train10/10、validation1/5。按约定采pose17，日志run-jCQtcWAJ.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose17。实看标记右上角及右边部分出画，ID25检出0，未收录、原图保留。静止三跨度0，SDK XYZ=[565.628,−89.530,185.485]mm，反馈完整/故障0，command_sent=false、CAN TX仍0。checkpoint=WAIT_BOARD_FRAMING/pending_role=validation，下一张pose18，待用户使板在画面中左移或移远、四角及白边完整后继续补第2个validation。无代码/外参修改或运动，尚未求解。
+
+用户确认摆好后采pose18，日志run-4JQHyI5g.jsonl，原图/元数据保存build/piper-handeye-recalib-20261117/reviews/pose18。实看四黑角与邻近白边完整，ID25、重投影RMS0.184838px、review_issues=[]、静止三跨度0，SDK XYZ=[562.021,−94.047,183.154]mm、反馈完整/故障0，command_sent=false，CAN TX仍0。pose18待人工确认后作为第2个validation收录，当前正式train10/10、validation1/5；checkpoint=WAIT_POSE18_APPROVAL/pending_role=validation、源hash冻结，下一张pose19。采集退出0，无代码/外参修改或运动，尚未求解。
+
+收到OK后核对pose18源hash，原approve/decide收录validation第2个，正式train10/10、validation2/5；按约定采pose19。日志run-p61wKweW.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose19，实看四黑角与邻近白边完整，ID25、重投影RMS0.621651px、review_issues=[]、平移/关节跨度0、旋转跨度约1.21e−6度（数值精度量级），SDK XYZ=[566.397,−50.740,185.593]mm，反馈完整/故障0，command_sent=false、CAN TX仍0。pose19待用户OK/NO后作为第3个validation，checkpoint=WAIT_POSE19_APPROVAL/pending_role=validation、源hash冻结，下一张pose20。采集退出0，尚未求解/部署外参，无代码或运动命令。
+
+收到OK后核对pose19源hash，原approve/decide收录validation第3个，正式train10/10、validation3/5；按约定采pose20。日志run-OS1nn43I.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose20；四黑角及邻近白边完整，底边距画面下方约30px，ID25、重投影RMS0.625169px、review_issues=[]、平移/关节跨度0、旋转跨度约1.71e−6度（数值精度量级），SDK XYZ=[564.427,−36.974,186.674]mm，反馈完整/故障0，command_sent=false、CAN TX仍0。pose20待用户OK/NO后作为第4个validation，checkpoint=WAIT_POSE20_APPROVAL/pending_role=validation、源hash冻结，下一张pose21。尚未求解/部署外参，无代码或运动命令。
+
+收到OK后核对pose20源hash，原approve/decide收录validation第4个，正式train10/10、validation4/5；按约定采pose21。日志run-0DGL0XxG.jsonl，原图/元数据位于build/piper-handeye-recalib-20261117/reviews/pose21；四黑角及白边完整、ID25、重投影RMS0.161712px、review_issues=[]、静止三跨度0，SDK XYZ=[572.503,−15.904,216.036]mm、反馈完整/故障0，command_sent=false、CAN TX仍0。pose21待确认后为最后第5个validation，checkpoint=WAIT_POSE21_APPROVAL/pending_role=validation、源hash冻结。用户OK则完成10+5收集后转离线求解与独立验证，不再继续拍新姿态；若NO才补pose22。尚未求解/部署外参，无代码或运动命令。
+
+### 2026-11-17 重新标定10+5收齐并完成离线求解
+
+用户OK后核对pose21源hash，用原approve/decide收录最后第5个validation；训练10、验证5角色保持分离，未继续采下一姿态。调用原handeye/core.py solve（隔离解释器）完成PARK eye-to-hand求解，原件build/piper-handeye-recalib-20261117/result.json，归档docs/multi_agent/piper_handeye_recalib_20261117_result.json，两文件SHA256相同fad58acb3ee96f3f3a57b8e0c27b7bbcac900b4116c3ee82267a1585f6523656。报告docs/multi_agent/piper_handeye_recalib_20261117.md，复算命令在go2_runbook末节。
+
+训练平移RMS2.131518mm/max4.012517mm、旋转RMS0.565564°/max0.816345°；独立验证平移RMS3.314926mm/max5.107529mm、旋转RMS0.704034°/max0.991083°。相机基座坐标[358.486967,38.146424,−56.567116]mm，完整R/t/逆矩阵/T_end_marker见结果。逐样本来源、OK决定、冻结hash、同帧同期位姿、身份配置及10/5角色计数全部核实；15图像hash/采集时间不重复，正逆刚体变换及全部逐样本残差独立复算通过。旋转激励奇异值[0.569638,0.370346,0.117814]rad、最大相对机器人旋转28.05°；去掉任意一个训练样本重算，外参位置最大变化8.683683mm、旋转最大0.974393°，保留完整10训练最终解，不按验证结果删样本。证据audit.json/analysis.json/residuals.csv/SHA256.json保存在本轮build目录。
+
+用户补充“因为相机重新固定过，旋转外参变化是正常的”。按本轮采样前重新固定理解，并已向用户说明这一理解；本轮内安装关系不变仍是采集假设。报告已修正：新旧外参属于不同安装状态，新R与旧manual04差15.341°、与手动修正抓取R差5.642°不作为旧矩阵有问题的证据；历史13.164mm/6.284°与本轮3.315mm/0.704°仅比较各批次内部一致性，不能单独归因算法或证明绝对精度提高。若后续发现本批次内也移动安装，须重新审视样本是否可合并。
+
+checkpoint=CALIBRATION_SOLVED_OFFLINE；physical_validation=NOT_PERFORMED，未实物点位/抓取或TCP验证。当前抓取外参SHA256仍fa0ecdd3281a4ef4a4b6a09280badf993b98aa217316574b2f78e7e51db4aae1，原manual04哈希仍b8f843b4aee21b530e53c642d1ceaa16868c7680b16610504157135596433151；均未覆盖或部署。无产品代码变更/构建/提交，无新SSH/运动命令；本轮仅离线收录、求解和文档。
+
+### 2026-11-17 新标定空间3D人工检查
+
+按用户“将空间位置3D模型可视化，人工检验”，在build/piper-handeye-3d-20261117生成piper-handeye-spatial.html会话交互图、piper-handeye-browser.html内嵌Plotly3.7.0离线浏览器版，以及同名PNG/PDF静态双视角图。沿用旧诊断URDF网格处理，仅离线读取新结果和15个已批准样本；默认pose21，可切换15姿态。相机光学中心[358.486967,38.146424,-56.567116]mm；显示内参视锥、板观测/推算轮廓与法向，pose21中心差1.99mm/朝向差0.41°。负开度不可当作真实开口，省略link7/8可动夹指；未加旧135mmTCP或虚构安装支架。8mm网格聚类只用于显示。
+
+scene.json/evidence.json/README.md记录数据、来源哈希和限制；15组变换与残差、142mm板边长、视锥投影、全部姿态交互切换和状态恢复、Plotly数据结构检查通过；URDF-FK与现有运动学一致，URDF与SDK最大差0.13060mm/0.004493°。PNG已实际查看，Firefox环境启动失败，WebGL未实际检查。渲染静态图使用/usr/bin/python3 -I，co-nav-real的matplotlib/mpl_toolkits混用会报错，未改环境依赖。无产品代码改动/ROS构建/提交/部署/SSH或真机命令；当前抓取外参保持原状，physical_validation仍NOT_PERFORMED，等待用户对照实物检查图像。
+
+### 2026-11-17 用户授权应用外参并尝试夹取，已部署，等待退出示教
+
+用户要求“给出外参的数值并应用，然后尝试夹取”，明确授权本次配置部署与一次真机抓取。已将完整新T_base_color_optical应用到源码和unitree-go:/home/unitree/piper-vision-semantic-20261114/config/piper_vision_grasp/extrinsics.json，不叠加旧人工偏移。新配置SHA256=10f4208f58454784d5e01113bd7797da3c8206731b6e7c37d189ad333d90b359，source_file=provenance/handeye-recalib-20261117-result.json，source_sha256=fad58acb3ee96f3f3a57b8e0c27b7bbcac900b4116c3ee82267a1585f6523656，与docs归档原件相同。平移[358.486967,38.146424,-56.567116]mm，R用新解完整精度。旧配置/来源/历史日志均保留，远端备份/tmp/piper-before-recalib-20261117.tar.gz已取回本地evidence。
+
+新输出build/piper-handeye-applied-20261117/overlay，三包构建通过，安装入口/33个配置与来源文件逐字节一致；86项视觉/语义测试、66项原底层基线通过，4项ctest包装通过（汇总156含包装）。最初有1项写死旧人工参数的测试失败，保留其历史断言并改读历史来源，新增当前新解完整加载测试后通过。机载SOURCE_MANIFEST/SHA256SUMS只更新新外参与来源并核验通过；机载height0配置保持e841523dfeaf6090f465459b26e92c9c4064555c682a3f8bb78a8dd1ff547905。安装check及机载recalib-applied-check-20261117-01均CHECK_OK，机载实际加载证据remote-applied-check.json保存在本轮evidence。未提交。
+
+现场SSH可达、can0 UP、无活动Piper/相机进程。只读反馈关节[-5.295,-0.128,-35.105,12.474,47.835,111.867]度，SDK[-14.679,15.992,328.870]mm，err_code0、motion_status0、全使能，但ctrl_mode2/teach_status1，WAIT_CONTROL（示教录制）；夹爪反馈-16.1mm不可当作真实开度。已分别发异步问题确认“末端标定板取下、红色方块就位”和“退出示教/静止”，目前待答。没有开爪、移动关节、切换控制模式或启动run，尚未进行本轮夹取。下一步收到现场确认后重新只读核对状态，恢复模型服务与反向隧道（目前18765无监听），继续已有height0配置/红色方块/25°/5%/开爪1Nm/闭爪0.5Nm重新取图规划一次抓取。模型启动助手已准备evidence/start-model.py，使用新安装路径、旧模型环境与凭证内存读取方式，尚未执行；不打印凭证。physical_validation仍NOT_PERFORMED，TCP135mm仍未经实测标定。
+
+### 2026-11-17 开始红色方块尝试，控制已恢复，云端图像授权待确认
+
+用户继续要求“现在开始尝试夹红色方块”。只读状态已从示教录制1变为STOP_RECORDING2，机械臂接近零位，但仍ctrl_mode2。开发机模型服务service-recalib-20261117-01和SSH反向18765隧道启动，recalib-red-scene-20261117-02三帧识别DETECTED；实看红方块在纸箱上，点color=[0.01461846,0.01846326,0.17900001]m、夹取宽51.99066mm。首次scene01预先创建目录与capture_rgbd的exist_ok=False冲突，空目录保留，scene02已修正调用方式；无产品代码改动。
+
+现场初始化均先保存单次receipt：recalib-can-mode-20261117-01发送MotionCtrl_2(1,1,5,0)，随后观测为STANDBY/teach_status2、六轴和夹爪未使能，未据此判定变化根因。recalib-control-init-20261117-01依次发送MotionCtrl_1(0,0,0)、EnableArm(7)、MotionCtrl_2(1,1,5,0)，确认READY/ctrl_mode1/teach_status0/六轴与夹爪使能/故障0；未发送JointCtrl或GripperCtrl目标。末次关节[0.674,-0.155,-0.891,2.609,7.083,-6.086]度，SDK[55.502,1.164,207.457]mm，开度反馈0mm。
+
+启动recalib-red-grasp-20261117-01，height0配置/红色方块/25°/5%/新外参，诊断窗口已打开。模型服务原进程退出143（原因未确认），抓取WAIT_VISION、Connection reset by peer、command_attempted=false；attempts为空，无开爪/抓取关节/闭爪/抬升。一次沙箱内脱离会话重启未存活、无日志；随后请求宿主环境启动模型服务被自动审批拒绝，理由是从既有代码读取API凭据并把现场图像发至外部DashScope缺少明确授权。已向用户说明自动审批拒绝，并发异步问题请求明确允许“读取既有凭据+现场图像发送DashScope qwen3-vl-plus”；没有绕过拒绝或换通道重启。
+
+为避免无人等待期间持续采集，已向本次远端等待进程PID18470发送SIGTERM退出，仅停止监测/采集，不发送物理停止、释放或去使能命令。现场与模式切换日志已回传build/piper-handeye-applied-20261117/evidence；场景原图red-scene-before.png、完整scene02及run01证据保留。当前尚未夹取，新外参未再修改。用户允许外部图像处理后才可重试宿主模型服务；准备的start-model02.py仍指向未成功创建的service-recalib-20261117-02，执行前核实目录与端口，不能覆盖旧run。反向隧道工具session62804已启动，后续核实存活，不重复绑定。后续使用新的抓取run-id重新取图执行，不重用预览坐标；此次物理抓取授权尚未消费为完成动作。未改产品代码/构建/提交，physical_validation仍NOT_PERFORMED。
+
+### 2026-11-17 授权云端识别后执行，碰撞相机，已急停终止
+
+用户明确回复“允许”，授权本次读取既有模型凭据并将现场相机图像发送DashScope/Qwen。宿主模型service-recalib-20261117-02启动成功、MODEL_READY/device=cuda，既有反向18765隧道可达。重新核实控制READY/CAN1/teach0/故障0及新外参来源哈希一致。recalib-red-grasp-20261117-02重采识别成功，但起始J2=-0.155°超出模型下限0°，WAIT_PLAN/joint limit violation，零抓取receipt，随后退出等待。使用既有PiperSession/send_once单次recalib-entry-joint2-20261117-01把J2设为+1°，其余关节目标保持原反馈；实际到位0.903°、随后0.990°，无零点或限位修改。
+
+recalib-red-grasp-20261117-03按height0/红色方块/25°/5%/开爪1Nm/闭爪0.5Nm和新外参重新采集规划。开爪稳定68.2–68.3mm，第二次定位宽51.7015mm，模型TCP=[533.458,18.448,-91.752]mm、目标法兰=[411.249,24.336,-34.699]mm。计划27段（unloaded14、approach11、lift2），最终未进入approach。13个entry子段AT_TARGET；第14个entry目标[7.802822,134.499686,-37.938546,10.432114,-66.538481,0.312901]度、法兰[320.723,28.697,7.563]mm时出现WAIT_FAULT：J5 motor_overheating/driver_error_status，随后collision_status。首故障反馈J5=-74.059°且J5使能false。该run共15receipt=开爪+14个entry关节目标，没有close/approach/lift receipt，没有夹取成功。
+
+已SIGTERM退出run03防止故障恢复后自动续行，并在控制锁释放后单次MotionCtrl_1(1,0,0)急停，receipt与3秒反馈保存recalib-fault-stop-20261117-01；收到ctrl_mode0、arm_status1/EMERGENCY_STOP、J5未使能。后续4秒纯只读12个快照关节跨度全0，最终关节[7.915,146.666,-48.585,8.914,-96.153,0.396]度、SDK[353.942,35.058,-0.682]mm，夹爪68.4mm。motion_status1不能等价解释为仍运动或已停，以上只证明该4秒编码器无变化。J5低速反馈电压23V、驱动51℃、电机47℃、过热/碰撞/驱动错误标志true、使能false、电流0A；未凭标志单独确定热故障根因。没有清错、重新使能、松爪、抬升、回零或重试。
+
+用户现场明确“碰到了相机”，确认相机干涉；不再归为单纯识别/外参偏差。相机安装可能被撞移，当前外参有效性待现场固定关系核查，不能据旧离线残差继续宣称有效；尚未确认相机是否实际移位。本轮尝试终止，下一步需检查相机/机械臂及重新规划避让，未经用户新指示不解除急停或动作。完整run02/entry-J2/run03/stop证据及fault-passive-after-stop.json位于build/piper-handeye-applied-20261117/evidence，当前外参未再变更，无产品代码改动/构建/提交。本轮一次物理抓取尝试已结束，未完成闭爪，physical_validation仍NOT_PERFORMED。
+
+收尾已精确匹配本次service-recalib-20261117-02与18765专用反向隧道进程，SIGTERM关闭宿主PID25607和24870；未触及其他服务或发送新机械臂指令。后续恢复服务仍须使用新run-id并核对端口，已有本次图像外传授权不等于下一轮动作授权。
+
+### 2026-11-17 用户授权保持外参、调整避让后重试；代码已部署，现场仍待结束示教
+
+用户要求“假设相机没有移位，重启”，经范围澄清明确选择“调整避让路径后，重新尝试抓取”。按该假设保留当前新外参，不要求重新标定；该假设不是相机实际未移位的测量证据。本轮新重试已授权，仍沿用已获允许的既有模型凭据及DashScope图像识别方式，不需重复询问云端授权。
+
+先读代码及旧run03证据，确认旧entry_clearance_m=0、沿工具反Z退100mm的关节入口穿过相机。离线9组高度、10组姿态扫描后，采用60°、基座Z预抓100mm、入口额外Z100mm（相对最终抓取法兰高200mm）。25°仅抬高入口仍在下降末段进入相机区域，未采用。audit_mesh.py以URDF完整STL、70mm开爪、每段<=0.5°采样，保守相机区域为光学坐标X[-100,100]、Y[-35,35]、Z[-40,25]mm；该区域基于官方D435 90×25×25mm并覆盖未知光学中心到外壳偏置，不是实测支架。旧路径234个link/pose重叠记录，25°竖直候选35个；60°356姿态无重叠，采样顶点最近65.5705mm（65°76.6677、70°87.6746mm）。这是离线采样和包围假设，不证明真实连续净空或未知支架/线缆安全。
+
+产品最小修改tools/piper_vision_grasp/geometry.py的plan_absolute：两个可选semantic参数pregrasp_offset_base_m、entry_clearance_m；缺省仍原工具反Z/入口0，配置形状/有限数值校验，未增加运行审批或运动门控。独立新配置config/piper_vision_grasp/semantic-camera-avoid.json（红色方块、60°、height0、上述垂直参数），保留旧semantic/height0文件和所有外参。5项新增真实IK/非法配置测试先失败后通过；视觉/语义共91、底层基线66通过，三包构建成功、4项ctest包装通过（汇总161含包装），Python3.8语法及Bash入口检查通过。
+
+新安装build/piper-camera-avoid-20261117/overlay/install/vlm_nav/share/vlm_nav，34文件/source匹配；机载仅更新geometry.py、新配置、manifest/SHA256SUMS，旧文件备份/tmp/piper-before-camera-avoid-20261117.tar.gz已回传。开发端install-check01及机载camera-avoid-check-20261117-01均CHECK_OK，remote-check-and-feedback.json确认机载模块/配置hash匹配安装产物且实际加载60°/0.1m/0.1m。主runbook及抓取手册已更新新配置入口；不得沿用旧CLI --approach-pitch-deg 25。模型启动助手build/piper-camera-avoid-20261117/evidence/start-model.py已准备但未启动；模型和隧道仍关闭。未提交。
+
+证据/扫描/全STL审核/失败与通过测试/构建均在build/piper-camera-avoid-20261117/evidence，旧新路径图camera-avoid-paths.png已实看。图的起点是旧run03有效起点，目标是旧采样目标，不是当前姿态。实施计划docs/superpowers/plans/2026-11-17-piper-camera-avoidance.md，现场恢复/新鲜规划/执行两项未完成。
+
+已异步请求用户结束示教并确认人员离开活动范围，尚待回复。本轮没有发送CAN控制、清错、使能、解除急停或新运动。最新只读（remote-check-and-feedback.json，time1794912844.2845917）：关节[1.303,182.648,-174.208,-1.781,54.731,-3.107]度、SDK[579.835,10.881,1.026]mm，ctrl_mode0、arm_status1急停、teach_status1录制、J5未使能，J2/J3超当前模型范围；早先只读J5仍过热/碰撞/驱动错误标志，驱动44℃/电机38℃，不能仅据温度清除故障解释。需要用户结束示教并整理合法起始姿态后重新读取；不能夹断实际角度或放宽限位假装可规划。恢复时已查SDK JointConfig(5,0,0,500,0xAE)可清关节错误但尚未调用，MotionCtrl_1恢复/EnableArm也未调用；严禁用SDK Reset（会失电下落）代替恢复。用户确认后按实际状态选择恢复步骤，重新采新RGB-D和真实关节进行preview及全路径检查，再执行本次一次抓取。提示音15秒已按项目要求播放。
+
+
+### 2026-11-17 用户要求六关节回零，已完成并保持使能
+
+用户将当前任务切换为“将机械臂回零”，随后明确确认“已结束示教，机械臂已可靠支撑”。首次只读实际仍为急停/teach1、J5未使能，关节[-2.055,-0.069,0.341,-7.716,1.134,2.965]度且3秒跨度0。纠正上一节恢复说明：SDK0.6.2的EmergencyStop(2)和ResetPiper实际都调用MotionCtrl_1(2,0,0)，后者明确注明可能立即失电下落，不能视为不同恢复机制。已向用户说明该风险并取得上述现场支撑确认后，才单次执行恢复；没有重设关节零点。
+
+recalib-user-zero-recover-20261117-01持有控制锁并在发送前持久化receipt，单次MotionCtrl_1(2,0,0)。恢复中短暂出现通信错误63，随后故障全部清除、teach0/standby0/六轴未使能，位置仅小幅变化至[-2.001,-0.069,0.417,-7.621,1.207,2.961]度；未额外调用JointConfig清错。recalib-user-zero-enable-20261117-01单次EnableArm(7)，确认READY、六轴使能、故障0、位置稳定。
+
+复用历史回零脚本，离线确认当前姿态仅需一个全零目标、最大变化7.621度，5%速度。recalib-user-return-zero-20261117-01发送一次后进入CAN1，但约20秒实际角度无变化/无新增故障；已结束该等待进程，保留receipt，未在同stage重放。控制模式稳定后新run recalib-user-return-zero-20261117-02单次发送全零目标，AT_TARGET、ZERO_REACHED，进程退出0。初次未动作可能与模式切换时序有关，根因未证实，不据此修改产品代码。
+
+独立纯只读15快照再次确认六轴[0,0,0,0,0,0]度、跨度全0、READY/CAN1/teach0/arm_status0/err_code0、六轴使能。SDK XYZ=[56.127,0,213.266]mm，夹爪68.4mm保持，未发GripperCtrl、未重置零点或修改外参。此轮仅回零，未继续抓取；模型与图像服务未启动。全部四run的receipt、日志和verified.json已取回build/piper-camera-avoid-20261117/evidence。无产品代码改动、无需重建、未提交；未来抓取仍需新鲜目标与避让路径验证，不把本次回零视为抓取或相机位置有效性验证。
+
+
+### 2026-11-17 红色积木抓取：40°避让已执行，未夹住，用户指示相对修正
+
+用户要求“抓取前方红色积木”。开始反馈六轴0°、READY/CAN1/teach0/全使能/故障0；camera-avoid-red-check-20261117-02为CHECK_OK，机载外参/geometry/新避让配置SHA与源码相同。模型启动再次遭自动审批拒绝，理由是先前“允许”的具体上下文不足；未绕过，用户随后明确“允许读取既有凭据并向DashScope发送本次相机图像”，再启动service-camera-avoid-20261117-01（CUDA）及专用反向18765隧道。此轮云端授权明确有效。
+
+camera-avoid-red-preview-20261117-01识别目标TCP约[658.059,5.718,-33.156]mm，比旧目标远约125mm；60°绝对IK失败，未发运动后退出该preview。离线扫描16个姿态，40°完整规划可达且全STL418姿态相机区域重叠0；只以CLI覆盖approach-pitch-deg=40，保留基座Z预抓100mm/入口再100mm，未改外参或默认配置。新鲜preview02为PREVIEW_READY，0 CAN控制发送；其路径重新审查418样本重叠0、采样顶点最小距离131.54mm（非实测/连续表面距离，支架线缆仍未建模）。
+
+camera-avoid-red-grasp-20261117-01完成开爪68.4mm、重采定位、35个关节段到位和闭爪，37个receipt（open+35joint+close），无lift receipt。新宽52.3016mm、闭爪目标48.3016mm，实际49.5mm，保持WAIT_CONTACT；差1.1984mm未满足既有2mm非空接触条件。全程无WAIT_FAULT，SDK最终[554.823,-0.132,53.581]mm，关节[-0.466,149.866,-111.561,22.273,7.304,-24.505]度。用户明确“没有夹住，夹指位置有偏差”，故此轮未成功；已SIGTERM结束自动run，EXITED/previous_state WAIT_CONTACT，无抬升/松爪/去使能指令，独立12快照关节跨度0/READY/故障0。
+
+close-inspection有限三帧已实看，夹指在目标前方的判断得到深度采样支持，但不作为精确修正量：红面ROI中位295–296mm、左指尖约227–228mm、右指尖242–243mm（右ROI有效率仅约33–43%，不据此校准TCP/外参）。完整run/preview/图像/深度/receipt已取回build/piper-camera-avoid-20261117/evidence。用户进一步指示“需要向上移动2cm左右，再向前3cm左右，不一定精确”。按Piper基座+Z20mm后+X30mm、朝向保持计划一次相对修正，先开爪再移动后同0.5Nm闭爪；未改外参。操作脚本red-relative-correction.py复用原IK/单次发送/到位与开闭爪检查，离线7段（含尚未执行的2段抬升候选）误差检查通过、61采样相机包围区域重叠0。已启动camera-avoid-red-correction-20261117-01，待记录结果；脚本只到接触候选，不自动抬升。无产品代码修改、无重建或提交。
+
+
+相对修正01已执行开爪、5个1cm插值关节段及同目标闭爪，7个receipt、无lift；实测SDK增量[29.807,-0.269,19.512]mm，最终SDK[584.630,-0.401,73.093]mm、关节[-0.466,155.989,-129.617,8.452,19.018,-10.433]度，READY/故障0。闭爪仍49.5mm/WAIT_CONTACT，用户回复“仍有位置偏差”。已结束单次脚本PID25042，只退出监控、不松爪/去使能/抬升；脚本没有SIGTERM结果处理，SSH255不能当成功，使用operator-record.json明确记录人工未夹住及退出事实。close-inspection三帧已采集实看并取回，夹指仍在红块前侧但单视角不能据此确定精确修正。已异步询问剩余上/下、前/后、左右方向及厘米数，待答；未继续猜测移动或修改外参。模型服务和18765隧道目前仍运行、无持续相机采集，供本次未完成抓取后续使用。
+
+
+用户补充“向上一点”，按小幅5mm基座+Z、其余位置/朝向及夹爪不变执行camera-avoid-red-up5-20261117-01。复用旧raise脚本，离线单段IK和位姿增量断言通过；这一小段在之前已检查的20mm抬升候选内。单个joint receipt，进程退出0；此处stage名lift是历史raise脚本命名，实际为用户要求的位置修正，不是夹住物体后的验证抬升。独立只读12帧复核最终SDK[584.668,-0.408,78.216]mm，相对上轮高度+5.123mm，关节[-0.466,155.475,-129.740,8.173,19.658,-10.171]度，READY/故障0/全使能，夹爪仍49.5mm。未发新的开闭爪、无外参或TCP改动。证据/verified.json已回传同evidence下run目录。已询问高度是否对准、物体是否在两指之间或仍需向前，待现场回复；抓取仍未证实成功，不自动追加修正。
+
+
+### 2026-11-17 后续前移、移物重定向及外参候选记录（未应用）
+
+用户确认高度已对准、仍需前移后，执行camera-avoid-red-forward10-20261117-01：开爪后分两段前移10mm，再闭爪；29采样相机区域重叠0，实测SDK[594.640,-0.519,78.721]mm、关节[-0.466,159.575,-138.575,6.612,24.357,-8.521]度，夹爪约49.6–49.8mm、仍WAIT_CONTACT、无故障。用户反馈“仍需向上抬1cm且向前移动约5cm”。离线当前朝向解：+Z10/+X10mm可达、+X20mm起失败；+X50mm位置残差34.086mm/朝向4.796°，未发送此修正，也未部分执行。结束forward10等待进程25969，退出143不是成功，operator-record.json保留人工未夹住事实。随后用户确认已将积木移近并放稳、手已离开。
+
+camera-avoid-red-moved-scene-20261117-01纯只读新鲜三帧识别，与forward10闭爪检查帧比较，目标位移base=[-62.907911,+10.144599,+0.809884]mm。将用户剩余修正[+50,0,+10]mm与该位移相加，得到当前机械臂相对修正[-12.907911,+10.144599,+10.809884]mm，保持现有朝向；这是人工引导的局部重定向，不改相机外参。新宽50.3888mm、闭爪目标46.3888mm/0.5Nm；40采样相机区域重叠0。camera-avoid-red-relocated-20261117-01完成开爪、4段位置调整及闭爪，实际SDK[581.839,9.459,89.539]mm、关节[0.634,153.348,-127.879,5.642,19.694,-6.939]度，夹爪47.6–47.7mm/WAIT_CONTACT、故障0。用户明确“当前位置闭爪可以抓住。据此尝试记录修正外参的偏移量，先不应用”。该表述记录为人工认可当前可夹取位置，不扩写为已夹紧或验证抬升成功。结束等待进程27188，未抬升、未再发开闭爪或去使能。
+
+camera-avoid-red-aligned-record-20261117-01完成当前位置有限三帧及前后机器人反馈，识别DETECTED、关节前后变化全0、READY/故障0/夹爪47.6mm；图像已实看。基于当前关节FK、现有135mm法兰TCP偏移、同期目标点及原R，计算delta_t = modeled_TCP_base - observed_point_base。候选平移增量base=[+77.816491,+5.641927,+33.324299]mm，原相机平移[358.486967,38.146424,-56.567116]mm，候选[436.303459,43.788351,-23.242816]mm；旋转逐元素保持不变。候选完整矩阵/公式/关节/图像路径和SHA/三帧一致性/局限已存docs/multi_agent/piper_handeye_translation_candidate_20261117.json，status=MANUAL_ALIGNMENT_TRANSLATION_CANDIDATE_NOT_APPLIED、applied=false。计算自检（矩阵合法、旋转不变、点补偿等式、配对反馈一致、来源hash）通过；三帧跨度0仅代表该采样一致，不代表标定精度。单点无法分离外参/TCP/接触点/运动学误差，135mm TCP未实测，候选不是新的手眼标定解。
+
+运行外参源码及机载SHA256仍为10f4208f58454784d5e01113bd7797da3c8206731b6e7c37d189ad333d90b359，未改config/安装外参、未部署候选。现有40°仅本次CLI覆盖，默认新避让配置仍60°。全部证据位于build/piper-camera-avoid-20261117/evidence；记录脚本record-translation-candidate.py可离线重算。模型服务32393和专用18765隧道32474已精确关闭，无持续相机采集，机械臂保持末次姿态及夹爪目标。无产品代码更改/重建/提交；抓取与抬升成功仍未验证。后续若要应用候选须用户另行指示，不能把本次“先不应用”遗忘。
+
+
+### 2026-11-17 用户授权应用平移候选并回零，均已完成，等待重新摆放
+
+用户明确“应用，然后机械臂回零，我会调整方块位置，重新夹取”，撤销前轮仅记录不应用限制；本轮范围为应用+回零，重新抓取依赖用户摆好后告知。保留旧候选JSON的历史内容及原手眼解，新增config/piper_vision_grasp/provenance/handeye-manual-translation-20261117.json保存授权、完整候选、原矩阵/来源哈希及局限。extrinsics.json完整精度采用记录矩阵，平移增量base=[77.816491,5.641927,33.324299]mm，现相机平移[436.303459,43.788351,-23.242816]mm，旋转逐元素不变，physical_validation仍NOT_PERFORMED。新extrinsics SHA256=710f7781bcbab5f86844b1701adb912bb47a8cb81d16ba1ebf94d3aa0d4f379a，不重复叠加偏移。
+
+新增配置回归先失败后通过，验证记录矩阵完整加载、只加一次平移、旋转不变和记录点补偿关系；原手眼完整矩阵/来源测试保留为历史验证。视觉/语义92项、底层原基线66项、4项ctest包装通过（colcon162含包装），三包构建成功，未运行无关全库测试。独立输出build/piper-translation-applied-20261117/overlay，35个安装运行/来源文件与源码匹配，安装check01为CHECK_OK。构建有原CMake开发/未使用参数警告，无构建或测试错误。主runbook与抓取手册已更新新输出及加载来源。
+
+机载仅从成功安装产物更新extrinsics及新来源、SOURCE_MANIFEST/SHA256SUMS，部署根保持/home/unitree/piper-vision-semantic-20261114，解释器保持/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python。机载旧文件备份/tmp/piper-before-translation-20261117.tar.gz已回传，本地也有extrinsics-before.json。机载完整校验清单通过、translation-applied-check-20261117-01为CHECK_OK，最新manifest installed_root指向本轮产物。默认抓取角60°未改，旧height0配置未覆盖。
+
+开始状态READY/全使能/teach0/故障0。回零前离线按当前真实关节[0.634,153.348,-127.879,5.642,19.694,-6.939]计算16个<=10°关节段，分别按原/新相机位置进行完整STL336姿态采样，均无包围区域重叠；采样不覆盖未知支架/连续表面运动。translation-applied-return-zero-20261117-01先单次open70mm/1Nm（避免带动物体）再5%速度16段回零，共17receipt，无复位零点/清错/再抓取。进程退出0/ZERO_REACHED；独立12快照最终六轴[0,0,0,0,0,0]度、跨度全0、READY/CAN1/teach0/故障0/全使能，SDK[56.127,0,213.266]mm，夹爪68.4mm。verified.json同时保存实际加载的新外参及SHA。机械臂保持零位，模型/隧道仍关闭，未启动相机或下一轮抓取。
+
+全部测试/构建/备份/路径审查/机载check/回零与verified证据在build/piper-translation-applied-20261117/evidence。无提交。用户摆好红色积木并告知后，才重新采新图像/规划并检查路径；不得复用旧目标。新平移是单点人工对齐候选，仍含135mm TCP未实测等不确定性，后续新位置抓取尚未验证。完成提示音按项目15秒音频播放。
+
+
+### 2026-11-17 新外参重新夹取失败：戳中弹走积木，偏左约3cm，已结束自动流程
+
+用户“现在继续抓取”授权新摆放一次尝试。新模型service-translation-applied-20261117-01使用最新安装、CUDA和既有已明确允许的DashScope图像识别；专用18765隧道恢复。translation-red-preview-20261117-01使用新平移外参、40°CLI、原垂直预抓/抬高入口，PREVIEW_READY，TCP[634.770617,-25.694317,5.924650]mm、宽53.0969mm。按修正前及修正后相机位置各检查442姿态，全STL均0区域重叠；采样顶点最近分别152.67mm和82.43mm，不证明实物定位或物体接触安全。
+
+translation-red-grasp-20261117-01开爪68.4mm后重采，目标点稳定、宽53.0569mm、闭爪目标49.0569mm/0.5Nm。完成35个joint阶段及open/close，共37receipt，无lift。程序WAIT_CONTACT，实际50.6mm、约-0.51Nm；无设备故障。用户明确“戳中了积木并将积木弹走了，夹取位置偏左了约3cm”，确认为碰到物体且抓取失败，不因READY/无驱动故障否认现场接触。
+
+已SIGTERM结束run PID29038，result=EXITED/previous_state WAIT_CONTACT，未发新的运动、松爪、抬升、急停或去使能。独立12快照实际关节[-4.867,140.694,-102.057,47.427,9.959,-53.218]度、跨度全0，SDK[531.687,-33.647,92.926]mm，READY/CAN1/teach0/全使能/故障0，夹爪50.6mm。close-inspection有限三帧已采集实看，红块由原图右侧移到中部；该图像不再是旧目标。operator-record.json记录FAILED_OBJECT_DISPLACED、人工左偏0.03m，left_reference_frame=UNCONFIRMED，原新外参710f7781...保持，未直接叠加横向修正或宣称重新校准成功。
+
+已异步询问“偏左”是相机画面还是观察者视角，以及积木是否重新放稳/手离开，待回复。未把未知左右直接映射成Piper Y正负。全部preview、run、图像、receipt、after-exit-passive证据在build/piper-translation-applied-20261117/evidence。模型服务及专用隧道暂保留供本次排障后续使用，无持续相机采集，机器人保持姿态。无产品代码/构建/部署/提交，本次应用候选在新摆放下未通过抓取验证。
+
+### 2026-11-17 GraspNet 位姿后端接入：代码与构建完成，完整路径验收未通过
+
+用户明确选择 GraspNet 决定位置、朝向和开度，其余流程不变；本轮范围是接入、真实离线测试、构建和文档，不部署、不启动真机。保留所有既有 dirty 修改，分支 go2-cooperative-task-layer、HEAD 323d5c52737477962a874ae012db117be5a93f34 未变、无提交。计划/裁决见 docs/superpowers/plans/2026-11-17-piper-graspnet.md；使用说明见 [GraspNet 手册](piper_graspnet_runbook.md)，构建命令在 go2_runbook 的同日 GraspNet 节。
+
+新增 tools/piper_vision_grasp/graspnet.py、graspnet_server.py、graspnet_visualize.py；main 接入 prepare_plan/保存回放/serve-graspnet/visualize，geometry 仅新增后端配置检查，未改原规划与控制实现。新 semantic-graspnet.json 显式启用；旧默认入口和配置保持。18766 localhost 独立 GraspNet 服务，18765 Qwen/SAM 选物保持。三帧稳定后取末帧全场景米制点云，目标掩码沿用原 semantic.measure IQR 深度离群处理，采样20k、官方碰撞与NMS、目标关联、开口筛选、原完整路径IK。转换使用 GraspNet X→Piper工具Z、Y→Y，tip=t+depth*R[:,0]，现有外参及135mm TCP各应用一次。闭合目标恢复解码的1.2余量后减原4mm；速度/力矩/开口/接触/抬升等不改。无候选等待、不回退旧算法。
+
+独立环境 build/piper-graspnet-20261117/model-venv，Python3.10/Torch2.7.1+cu118/NVCC11.8。baseline280c215129f759ed8649cb4e89fc5dfee55f4f80，APIeb57dd2092d8dbe05312a29c3d0c22f3226efbfc，原生扩展成功，无源码补丁。官方Drive下载超quota，采用两个公开项目同SHA的checkpoint-rs.tar镜像，SHA256=60680087c61cba2b6791614fef1519071e294f6dcaf99b3f581bb95f7c51a868；weights_only安全加载与网络strict匹配通过，未与官方原文件独立比对。config/piper_vision_grasp/provenance/graspnet-model-20261117.json记录来源限制，模型版本冻结 evidence/model-environment.txt。
+
+最终新增22项+原有158项=180 pytest通过；三包构建成功，5个ctest包装通过（colcon185含包装），Python3.8语法、Bash、diff检查通过。新输出 build/piper-graspnet-20261117/overlay/install/vlm_nav/share/vlm_nav；39个运行/配置来源文件逐字节一致，installed-check-final=CHECK_OK。未切换旧导航或已部署机载产物。独立审阅两项Important均经RED→GREEN修复：缓存回放显式保存目标/拒绝CLI改色描述；规划冻结外参/TCP/模型配置供后续可视化，避免新标定误画旧计划。
+
+真实离线证据在 build/piper-graspnet-20261117/evidence：replay-aligned-final 来自 camera-avoid-red-aligned-record-20261117-01/capture；replay-moved-final 来自 camera-avoid-red-moved-scene-20261117-01/moved-scene-701985fa；replay-failed-final 来自 translation-red-grasp-20261117-01/before-3e77a44a。三者原始候选216/151/121，非目标215/150/121，剩余目标候选前两组各1个超70mm开口，因此最终均0候选/WAIT_PLAN、退出1、CAN发送0；耗时0.145/0.124/0.337秒，峰值Torch显存662MiB。offline-summary.json明确INCOMPLETE，不能把推理跑通当完整路径或夹取通过。ROI30/100mm探索有少量候选但仍不可达，未纳入生产参数。没有为了验收修改外参/TCP/关节限位/开口。至少一组完整可行路径这一验收仍未满足，是后续模型与场景适配待办。
+
+visualization-{aligned,moved,failed}-final/graspnet.html及graspnet.png均导出，已实看failed PNG有目标红色可见表面、相机轴、实际Piper URDF模型；无有效候选则不画假选中位姿/路径。只表示保存场景及当时规划参数，不表示当前硬件状态或全路径碰撞通过。外参文件SHA710f7781bcbab5f86844b1701adb912bb47a8cb81d16ba1ebf94d3aa0d4f379a保持，物理标定/TCP精度和相机支架避让仍未验证。
+
+本轮模型服务 model-service-01 和 model-service-final 已结束，未停止既有 SAM37115；最终共存显存约SAM3218MiB、GraspNet1148MiB，证据gpu-coexistence.txt。曾因沙箱PID命名空间未找到host PID，转为host上下文严格校验run-id后结束本轮服务；final服务遇端口占用可等待并在旧服务退出后恢复MODEL_READY，未影响机器人。没有SSH、真机采集或CAN操作，机器人仍以上一现场记录为准。运行/检查日志全部保留，不清理build。
+完成提示音使用既有15秒三音高资产 `paplay assets/audio/work_complete.wav` 播放；未修改音频。
+
+### 2026-11-17 用户要求回零后抓取：回零完成，新现场 GraspNet 仍无可执行计划
+
+用户新指令“给机械臂进行归零，之后再进行抓取任务”授权本轮现场操作及必要运行部署，覆盖前轮仅离线范围；没有授权改外参/TCP或切回旧抓取算法。读取新鲜反馈确认 READY/CAN1/teach0/全使能/故障0，初始关节[-4.867,140.694,-102.057,47.447,9.949,-53.218]°，15个只读快照位置跨度0，夹爪50.6mm。当前外参文件SHA710f7781bcbab5f86844b1701adb912bb47a8cb81d16ba1ebf94d3aa0d4f379a与本地一致。
+
+复用既有return-zero规划/执行代码，仅更换本次run-id；按<=10°关节段生成15段，5%速度。现有完整STL/相机假设包围区域审查300姿态、重叠0、采样顶点最近82.349mm；不代表未知支架及连续运动完全无碰撞。graspnet-return-zero-20261117-01先open70mm/1Nm，再15段归零，共16receipt，ZERO_REACHED/退出0。独立15快照及本轮收尾12快照均六关节[0,0,0,0,0,0]°/跨度0、READY/err_code0/全使能/teach0，SDK[56.127,0,213.266]mm，夹爪68.4mm。没有重设关节零点、清错、复位或去使能。
+
+将前轮成功构建的40个运行/配置/helper文件单独部署至机载新目录 /home/unitree/piper-vision-graspnet-20261117，旧 /home/unitree/piper-vision-semantic-20261114 保留。包SHA=e6b03a5897b11cae370ab89416fa4ddf108791104b7f1d9f81185c0637e40c9d；SOURCE_MANIFEST记录本地成功安装来源，SHA256SUMS机载40项通过。机载解释器仍/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python，graspnet-live-check-20261117-01=CHECK_OK，未装Torch到Go2。后续应显式从新目录加载semantic-graspnet.json，旧目录默认仍旧算法，不能混用。
+
+开发机 model-graspnet-live-01=MODEL_READY，临时18766反向隧道建立；既有SAM/18765原样复用，两端HTTP可达。graspnet-red-observe-20261117-01重新采三帧，红色积木DETECTED、静止、约51.1×46.9mm可见面；相机点[-4.7087,-45.1406,211.0000]mm。图像已实看，红块在纸箱边沿前方，识别框与目标一致。observe退出0/OBSERVED，无抓取控制命令。
+
+随后仅对本次刚保存数据经机载新入口做GraspNet preview，graspnet-red-plan-20261117-01=WAIT_PLAN/退出1/CAN发送0。真实模型输出136个候选，全136个不属于目标掩码，目标候选0；没有运行抓取控制流程或闭爪。为区分场景采样问题，用同一已保存点云做一次开发机离线局部workspace探针，完整场景碰撞点云仍保留：目标周围30mm采样得到5个候选，均被原完整规划的absolute grasp IK拒绝；60mm采样无可用候选。这只说明当前IK求解未通过，不能声称数学上绝对不可达。探针没有改生产代码/配置、外参、TCP、开口、关节限制，也未将探针结果发给机械臂。
+
+本次所有证据位于 build/piper-graspnet-live-20261117/evidence：before-zero-passive.json、zero-plan.json、zero-mesh-audit.json、zero-verified.json、final-passive.json、task-result.json，以及对应zero/check/observe/plan运行目录；target-workspace-probe.json/log保存局部采样诊断。观察原图路径 graspnet-red-observe-20261117-01/observe-769a9d34/frame02-color.png，标注detection02.png。无抓取成功或抬升。
+
+本轮GraspNet服务PID47876和18766隧道PID47970均按精确参数校验后SIGTERM结束，services-stopped.json保存；既有SAM/18765未动，无持续相机采集或自动抓取进程。机器人保持零位与68.4mm开爪，用户的抓取目标尚未完成，后续须解决目标候选采样与IK适配并重采新场景，不重放这轮文件下发旧目标。没有产品代码修改、没有重新构建或提交；部署来自前轮已验证构建产物。
+
+### 2026-11-18 六轴抓取速度比例提高到30%，本地构建与离线检查完成
+
+用户要求“将所有关节允许转动的速度调节到比较大的值，加快夹取速度”。本轮按夹取流程J1–J6统一速度比例处理：config/piper_vision_grasp/{config,semantic,semantic-camera-avoid,semantic-graspnet}.json的motion.speed_percent由5提高到30；不是修改固件逐轴最大转速。geometry.load_config在语义分支提前返回前统一检查0–100整数，PiperSession._attempt同步取消固定5的限制并保留发送边界校验，main.send_once仍直接传递配置到MotionCtrl_2(1,1,speed,0)。SDK范围依据[官方接口](https://github.com/agilexrobotics/piper_sdk/blob/master/piper_sdk/interface/piper_interface.py)。30%为此次实现选择，指令比例提高6倍不等于整次抓取耗时缩短6倍。夹爪力矩/开口、加速度、关节限位、标定、规划和等待恢复流程均未改，历史provenance中的5%保持原记录。
+
+原180项基线与新增26项测试全部通过（206 pytest）；三包构建成功，5项ctest包装通过，colcon合计211包含包装，0失败。新增覆盖四配置默认值、普通/语义配置非法值拒绝、SDK速度/六轴目标及receipt一致性、非法速度零发送。RED阶段13失败/13通过；第一次send_once遇旧5%限制进入等待，已结束该测试进程，并给测试加等待即失败的断言后重新取得有界RED，未改产品等待逻辑。Python3.8语法、Bash语法及diff检查通过。构建仅有未使用COOPERATIVE_RUNTIME_PYTHON及PCL_ROOT CMake警告，不影响构建成功。
+
+本次输出build/piper-speed-20261118/overlay；成功安装share/vlm_nav内40个运行/配置/helper文件与源码逐字节一致，四个配置均30%，四项安装入口check均CHECK_OK。入口scripts/piper_vision_grasp.sh按相对路径加载本次share内tools/config，无需改导航环境/ROS launch。完整构建环境/命令及入口位置见[runbook](go2_runbook.md#2026-11-18-piper-六轴抓取提速构建)。证据保留于build/piper-speed-20261118/evidence，包括pytest.log、pytest-red-bounded.log、build-and-test.log、installed-files.json及install-check/*。
+
+本轮未SSH、未部署到Go2、未发送CAN或执行真机抓取；机载/home/unitree/piper-vision-graspnet-20261117仍是此前5%包，不把本地配置修改当作机载已生效。30%实际运动稳定性和提速效果尚未验证；上一轮目标候选/IK未通过的问题仍未解决，提速不改变WAIT_PLAN结论。未提交，保留原未提交修改和历史证据。
+
+### 2026-11-18 已部署30%速度并恢复启发式语义默认入口
+
+用户明确要求部署新的速度设置、取消使用GraspNet并恢复“大模型选物块标签，取物块上方为抓取点”的原启发式流程。本轮SSH及文件部署在此授权内，不执行抓取运动。核对机载原semantic/graspnet包均5%，没有活动piper_vision_grasp/main.py、GraspNet服务或相关控制进程；当前记录仅说明当次检查。
+
+复用原semantic-camera-avoid.json：Qwen标签/框选物→SAM分割→RGB-D可见区域中心/夹取轴→absolute_target/plan_absolute，六轴统一30%，基座Z上方100mm预抓、入口额外抬高100mm、60°接近。已向用户说明该方法抓取位置是可见区域中心，不是新的顶面拟合。保留当前外参、135mm TCP、开闭爪力矩和等待恢复；没有恢复已废弃的相机干涉路径或-13mm偏移。唯一产品代码改动为main默认配置从旧HSV config.json切到semantic-camera-avoid.json，默认无GraspNet调用；历史GraspNet代码/配置及包保留，当前入口不选择它。旧HSV测试需显式选择config.json。
+
+新增1项回归先RED后GREEN，核对实际CLI默认配置、30%、上方预抓参数、启发式make_plan且禁止GraspNet调用。原206项基线+新增1项=207 pytest通过；三包构建成功，5个ctest包装通过，colcon212含包装、0失败。Bash/Python3.8语法和diff检查通过。构建输出build/piper-heuristic-20261118/overlay；40个运行/helper/配置来源文件与安装share逐字节一致，开发机默认入口CHECK_OK。完整构建环境与入口见[runbook](go2_runbook.md#2026-11-18-恢复启发式默认入口并部署30速度)。
+
+新机载包/home/unitree/piper-vision-heuristic-20261118，稳定链接/home/unitree/piper-vision-current指向它；脚本scripts/piper_vision_grasp.sh，解释器通过PIPER_VISION_GRASP_PYTHON指定/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python。部署包SHA256=c1944593224c0a889c23943966c76fa60a2a6af88d287b2c2a5cd08f1586853a；包哈希和40项SHA256SUMS机载通过。SOURCE_MANIFEST.json记录本次成功安装来源、当前默认配置/后端/速度；DEPLOYMENT_VERIFIED.json记录实际加载路径和检查结果。
+
+机载heuristic30-deploy-check-20261118-01=CHECK_OK，实际模块及semantic-camera-avoid.json均在新包，Python3.8.10，command_attempted=false。先完成包核验/check，随后才建立current链接；原/home/unitree/piper-vision-graspnet-20261117及/home/unitree/piper-vision-semantic-20261114不覆盖，历史5%不改写。继续使用旧绝对路径或显式semantic-graspnet.json仍是旧/可选流程，后续使用当前入口及默认配置。
+
+全部证据在build/piper-heuristic-20261118/evidence：pytest-red.log、pytest.log、build-and-test.log、package.json、install-check/default、deployment.log、remote-deployment.json。未发送CAN、未采图、未调用云端或启动模型/抓取进程；没有真机30%速度、抓取可达性和稳定性验收。此前GraspNet候选问题不作为当前启发式方法失败结论；新场景仍需重新取图规划，不能据部署成功声称夹取成功。未提交，保留用户未提交修改与全部历史证据。
+
+### 2026-11-18 抓取过程可视化实现及一次红块尝试；用户手动整机重启，等待恢复取证
+
+用户要求将中间结果集中保存，展示RGB/3D中物块与候选抓取位置、相机/机械臂坐标变换、IK与实际关节角，然后执行一次红色方块抓取。本轮授权含必要SSH、模型服务/云端识别、部署、有限采图及该单周期运动；后续用户先两次明确移近方块并继续同一次尝试，最后明确“现在重启机器狗”，澄清为用户手动整机断电重启。最后指令优先；重连后先只读核对旧进程和新状态，不自动恢复抓取。不能把这次未完成尝试或重启视为额外新实验授权。
+
+新增tools/piper_vision_grasp/report.py和test/test_piper_report.py；main保存config_snapshot.json及每次before捕获内planning.json（含失败计划、初始反馈与冻结配置），成功计划绑定capture_dir；visualize默认走启发式报告，显式GraspNet保留旧报告。报告产生同图RGB/3D物块与抓取/预抓点、交互3D、相机↔基座矩阵/轴图、每个候选IK角与采图实际角柱图、已执行目标/反馈离散曲线及CSV/JSON。被拒绝的IK标明NOT SENT，未发送/未到达的实际角留空；相机后方/图外点标明不可投影；root配置和每次捕获配置冻结；搬回本地后不依赖旧机载绝对路径。独立审阅的预抓回退、缺少结果误标RUNNING、断流连线、状态掩盖、重合标记及坐标图比例问题已修复，真实PNG已实看并调整图层/布局。HTML图片/交互图延迟加载以容纳等待期间多个候选。
+
+现场还确认standby下开爪分支没有选择CAN模式：本地piper_io._attempt现只对ctrl_mode=0的开爪/夹爪命令，在持久receipt后选择配置速度的CAN模式，再发夹爪目标；部分写入仍COMMAND_UNCERTAIN且不重试。新增2项RED→GREEN验证顺序、receipt和失败不重发。原207基线+7报告+2standby=216项，系统环境215通过/1绘图依赖跳过，既有model-venv中7项报告全部通过。最终三包构建及6个ctest包装通过，colcon222含包装/1跳过已另验证；日志pytest-complete.log、report-complete.log、build-and-test-complete.log。完整环境/构建见[runbook](go2_runbook.md#2026-11-18-抓取过程证据与可视化)，本地输出build/piper-evidence-20261118/overlay。
+
+实际现场部署的是首次成功构建的41文件包，SHA83214bd89fdfce9d103f4a64f8307d61d058d5901a207c52a68778e61f03521c，机载/home/unitree/piper-vision-evidence-20261118，piper-vision-current从heuristic包切换到此目录；机载check=evidence-deploy-check-20261118-01、41哈希通过。其捕获与记录功能完整；后续离线报告改进及standby修复仅在本地最新安装，未热更新运行中的机载包，重启后需按新清单部署再运行。解释器保持/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python。
+
+本次模型service-red-evidence-20261118-01复用原SAM环境/已授权DashScope凭据，只在内存中传递密钥，实际device=cpu，MODEL_READY。专用18765反向SSH隧道恢复。red-evidence-observe-20261118-01三帧OBSERVED/CAN发送0，实看红块在纸箱上，可见宽约50.24mm、相机深度301mm。唯一抓取run_id=red-evidence-grasp-20261118-01，原脚本无自动重启；GNOME诊断终端已打开（dconf只读告警，不影响tail）。30%、启发式60°/垂直预抓100mm/额外入口100mm、原外参/TCP及力矩保持。
+
+最初TCP约[739.55,19.12,-6.18]mm，端点IK残差约75mm/13.6°，WAIT_PLAN且零命令。用户移近后相机深度196mm、TCP约[634.73,18.17,1.52]mm，端点可解但local entry branch unavailable，仍零命令。离线位置探针只模拟基座X位移（没有下发）：再-100mm时现有路径可解，用于向用户说明摆放参考，不改标定/路径门槛。用户再次明确移近继续；新相机点[0.01675177,0.02110731,0.15500001]m的完整规划通过，累计20次OBSERVED、19次WAIT_PLAN后发出唯一open receipt（70mm/1Nm）。六轴目标、闭合、抬升均尚未发送。
+
+开爪最初读0mm且ctrl_mode0/全使能/无故障，停WAIT_OPEN。现场补发一次MotionCtrl_2(1,1,30,0)，不重复GripperCtrl、不发JointCtrl；原开爪目标随后响应。首次辅助脚本用系统Python在import piper_sdk失败，未连接SDK/CAN，can-mode-recovery.json仅准备记录；改用既有venv的can-mode-recovery02.json才实际发送模式命令。不要把两个准备记录算两次模式发送。后续CAN1/err_code0、开度6.7mm、反馈扭矩约1.04Nm、仍WAIT_OPEN。用户目视确认“实际已经大幅张开，反馈可能不对”，后补“没有置零，目前夹爪打开到最大”。未获得实测毫米开度，不改66mm判据、不乘10、未加力/校零/清错。
+
+三秒原始CAN查询诊断确认602帧0x2A8，最新00001a2c04134000，位置原始6700、SDK6700，扭矩1043；固件S-V1.8-2，0x47E=6464030000000000，行程100mm、示教比例100、摩擦3。原始反馈与SDK一致，支持不是显示缓存；不能据“最大张开”直接认定比例或零位根因。只查询固件/参数，无新运动命令。gripper-raw-diagnostic.json和模式恢复日志均保存。
+
+用户随后手动整机重启。已尝试对精确run-id发送SIGINT，但SSH在banner交换时已超时，此停止请求未送达；抓取SSH会话退出143，不当作程序优雅退出或物理停止证据。最后已观测状态是WAIT_OPEN/仅一个open receipt/无六轴命令；当前重启后硬件状态未知。最终取回scp同样SSH断开失败，最新accepted plan、完整开爪事件与result可能仍仅在机载持久目录。已有本地捕获不得清理，重连后优先取回/home/unitree/.local/state/piper-vision-grasp/red-evidence-grasp-20261118-01并检查旧进程，不能自动重跑。
+
+本地统一结果目录build/piper-evidence-20261118/results/red-evidence-grasp-20261118-01，阶段性入口interim-visualization-02/index.html；该版对应断线前已取回的候选，不含尚未取回的全部末段记录。原始RGB/深度/mask、planning、配置快照与事件均在其下；另已保存operator-reboot.json标记用户重启、最后已知状态及取回缺口，并复制原始CAN/模式恢复诊断。辅助日志在同base/evidence。模型服务exec会话24417已Ctrl+C退出130，18765隧道会话35376已超时退出255；无本轮开发机模型服务或专用隧道继续运行。不能声称抓取成功、实际关节到位验证或开度问题已解决。未提交，保留历史与用户改动。
+
+### 2026-11-18 重启后用户重新授权抓取：r2部署完成，新尝试等待CAN恢复
+
+用户明确“重新抓取和收取中间数据，并可视化”，授权重启后新一次红块尝试。已核对boot_id=74ef7fa9-2a99-44b1-aefd-4d874f8977c6，无旧抓取进程。将上一条最终成功构建的41文件打包为piper-vision-evidence-20261118-r2.tar.gz，SHA256=0b52b061090a582d21f62f10c8a6a64094fb658a9965f8cc5d4a2e2ec8bca09c；机载41哈希及evidence-r2-check-20261118-01=CHECK_OK后，current切换至/home/unitree/piper-vision-evidence-20261118-r2。包含standby开爪修复和最终报告版本；默认仍启发式、30%。未修改产品代码或重建。部署证据build/piper-evidence-20261118/evidence/deployment-r2.log。
+
+本轮run_id=red-evidence-grasp-20261118-02，机载PID3239；服务service-red-evidence-20261118-02（CPU/SAM/Qwen）与18765专用隧道已启动。程序仅WAIT_FEEDBACK、receipt为空，没有开爪或六轴指令。用户确认机械臂已上电且连接正常。can0按既有序列号0046002F5246570520323934匹配、1Mbps/ERROR-ACTIVE/UP，但多次3–4秒无过滤被动监听均0帧，内核RX计数固定74742。boot服务曾READY/全使能，不能据此当作当前反馈正常。用户执行can0 down/up后仍无帧；单次SearchPiperFirmwareVersion（0x4AF查询，无运动控制）无应答，GetPiperFirmwareVersion=-1199，TX计数也未增长。尚不能认定机械臂或适配器根因。远端sudo需密码，已请求用户重新绑定核对过的gs_usb设备1-2.1:1.0，再恢复1Mbps接口；等待操作结果。程序按原逻辑等待，反馈恢复后可能继续同一次抓取，已提醒用户保持活动范围外。
+
+旧run01完整目录已取回，共20个planning捕获、37个计划关节阶段均NOT_EXECUTED。原events.jsonl尾部第2417行为2383字节全零，原文件SHA256=79c8671d5a094cd3e3ca3f4bf02b7b21905c5ffb6d736a95522859697808d256；另有0字节stop-for-reboot.json，均原样保留。仅派生recovered-input/events.jsonl采用前2416条可解析记录，recovery.json记录缺口/哈希，其余输入链接原始证据。没有result.json，报告准确显示NO_FINAL_RESULT、最后WAIT_OPEN。完整报告visualization-complete/index.html已生成并实看RGB/3D/IK图，页面明确日志缺口；没有补造实际到达角。最初visualization-recovered因损坏尾记录失败，其失败目录保留，不作为交付入口。
+
+新run02诊断及等待态可视化已回传至同一results下的新目录；尚无新RGB/IK或运动反馈，不能把run01报告称为重启后新抓取。RealSense裸context查询被旧viewer全局配置拒绝，按现有vision.py的inherit=false方式可枚举D435/151222077264，未修改相机配置。最新CAN诊断见新run02的recovery-diagnostic.json、can-after-reenable.json、can-firmware-query.json。现场仍在继续，后续核对反馈并追加最终状态。
+
+后续用户提供管理员凭据并明确要求直接执行。已核对USB序列号后重新绑定gs_usb的1-2.1:1.0，配置can0为1Mbps/UP，退出0；凭据仅输入sudo标准输入，未写入文件/日志。接口ifindex由7变9，3秒被动监听恢复全部关节/位姿/夹爪反馈（0x2A1等约600帧、每路低速120帧），RX开始增长。证据can-usb-rebind.json及run02/after-usb-rebind.json；支持重绑恢复通信，尚未证明底层卡住原因。现有程序自动重连、重新三帧采图；首捕获before-4e547de9红块相机深度190mm、基座TCP[623.046,26.264,-62.247]mm，上方入口IK失败（位置残差2.655mm、姿态0.786°），仍无运动receipt。纯离线探针基座X减30或50mm均PLANNED，未下发这些假设目标，已请求用户移近约4cm继续同一次尝试；等待现场回复。
+
+用户随后确认移近继续；新RGB中红块底部被画面截断，before-1a5d60a6的mask内非零深度仅6916/71546=9.67%，测量中心落到约0.81m背景，连续WAIT_STABILITY，偶有稳定背景点则端点IK失败，仍无命令。原始RGB/深度/mask已取回，离线depth-diagnostic.png展示缺口，不把背景点当真物块坐标。用户确认退回并完整入镜后，before-3a46621d有效深度98.37%、实测259mm、宽49.26mm，端点IK仍失败。已明确请以相机镜头至红块正面距离约15–16cm摆放，避免把机械臂底座或夹爪作起点；等待同一次尝试继续。报告总入口build/piper-evidence-20261118/results/index.html，阶段性报告与原始数据分目录保存；未更改稳定性阈值、外参或路径参数。
+
+用户再摆放后实测167mm，before-3b3bdbe6完整规划通过，单次open70mm后反馈68.4mm/OPEN_READY/CAN1/全使能/无故障；本轮standby修复正常生效，未再出现原6.7mm问题。开爪后重新采图的上方入口残差约1.0165mm，J5达到模型上限69.900851°，仍WAIT_PLAN。用户提出“之前的IK可用范围没有这么小，重新检查”；已SIGINT精确run02 PID3239，result=EXITED/previous_state WAIT_VISION（中断当时正在采图），唯一receipt=open，无六轴/闭爪/抬升。没有发送释放、去使能或物理急停。run02完整证据已回传，visualization-final/index.html包含14个已规划候选；全部实际到达角为空。
+
+复查证据在build/piper-evidence-20261118/ik-review。AST逐函数比对2026-11-17已部署geometry：solve_ik/fk/plan_motion/plan_absolute/absolute_target均未改变，关节限位及1mm/1°判据未改，30%不参与几何求解。历史translation-red-preview-20261117-01真实CLI为40°，而本轮默认60°、基座Z预抓100mm加入口100mm。不能把固定姿态的全路径失败等同于机械臂整体范围缩小。旧当前样本TCP[600.835,53.905,-61.897]mm：60°上方分支卡J5上限，40°卡J4约99.98°上限，5组不同初值未得到另一可行完整分支，50°完整可行且J5最大43.2°；不同角度/入口高度/基座X采样均离线、未下发，见pitch-comparison.json、geometry-comparison.json、endpoint-seed-comparison.json。
+
+复查期间新现场图像目标已为[648.160,25.442,3.010]mm（相机深度209mm），与旧样本Y/Z不同，不能沿用50°结果。该新目标30/45/50/60°当前求解均未找到完整路径，40°完整PLANNED/J5最大约48.3°；50°只读preview01已结束、CAN发送0。随后40°只读preview02=PREVIEW_READY/37阶段/CAN发送0，完整捕获及报告位于results/red-evidence-ik-review-preview-20261118-02。对其真实新计划做419个0.5°关节采样，当前及人工平移前相机假设下STL包围盒均0重叠，顶点最近约86.1/158.1mm；不证明连续运动、未知支架或实物标定精度。复查结论和图位于ik-review/index.html，已说明先前只归因为摆放过远不完整。
+
+原循环已结束，按项目一次性实验授权边界确认具体新方案后，用户明确“按40°继续抓取并保存可视化”。新run03=red-evidence-grasp-20261118-03已启动，明确CLI --approach-pitch-deg 40，仍30%、预抓100mm/入口100mm、相同外参/TCP/力矩；每轮重新采图，不发送离线存档目标。源码和部署默认60°未擅自改写，此次仅使用既有CLI选项；没有产品代码修改或新构建。等待记录实际执行结果。
+
+### 2026-11-18 40°红块抓取完成：现场确认悬空稳定，完整关节反馈与可视化已交付
+
+上述run03已完成open、37段joint（包括grasp和2段lift）、close，共39份持久receipt；所有joint receipt均speed_percent=30，冻结配置approach_pitch_deg=40。37段均AT_TARGET，最大到位误差0.287981°（lift-1）；从第一joint指令到最终lift到位23.1946秒，不含图像识别、开爪及恢复等待。grasp实际[2.869,143.532,-107.322,-11.560,8.946,12.873]°；lift到位实际[2.869,141.470,-107.836,-8.991,11.438,10.474]°。开爪68.5mm，闭合后57.2mm、约-0.53Nm，CONTACT_CANDIDATE后完成20mm计划抬升。
+
+after-lift-10cca56d/frame02-color.png实看红块在夹爪之间、高于箱面，顶部部分出画、夹爪遮挡。自动verification.json仍WAIT_VERIFY/face shape-orientation changed，未强改为通过。用户明确回复“已夹住，方块悬空且稳定”，独立operator-verification.json记录OPERATOR_CONFIRMED_GRASP，与程序自动结论区分。现场确认后SIGINT精确run03 PID7633，result=EXITED、previous_state WAIT_VISION（当时服务连接失败），自动grasp_confirmed仍false。未发送松爪、回零、去使能或急停，机器人保持夹持。
+
+12次结束后只读快照全部READY、全使能、ctrl_mode1、teach0、arm_status/err_code0，六轴跨度逐轴0°；末次关节[2.869,141.410,-107.965,-8.895,11.601,10.305]°，SDK法兰[544.977,24.479,110.523]mm，夹爪57.2mm/-0.522Nm。此记录是关节反馈与现场确认，不等于外参/TCP实物精度已标定。证据after-grasp-passive.json、delivery-summary.json。
+
+本轮模型服务曾中断：旧service-red-evidence-20261118-02 exec会话14503退出143，旧隧道12725退出0，具体外部终止原因未知；run03在WAIT_VISION原地等待，没有新建或重复运动周期。恢复service-red-evidence-20261118-03（CPU）及专用18765隧道后继续新三帧采集，完成全部动作。抬升后新模型再次退出143，后续WAIT_VISION连接失败；没有把它伪装成几何失败或自动验证通过。收尾确认模型会话8824已退出143，专用隧道10990已结束255，无需再重启模型，本次任务已获得所需证据。若后续排查模型生命周期，须另查退出来源，不猜测为云端或OOM。
+
+完整原始运行目录已回传到build/piper-evidence-20261118/results/red-evidence-grasp-20261118-03。最终报告visualization-final/index.html含2组规划候选的同图RGB/3D、交互3D、冻结相机↔基座变换、37段IK/实测曲线及CSV、现场确认和抬升原图；执行反馈只绑定实际采用的开爪后捕获，未执行的候选不伪造到达角。根results/index.html为统一入口，也链接run01恢复报告、run02失败候选、40°预览与ik-review。全部来源JSON可解析，最终报告37条阶段均有实测值、仅1组捕获标记实际到达；链接全部存在，已实看RGB、3D、坐标和关节图。文档diff检查通过，未修改产品代码/重建/提交，保留历史证据。本次授权单周期已结束，后续新运动须有新授权；持久默认仍60°，此次成功运行明确使用40°CLI，不能省略参数声称复用同方案。
+
+### 2026-11-18 用户授权松爪后再次抓取（进行中）
+
+用户明确“松开夹爪，重新尝试”，授权一次释放和新一轮抓取，沿用前次40°/30%及中间数据记录。核对无旧run进程，机载current仍r2；新鲜反馈READY/无故障/全使能，关节及57.2mm夹持状态与前次结束一致。red-evidence-release-20261118-01复用现有PiperSession/send_once/wait_gripper，仅发送一次open70mm/1Nm，反馈68.4mm稳定，结果RELEASE_OPEN_READY；六轴未发送指令、前后反馈逐轴一致。完整释放记录已取回同一results目录。
+
+恢复service-red-evidence-20261118-04（CPU）及18765专用隧道；凭据仍只在进程内存使用。red-evidence-retry-preview-20261118-01以40°只读重新采图，检查释放后物块和当前姿态的完整路径；不使用旧物块坐标下发。新运动周期预定red-evidence-grasp-20261118-04，尚待新预览结果。未修改产品代码、未重新构建或部署。
+
+上述只读预览PREVIEW_READY，物块在箱面、夹爪已张开，目标基座约[658.754,12.197,2.535]mm，当前姿态出发30阶段。对新计划289姿态的相机区域采样，当前及人工平移前外参假设均0重叠，最近采样顶点约96.0/160.8mm；不作连续碰撞保证。随后授权范围内启动run04，实际新采图时进入WAIT_PLAN/local entry branch unavailable，未发送任何运动receipt。
+
+### 2026-11-18 用户中断重试要求先归零，已回零并按最新指令保持
+
+用户中途要求“先让机械臂归零”，已先SIGINT精确run04 PID10128；result=EXITED/previous_state WAIT_PLAN、command_attempted=false、attempts为空，没有执行新的抓取。10次只读反馈确认关节稳定在[2.869,141.410,-107.965,-8.895,11.601,10.305]°、夹爪68.5mm打开、READY/无故障/全使能。
+
+复用既有分段回零helper，按当前真实关节生成15段<=10°目标，速度30%，夹爪不发新命令，不执行重新置零标定。300姿态相机区域采样在当前/人工平移前外参下均0重叠，最近采样顶点101.5/176.7mm。操作脚本build/piper-evidence-20261118/evidence/return-zero-20261118.py，机载/tmp/piper-return-zero-20261118.py；没有修改产品代码。run_id=red-evidence-return-zero-20261118-01，15份joint receipt均30%，结果ZERO_REACHED；到位初始J2=0.092°，其余0°，均满足原0.3°容差。
+
+结束后独立12次只读反馈全部READY/全使能/ctrl_mode1/teach0/无故障；J2跨度0.023°、其余0，最终六轴[0,0,0,0,0,0]°，SDK法兰[56.127,0,213.266]mm，夹爪68.5mm、约0.394Nm。用户进一步明确“先保持零位”，不继续之前的抓取重试。模型服务会话29595已Ctrl+C退出130，专用隧道12769已结束255；未留下本轮自动抓取程序。
+
+释放、预览、被中止run04和回零原始目录均回传build/piper-evidence-20261118/results；被中止run04报告visualization/index.html保留候选、不伪造执行角。统一results/index.html已更新最新状态为零位保持，并链接回零result.json、verified.json及历史报告。运行配置/15份receipt、独立反馈、JSON及文档diff检查通过；无产品源码改动、不重建、不部署、不提交。最新授权是保持零位，后续抓取须等待用户继续指令。
+
+### 2026-11-18 目标移动后用户重新授权抓取及可视化（进行中）
+
+用户明确“现在目标位置有移动，尝试夹取并提取中间数据可视化”，替代前条保持零位要求，授权新一次红块尝试。已核对current仍r2、无活动控制进程，新鲜反馈六轴全0°、夹爪68.5mm、READY/全使能/无故障。恢复service-red-evidence-20261118-05（CPU）与18765专用隧道，先用red-evidence-moved-preview-20261118-01重新三帧识别/40°规划；不复用旧目标位置。预定运动run05=red-evidence-grasp-20261118-05，仍30%速度及原外参/TCP/力矩。待记录新场景及实际执行结果。未修改产品代码或重建部署。
+
+新预览PREVIEW_READY，before-5678c75e相机点[-57.803,-37.018,194.000]mm，基座TCP[634.741,94.133,-2.378]mm，可见夹取宽50.809mm；RGB实看红块位于箱面左侧，完整37阶段规划通过。451姿态、0.5°关节步长全STL相机区域采样在当前/人工平移前外参下均0重叠，最近采样顶点69.4/140.1mm；仍不证明连续运动或未知支架。预览数据和报告已保存。run05随后启动，重新取图后单次开爪68.5mm/OPEN_READY，正在开爪后重新采图；尚待最终实测结果。
+
+### 2026-11-18 run05现场确认抓空，已结束该周期；追加离线点云展示
+
+run05在40°/30%下完成open、35段joint至grasp及close，共37份receipt；35段均AT_TARGET，最大到位误差0.296997°。计划抓取宽50.792297mm、闭合目标46.792297mm，反馈47.5–47.6mm、约-0.29Nm，持续WAIT_CONTACT，2段lift从未发送。用户明确“抓空或位置偏了”；独立operator-verification.json记录失败，精确SIGINT该进程后result=EXITED/previous_state WAIT_CONTACT，未发送释放、回零、去使能或急停。关节跟踪准确不证明工具实际位置准确，偏差方向/幅度及根因尚未实测。
+
+只读red-evidence-contact-observe-20261118-01起初因主程序持锁WAIT_IO（Errno11），主周期结束后完成采集并退出OBSERVED/CAN发送0；不是新CAN失联证据。闭爪后RGB可见红块在夹爪左侧、部分出画。目录全部回传results。先前after-exit-passive.json的锁冲突记录保留；观察器结束后的after-capture-passive.json中12次均READY/全使能/无故障/teach0、command_attempted=false，末次关节[11.913,143.336,-105.329,-52.211,12.617,60.007]°，法兰[531.279,96.038,83.931]mm，夹爪47.5mm/-0.283Nm。机载无piper_vision_grasp活动进程，模型05与专用隧道会话已终止。本周期已结束，当前保持抓取处姿态，没有抬升。
+
+用户随后要求“添加点云的可视化，即相机深度所形成的空间点，将提供给产生候选夹取位置的那种点云也可视化”。正在本地离线实现：全场景彩色深度点云与SAM/IQR筛选后的真实启发式目标输入逐帧并列，保留完整PLY及抽样计数。没有新运动或部署授权需求；remote current仍r2。本次仅回放保存证据，外参/TCP物理精度继续标为未验证。新构建拟位于build/piper-pointcloud-20261118/overlay，完成情况后附。
+
+追加点云功能已完成。tools/piper_vision_grasp/semantic.py把原mask+IQR+反投影块提为target_points，measure与离线报告共享；新cloud_report.py输出全场景/实际目标输入逐帧双面板、完整彩色二进制PLY和来源JSON。report.py接入已有visualize入口、展示独立operator-verification，未改检测/抓取参数。六帧真实数据旧安装measure与新measure逐字段完全一致，与机载保存量的差异仅浮点舍入（1e-12内），证据build/piper-pointcloud-20261118/evidence/geometry-regression.json。
+
+完整三包构建成功，新安装build/piper-pointcloud-20261118/overlay/install/vlm_nav/share/vlm_nav；脚本及相关源码/配置6文件SHA一致。原216用例基础新增2用例（报告1/3帧覆盖及点云/PLY验证），系统216通过/2因缺Plotly跳过，colcon224条目含6包装、0错误/0失败；已有绘图环境9项报告测试全部通过（包括两项跳过），之前report+semantic合计35通过。只读审阅未发现阻断/重要问题，独立核对真实3帧6份PLY颜色完全一致、XYZ最大舍入3.55e-15m，24条HTML轨迹及三组切换正确；未做浏览器实际鼠标交互测试。
+
+最终报告results/red-evidence-grasp-20261118-05/visualization-pointcloud-final/index.html，统一入口results/index.html已更新最新失败状态并保留历史。包含2组候选各3帧共12份完整PLY，candidate-01为实际采用的before-292dc93c；其frame02场景121320点（显示24264点）、启发式输入22632点（全部显示）。静态PNG实看已修正薄片坐标轴拥挤、中心重合标记，保留远距离深度点导致全场景目标较小的真实现象；可交互缩放，目标单独近景。源RGB、深度、mask、坐标变换、IK/实际角、失败反馈及闭爪后原图均保留；35到位/2抬升未执行与全部链接、PLY长度/有限性已核对。result为VISUALIZED/offline/CAN发送0。初版visualization-pointcloud保留，不覆盖历史。交付汇总run05/delivery-summary.json；构建、回归、导出核对脚本与日志在build/piper-pointcloud-20261118/evidence。远端仍r2，未部署本次离线报告模块，未启动新抓取、释放或回零。外参/TCP实物精度及抓空根因仍待验证。
+
+### 2026-11-18 按用户最新指令再次关节回零，现保持零位
+
+用户明确“将关节回零”。确认remote current仍r2、无其他控制进程，12次只读反馈稳定READY，起点[11.913,143.336,-105.329,-52.211,12.617,60.007]°、夹爪47.5mm。复用原分段回零helper，仅换独立run_id为red-evidence-return-zero-20261118-02；15段、30%速度、只发joint。315姿态离线相机区域采样在当前/人工平移前外参两假设下均0重叠，最近采样顶点约68.99/139.55mm，不代表连续碰撞保证。
+
+执行结果ZERO_REACHED，15份joint receipt均30%。程序退出后独立12次只读反馈均READY/关节在0.3°内，最终六轴[0,0,0,0,0,0]°、夹爪47.5mm保持；未发送夹爪命令，不继续抓取。完整运行及verified.json已回传build/piper-evidence-20261118/results/red-evidence-return-zero-20261118-02，统一results/index.html更新当前为零位保持并保留抓空/点云报告。操作脚本、前后反馈和采样证据在build/piper-evidence-20261118/evidence/return-zero02*及before/after-return-zero02-passive.json。无产品代码改动、不重建、不部署、不提交。
+
+
+### 2026-11-18 六关节回零正式脚本（仅本地实现，未部署/未运动）
+
+用户要求“制作一个机械臂六关节回零脚本”。新增`scripts/piper_return_zero.sh`，调用既有`piper_vision_grasp/main.py`的`zero`动作；由当前新鲜关节反馈生成最大名义单轴角差10°的线性分段，默认30%速度、0.3°到位容差，逐段只发送joint，不发送夹爪、不修改零点标定、不自动使能/失能。复用现有控制锁、设备限位、持久receipt、诊断终端和异常等待；不启动相机、模型或ROS。诊断存储暂时故障时等待恢复，不重发或自动续发；持续存储故障下退出无法保证result落盘。分段插值不包含碰撞规划，不把旧两次现场回零作为新脚本验收。
+
+只修改上述入口/main、现有test/test_piper_vision_grasp.py与相关runbook/本交接，保留原大量未提交工作。新增9项离线用例：分段/已零位、异常等待/不重发、存储恢复、未到位不继续、CLI无相机与重复run拒绝；基线161通过，新增后170通过。独立审阅发现诊断日志故障会退出的问题已修复，新增用例先失败后通过，最终审阅无阻断问题。
+
+三包构建成功，输出`build/piper-zero-20261118/overlay`；本次6个Piper ctest包装内实际225通过、2项报告测试因系统环境缺Plotly跳过，colcon233条目含包装、0错误/0失败，不作233个独立用例宣称。完整命令/环境只在[runbook](go2_runbook.md#2026-11-18-六关节回零脚本构建)维护。安装路径`build/piper-zero-20261118/overlay/install/vlm_nav/share/vlm_nav`；脚本按自身目录加载tools/config，7个关键文件SHA与源码一致，实际安装入口--help通过，从/tmp导入安装模块fake跑15段至ZERO_REACHED，夹爪保持47.5mm、无相机调用。未改导航env/launch，因为不存在Piper旧安装硬编码；新安装自动包含独立入口。
+
+证据`build/piper-zero-20261118/evidence/`包括baseline、red/green、storage-red、pytest-final、build-final、ctest/test-result、installed-sha256和installed-fake运行目录。使用顺序见[回零说明](piper_vision_grasp_runbook.md#六关节回零脚本2026-11-18)。本次没有SSH、部署、真机运动、ROS节点或新标定；机载current仍为先前记录的r2，本轮未连接核对；上次零位保持仅为历史状态，当前反馈待现场读取。未自动提交，现场碰撞路径和新脚本实际运行尚未验证。
+
+### 2026-11-18 默认启发式改为俯仰＋水平朝向搜索（仅本地完成，Go2已关机）
+
+用户要求只由大模型提供目标位置，不限制上方夹取，拒绝后更换下一个夹爪角度；明确选择“俯仰＋水平朝向”，随后说明Go2已关机。本轮没有SSH、设备查询、部署或运动；机器人当前反馈未知，不将上次归零状态当新读数。
+
+semantic.py去掉Qwen提示中的上方抓取要求，仍以标签/框/点定位及SAM+深度得到三维可见中心；增加可见点的基座XY凸包，供转向后的宽度投影。geometry.search_orientations默认依次搜索水平偏角0、±30、±60、±90、±120、±150、180°，每个偏角搜索俯仰40、30、50、20、60、10、70、0、80、90°，共最多120候选；固定同一TCP位置，首个完整路径PLANNED即停止。预抓及入口沿该候选接近方向反向，默认semantic-camera-avoid各100mm；semantic.json没有额外入口时保持0。0°水平、90°向下，不枚举任意滚转或连续SO(3)。关节限位、1mm/1°IK判据、30%速度和夹爪力矩不变；全部拒绝保持WAIT_PLAN等待新观测。
+
+默认两份semantic配置启用angle_search；显式--approach-pitch-deg保留原固定姿态语义并关闭自动搜索，帮助文本与启动事件已说明。GraspNet/旧参考模式/六轴回零保持原分支。main逐候选SEARCHING_IK事件、planning/plan中的orientation_candidates和selected_candidate_index可追溯角度/拒绝原因/目标；report增加搜索表和TCP坐标轴，并使用目标保存的真实预抓偏移，点云报告随之展示选中接近方向。代码改动保留此前未提交的正式zero入口。
+
+独立只读审阅发现“旋转后可见宽120mm、IK通过但close116mm超过SDK100mm，搜索提前停止”的P1；已修复为复用既有open_mm/open_ready_mm/SDK100mm能力，宽度非正或超能力记WAIT_WIDTH并继续，不引入任意新容差。新增用例先失败后通过；审阅原真实IK复现已确认不再接受越界关闭候选。隐藏厚度和实物碰撞仍未知，不能据可见点投影保证真实可夹。
+
+验证：前一版本六组Piper共227项基线；本轮新增13项（角度顺序/失败续试/成功停止/全拒绝、几何与宽度、侧向入口、手动覆盖、非法网格和两配置入口距离）。最终系统238通过/2项Plotly环境跳过，共240实际测试；colcon246条目含6包装、0错误/0失败。既有绘图环境semantic+report共48项全部通过，覆盖上述2项跳过。定向初始基线159通过/2跳过，新增前后区别不以colcon条目替代用例数。
+
+新三包安装build/piper-angle-search-20261118/overlay/install/vlm_nav/share/vlm_nav；9个关键入口/模块/配置SHA与源码一致，从/tmp以隔离Python导入该安装模块重现4条离线路径，安装脚本--help确认固定角度覆盖说明。入口使用同目录tools/config，无导航env/launch旧Piper路径需切换。构建/测试完整环境命令仅在go2_runbook最新角度搜索章节维护；使用说明piper_vision_grasp_runbook最新节。未自动提交或部署；机载仍是此前r2的历史记录，关机后未复核。
+
+离线证据build/piper-angle-search-20261118/results/offline-replay-final：重新使用历史before-3a46621d、before-8d9f2f8b、before-5ec10b45和before-292dc93c的RGB/depth/mask与冻结外参，三份原WAIT_IK和一份原PLANNED均在首候选40°/yaw0°完整通过（约0.3–0.4秒/份，开发机数据）。此处可达改善包含接近路径变化，不能归因于水平枚举或当现场抓取成功；拒绝后续试由新增测试及审阅真实IK复现验证。原证据未覆盖，派生输入replay-summary记录来源。visualization/index.html含4组候选、点云及角度表，已实看3D、检查链接、结果VISUALIZED/offline/CAN发送0；没有实际执行角度。evidence/中保存red/green、宽度修复、最终build/test、安装核对、回放和报告日志。Go2重启后尚需另行部署及新鲜场景/物理路径验证；不使用离线计划驱动硬件。
+
+
+### 2026-11-19 回零脚本已部署，USB-CAN未枚举，真机回零等待连接恢复
+
+用户明确“进行部署，成功后执行真机回零”，授权本轮部署、SSH检查和一次六轴回零，夹爪保持；尚未执行运动。实际SSH别名unitree-go可达192.168.123.18，主机ubuntu；没有活动抓取/回零程序，仅原piper-boot服务PID675运行。不要把昨天零位保持当新反馈。
+
+使用本会话已构建验证的build/piper-zero-20261118/overlay/install/vlm_nav/share/vlm_nav制作44文件分发包，部署至新独立目录/home/unitree/piper-zero-20261119，保留旧目录及piper-vision-current→/home/unitree/piper-vision-evidence-20261118-r2。没有部署另一任务的角度搜索版本或覆盖当前源码改动。归档SHA256=f40094c0e12b08eb78aab63879c2f8d6f55f03c88ac1957efab4fbced51a85b4，机载归档与44清单全部通过；正式入口--help成功，zero-deploy-check-20261119-01=CHECK_OK。机载解释器/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python，Python3.8.10、numpy1.17.4/scipy1.3.3/OpenCV4.12/piper-sdk0.6.2/python-can4.5.0；未改依赖或服务。
+
+现场阻塞证据：ip link无can0且无其他CAN接口；lsusb无1d50:606f；piper-boot active，但日志持续WAIT_CAN/USB identity match count=0 expected=1。新部署模块的12次readonly快照全部WAIT_IO/同一身份匹配错误，command_attempted=false、CAN发送0。已请用户核对机械臂供电与USB-CAN连接，尚待回复；没有启动潜伏等待后自动运动的回零进程，没有做USB重绑、重启服务或变更网络。恢复连接后继续本次授权，先读取新鲜关节/故障/使能状态，再调用新目录scripts/piper_return_zero.sh执行一次并独立复核。
+
+证据与归档在build/piper-zero-deploy-20261119/，evidence包含remote-inventory、can-diagnostic、package、deploy-check、机载check完整目录和before-passive.json。运行说明已指向新部署目录。本轮仅分发已有验证产物和更新文档，未改产品代码、无需新构建；真机回零仍未完成。
+
+用户随后明确选择“暂时无法连接，先完成部署”。本轮以部署完成结束，暂停真机回零。最后只读复查输出送达时，USB-CAN已重新枚举（1d50:606f，can0 UP），原boot服务10:26:15自行使能、10:26:16报告READY/六轴使能；这是原服务行为，不是本轮回零命令，未读取恢复后的关节角。按用户最新“先完成部署”限制，仍未启动任何回零等待程序，待用户告知继续后再读取实际反馈执行。部署44文件哈希、机载CHECK_OK和文档diff检查通过。
+
+
+### 2026-11-19 已连接并执行一次回零目标，仍WAIT_TARGET，未到位
+
+用户随后明确“已经完成连接”，恢复继续本次回零。新部署模块12次readonly全部READY：起点[0,0,-0.113,9.010,1.519,-9.898]°，夹爪0mm/使能，六轴使能true、ctrl_mode0、teach0、arm_status/err_code0；这是真实重启后反馈，与昨天姿态/夹爪不同。重新核对44哈希通过、无其他控制任务后，在/home/unitree/piper-zero-20261119调用正式scripts/piper_return_zero.sh --run-id joint-zero-20261119-01。
+
+机载进程PID3733，exec会话74592仍运行。唯一zero-1 receipt：joint目标[0,0,0,0,0,0]，speed_percent30；只发送一次MotionCtrl_2及JointCtrl，未发夹爪、清错、校零、使能/失能或第二目标。模式由standby0变CAN1，日志COMMAND_ATTEMPTED后持续WAIT_TARGET，最大角误差9.898°，初始约99秒存档期间关节完全不变，尚无ZERO_REACHED/result.json，不能称回零通过。诊断tail会话41610已结束，仅结束查看器，未中断回零进程。
+
+只读诊断：can0 ERROR-ACTIVE/1Mbps，TX11帧/88字节、错误0，RX持续增长。2秒原始CAN状态401帧、每组关节400帧、每路低速80帧；0x2a1始终0100010000000000，关节原始字节与SDK反馈一致。不是只靠SDK缓存判断。未捕获新控制帧符合此次只被动观察/没有重发，不据此倒推先前目标是否被固件接受。运行中另起readonly被控制锁拒绝（after-zero-passive.json为WAIT_IO/Errno11），该文件不是运动完成后的复核，也不是CAN失联。runtime.log未见SDK发送错误。SDK方法源码已保存，紧邻发送模式与目标、未等模式反馈；与历史2026-11-13冷启动无动作现象相似，但历史校零/模式多变量，不能据此确诊时序问题或再次校零。
+
+已询问现场是否完全未动/存在阻挡，用户答“不确定”。目前保留WAIT_TARGET监测、不重发命令；没有结束后自动新建周期，也不将使能/无故障当运动完成。下一步需要现场确认实际动作与路径无遮挡，再决定同目标对照或进一步诊断；原目标是否已被控制器保留仍未知，退出监测不代表物理急停。用户未授权新次数实验，不自行增加角度/速度或清零标定。
+
+证据build/piper-zero-deploy-20261119/evidence：before-connected-passive、before-run-integrity、zero-launch、running-snapshot（当时运行目录副本）、wait-target-diagnostic、sdk-methods、wait-raw、final-zero-state、delivery-status。最终状态仍待恢复，不覆盖先前部署CHECK_OK。没有新增产品代码/构建，本轮部署已完成、真机回零未完成。
+
+
+### 2026-11-19 用户再次授权脚本回零，第二轮成功并独立确认六轴全0°
+
+用户明确“再次进行脚本回零尝试”。先核对旧进程PID3733的cmdline与joint-zero-20261119-01匹配，再SIGINT结束旧监测；旧result=EXITED/previous_state WAIT_TARGET，未发送急停、失能或夹爪指令。新12次只读反馈均READY：关节仍[0,0,-0.113,9.010,1.519,-9.898]°，夹爪0mm，ctrl_mode1（此次起始已CAN）、六轴使能true、teach0/无故障；44清单哈希核对通过，未修改部署文件。
+
+沿正式/home/unitree/piper-zero-20261119/scripts/piper_return_zero.sh，以新run_id=joint-zero-20261119-02执行一次；exec会话65277退出0。唯一zero-1 joint receipt为六轴0°、speed_percent30，目标发出至ZERO_REACHED约0.572秒，到位瞬时J3=0.121°、其余0，满足0.3°容差。没有发送夹爪、零点标定、使能/失能或其他动作。
+
+程序退出后独立12次readonly快照全部READY、无故障/全使能；全部六轴均[0,0,0,0,0,0]°，逐轴跨度0°，夹爪0mm保持。真实运动反馈和独立复核支持本次脚本回零成功，不依赖ArmRobotUA或重新标定。此前从standby起始无动作、此次从稳定CAN模式起始成功，支持进一步调查模式切换时序，但尚不能单独确诊首次根因，不把这次成功写成已修复冷启动问题。
+
+两轮完整目录已保存build/piper-zero-deploy-20261119/results/joint-zero-20261119-01及joint-zero-20261119-02，后者verified.json保存独立验证结论；retry02含before/after快照、运行/诊断日志、summary.json及final-processes.log。最后核对无这两轮回零控制进程；机器保持零位，本次一次性重试授权已完成，不继续抓取或新动作。仅更新文档与现场证据，无产品代码/构建/重新部署/提交；git diff --check通过。此前对现场实物观察为“不确定”，本次确认范围是新鲜CAN关节反馈，不宣称外参/TCP或物理零位标定精度已验证。
+
+### 2026-11-19 角度搜索版本已部署并切换默认入口，仅部署无运动
+
+用户明确“进行部署”，本次范围为角度搜索版本部署/校验；未延伸为新抓取或回零。SSH unitree-go已恢复可达，主机ubuntu，原current指向/home/unitree/piper-vision-evidence-20261118-r2；初始和切换前均核对无抓取/回零控制进程。此前关机及回零状态只作为历史，不读取/宣称本轮机械臂角度。
+
+从已经构建验证的build/piper-angle-search-20261118/overlay/install/vlm_nav/share/vlm_nav分发，新目录/home/unitree/piper-angle-search-20261119。所有分发源文件均与当前源码一致，保留正式回零入口、点云报告和角度搜索；无新产品代码修改、无需重建。归档SHA256=79c268a15a195aa938945abaa0958b6d653838dc3cf17aa75139ab29e450d208，机载归档及44项SHA清单全部通过。未修改机载依赖、boot服务、CAN或网络。
+
+新目录angle-deploy-check-20261119-01=CHECK_OK；机载Python3.8环境中numpy1.17.4/scipy1.3.3/OpenCV4.12及既有SDK依赖通过。纯离线脚本在机载从已保存四个场景观测重新计算，全部首候选40°/yaw0°PLANNED、目标TCP与开发机保存值一致、关闭宽度在既有开爪能力内；约4.75–5.86秒/场景，仅算法回放，没有连接相机/CAN、没有发送运动。完整44项再次校验及无控制进程核对后，原子切换/home/unitree/piper-vision-current至新目录；回退链接/home/unitree/piper-vision-current.before-angle-20261119保留旧r2目标，旧目录和独立piper-zero-20261119目录均保留。
+
+通过current入口再运行angle-current-check-20261119-01=CHECK_OK，日志实际module/config路径均为新目录，解释器仍/home/unitree/piper-handeye-20261112/.handeye-venv/bin/python。默认启发式、10俯仰×12水平偏角、速度30%；显式--approach-pitch-deg仍关闭搜索以保留固定角度语义。最终无抓取/回零控制进程，本次未启动模型服务、相机采集、ROS或真机运动，未新增部署后的硬件反馈验证。后续抓取需新鲜现场观测及实际路径验证，不能使用本轮回放直接运动。
+
+部署包、清单、两次check完整目录、机载离线脚本/输入/结果、激活记录及final-status.json位于build/piper-angle-deploy-20261119。使用说明更新至piper_vision_grasp_runbook末节。文档diff检查通过，未提交。
+
+### 2026-11-19 用户授权切换角度搜索版本并尝试一次红块夹取（进行中）
+
+用户明确“切换到这个版本并尝试夹取”。已核对current为/home/unitree/piper-angle-search-20261119、44文件哈希正确、无旧控制任务。新12次readonly反馈全部READY/全使能/ctrl_mode1/teach0/无故障，六轴均0°，夹爪0mm。恢复本地新版本Qwen/SAM服务service-angle-grasp-20261119-01（CPU）与18765专用反向隧道；既有凭据仅在进程内存使用。先启动angle-red-preview-20261119-01采集新场景并默认角度搜索，不传固定pitch覆盖；本轮预定angle-red-grasp-20261119-01单周期，速度仍30%。证据根build/piper-angle-live-20261119；尚待预览及实际结果，不以昨日存档驱动运动。无产品代码改动。
+
+angle-red-preview-20261119-01捕获before-7ae549f2：红块完整位于画面右侧，相机点[81.606,-42.299,318.000]mm，基座TCP[753.840,-49.175,-13.197]mm，可见宽51.177mm、有效深度比例0.838。机载正在默认角度枚举，截至136秒为candidate75，均端点IK失败，尚未发送运动。同步本地对同一新观测完整120候选复算全部WAIT_IK，最小位置残差5.705mm（俯仰10°/yaw0），不是穷举所有IK分支或机械臂全局不可达证明。仅假设基座X方向移近10/20/40mm、保持物体形状朝向的离线采样分别可在10°/20°/20°规划完整路径；这些假设点不用于运动。已询问用户将红块向机械臂移近约2–3cm后继续同一次尝试，或保持位置查看诊断/结束；只读预览保持，当前无run控制周期。证据evidence/local-preview-plan.json及position-sampling.json（明确hypothetical/not_for_execution）。
+
+用户询问“位置误差”后，已解释是IK角度经FK计算的末端位置与目标位置的距离，不是相机误差或实际抓偏；用户明确“放宽这个通过阈值到8mm”。已SIGINT精确只读preview PID5873并取得EXITED，未有运动。仅修改geometry的可配置位置判据、两份启发式配置为.008及报告阈值标注；姿态1°、关节限位/速度保留，旧参考/GraspNet缺省仍.001，模型副本注入不改原运动学来源。新增8项测试，三包构建成功：246实际通过/2Plotly跳过，colcon254含6包装；绘图环境56通过补验。独立只读审阅无阻断问题。
+
+机载新目录/home/unitree/piper-angle-search-20261119-ik8，归档SHA256=a1ba16dac7ff50e3d56ed9f898a947e104eb98351d08cfb86e189da35bcbd94f，44文件SHA与机载CHECK_OK通过后current已原子切换；旧角度版回退链接before-ik8-20261119保留。证据build/piper-ik8-20261119。对刚才新场景本地重算在candidate5（第6个、俯仰10°/yaw0）PLANNED，最大阶段位置残差5.705mm；仍为离线证据。现启动angle-red-preview-20261119-02重新采图，继续同一用户授权的红块尝试，未启动新的运动周期。该阈值是用户明确选择，不把通过解释为零误差或真实定位精度。
+
+8mm机载新预览angle-red-preview-20261119-02完成PREVIEW_READY，before-1be05f2a目标TCP[753.840,-49.175,-13.197]mm，candidate5=俯仰10°/yaw0°、37阶段、最大位置残差5.69155mm。555姿态相机区域采样：当前外参下3个三角AABB宽相交，逐个三角-盒SAT进一步验证均不相交；人工平移前外参假设下0相交。当前包络顶点最近约0.710mm（该包络有保守扩张，不是实物距离）；旧假设约47.236mm。采样和未实测支架/标定不构成连续物理碰撞保证，原始结果mesh-audit.json保留。初步本地旧图样本同样3个AABB/0个SAT，未隐藏宽检测假阳性。
+
+按本次既有授权开始唯一运动周期angle-red-grasp-20261119-01，current为ik8新目录，默认角度搜索、30%速度、原力矩；不传固定pitch，不发送旧预览目标。程序将重新采图并在开爪后再次定位。已提示离开机械臂活动范围，待记录实际执行和夹取结果。
+
+### 2026-11-19 本次8mm/角度搜索真机尝试：现场报告夹取偏低、推走纸盒，已终止且未抬升
+
+angle-red-grasp-20261119-01重新识别并开爪68.4mm，开爪后再次采图仍选candidate5=10°/yaw0°。实际完成open、35段joint至grasp及close，共37份receipt；最大关节到位误差0.298057°。闭爪后反馈48.3mm/约-0.22Nm，持续WAIT_CONTACT，未执行lift-1/lift。用户现场明确“夹的位置偏低，将下方纸盒推走了”；已立即SIGINT精确PID6892，result=EXITED/previous_state WAIT_CONTACT，独立operator-verification.json标记OPERATOR_REPORTED_LOW_GRASP_BOX_PUSHED，不宣称夹持成功。没有追加抬升、松爪、回零或失能。
+
+退出后12次readonly全部READY/无故障/全使能，最后关节[-4.642,179.926,-156.774,-19.757,-8.605,19.002]°，SDK法兰[615.411,-45.359,11.688]mm，夹爪48.3mm保持。按到达grasp反馈做原URDF链正运动学（不对微小超出模型限位的测量值做规划限位裁剪），使用原135mm TCP，目标TCP[753.840,-49.175,-13.197]mm，模型反馈TCP[747.912,-49.454,-13.769]mm，差[-5.929,-0.279,-0.572]mm、距离5.963mm。不能把现场偏低直接等同于8mm阈值造成的8mm下偏；实物高度偏差、外参/TCP和支撑面间隙仍待测量。
+
+补采angle-red-after-contact-20261119-01仅一次有限RGB-D、无运动，三帧RGB/原始及对齐深度与metadata保存完整；随后Qwen返回requested object not found，脚本退出1，未生成完整物块观测/result。capture-note.json如实注明RGBD_SAVED_DETECTION_FAILED，不伪造检测。实看frame02纸盒已移出原位置，夹爪前方原红块不再完整可见；不据图猜测其精确掉落/位置。记录这次真实接触失败；先前只检查相机包络，未检查纸盒支撑面的碰撞，不能把该检查当整场景安全保证。
+
+模型服务会话51366和专用隧道4187均已结束，本轮没有待自动继续的抓取程序。当前current仍ik8版本，用户指定8mm未擅自回退，也未凭猜测增加抓取高度补偿。代码修改后的完成音频已播放；构建/测试结果见前文。已结束本次单周期授权，后续新运动需用户新指令。
+
+完整证据与统一入口build/piper-angle-live-20261119/results/index.html；实际运行报告angle-red-grasp-20261119-01/visualization/index.html含2组候选、6帧点云/完整PLY、角度搜索、8mm阈值、RGB/3D、变换、35段实测关节及2段未执行抬升、现场失败反馈与闭爪后原图。contact-diagnostic.json保存模型TCP误差，clearance-diagnostic.json仅列模型夹爪及可见目标范围，不是实测支撑面或碰撞证明。已核对报告/链接/实际反馈缺省语义，保留1mm预览和8mm预览原始目录，不覆盖历史数据。
+
+
+### 2026-11-19 用户要求回零及关节角改数字列表：已完成
+
+本轮仅授权回零和修改报告，未再次抓取。回零前独立12次反馈READY，实测仍[-4.642,179.926,-156.774,-19.757,-8.605,19.002]°、夹爪48.3mm，无正在运行抓取程序。J2比URDF规划上限约多0.017°，现有正式run_zero对起始反馈调用严格FK会等待；本次复用既有一次性return-zero02操作脚本另存return-zero03.py（没有改模型限位或产品控制代码），记录真实起点、校验18个回零目标均在模型限位内、相邻单轴名义变化≤10°，通过现有send_once/wait_joints和控制锁执行，速度30%、到位容差0.3°。起点和整条路径378姿态相机包络采样0重叠、顶点距离约15.687mm；仅是已知相机假设检查，不是支撑物碰撞验收。
+
+机载run joint-zero-20261119-03已结束ZERO_REACHED，18段均AT_TARGET。返回后另外12次只读全部READY，最后六轴[0,0,0,0,0,0]°，夹爪48.3mm；未发送夹爪、零点标定或使能切换命令。原始结果/回执/反馈/采样位于build/piper-joint-table-20261119/evidence，保持零位，无待自动继续的抓取任务。机载current仍/home/unitree/piper-angle-search-20261119-ik8；此次报告代码只在开发机更新，未切换运动部署。
+
+report.py删除候选关节柱状图和六轴时间图，改为J1～J6数字表（3位小数、单位度）。候选表明确采图角不是到位角；执行表显示每阶段目标/最后有效实测/误差（实测−目标）和状态，未执行或无有效反馈保持缺省，不补零。CSV/JSON原始精度、RGB/3D点云/坐标变换图保留。修改覆盖报告模块、现有2个参数化报告用例及runbook，无新依赖。
+
+三包构建通过；基线248实际测试（246通过、2绘图跳过，colcon254包含6包装）无失败。没有新增测试数量，扩展已有2例检查无关节PNG、正负误差数字、未执行缺省与候选标签；绘图环境报告9项全通过，补验2项跳过。安装report.py及入口与源码逐字节一致；从新安装入口离线生成visualization-numeric，CAN发送0。报告核验37阶段中35段有实测、lift-1/lift未执行；没有关节图文件/引用，链接全部存在。旧报告和原数据不覆盖，最新入口build/piper-angle-live-20261119/results/index.html，完整数字报告angle-red-grasp-20261119-01/visualization-numeric/index.html，包含原失败反馈/闭爪后图像及本轮回零状态链接。
+
+新安装路径build/piper-joint-table-20261119/overlay/install/vlm_nav/share/vlm_nav；命令在go2_runbook最新“关节角数字列表报告”节。抓取偏低的实物根因和外参/TCP/支撑面间隙仍待验证，本轮未猜测性加高度补偿，也未重试抓取。正式run_zero对模型边界略外侧的实测值的处理仍未修改；此次复用操作脚本回零证据独立保存。
+
+
+### 2026-11-19 空间图新增实测关节FK夹爪TCP：离线完成
+
+用户要求在空间图标出实测关节角FK所得夹爪位置。本轮只修改离线报告，无SSH、CAN或运动，未改变机载current。report.link_points复用既有URDF链，末端加R_flange×tcp_offset；绘图不裁剪真实测量角，不修改规划限位。仅对执行计划关联捕获的最后有效grasp反馈显示橙色菱形，场景图连接候选TCP与反馈TCP；静态/交互三维场景、两个点云面板均含标记。summary/点云JSON记录反馈角、时间、状态、TCP与候选差值；网页列基座毫米坐标。无有效反馈为空，WAIT_TARGET仍按未到位标签解释，关节角继续使用数字表。没有把采图角、当前零位或SDK法兰位置冒充抓取TCP。
+
+重生成历史angle-red-grasp-20261119-01到visualization-feedback-fk，旧报告保留。第一捕获无抓取反馈，不显示点；第二捕获before-cf07f145使用AT_TARGET/time1795057774.785795的关节[-4.642,179.964,-156.668,-19.757,-8.485,19.002]°（是抓取到位时记录，不是事后静止反馈），TCP基座坐标[747.911520,-49.453893,-13.768732]mm，相对候选[-5.928768,-0.278636,-0.571783]mm。模型结果与前轮独立诊断一致，不表示实物空间定位精度。报告保留人工失败反馈、闭爪后图像与后续回零说明；总入口build/piper-angle-live-20261119/results/index.html指向新报告。
+
+三包构建成功，248项基线加2项FK用例，共250实际测试（248通过、2绘图跳过；colcon256含6包装），0失败；既有报告用例扩展验证实际标记/元数据及无反馈情况，绘图环境11项全部通过，补验2项跳过。新增FK测试覆盖旋转后的非轴向TCP偏移与略超模型限位的真实测量角。新安装build/piper-feedback-fk-20261119/overlay/install/vlm_nav/share/vlm_nav的report/cloud_report/入口与源码一致，入口解析同安装tools/config。由该安装入口生成报告，VISUALIZED/offline/CAN=0，静态空间/点云图目视确认橙色菱形可见，链接检查通过，未重新加入关节角图。构建命令及报告入口在go2_runbook新增节；证据build/piper-feedback-fk-20261119/evidence。实物TCP、外参精度和此前偏低根因仍未验证，本轮未重新抓取。
+
+
+### 2026-11-19 四姿态机械臂轮廓点/完整模型叠加，抓取确认后闭爪回零：本地代码完成，未部署
+
+用户明确先修改代码，并选择沿现有路径四个停靠点：pregrasp、现有grasp-N中间路点、grasp、lift；不是额外四个俯仰/yaw动作。两份启发式semantic配置默认motion.record_arm_outline=true、return_zero_after_grasp=true；旧参考和GraspNet默认关闭保持兼容。原8mm位置阈值、30%速度、夹爪目标/力矩、接触和抬升视觉确认均保留。每点三帧原始RGB/深度，逐帧前后机器人反馈；最后一帧由既有Qwen/SAM按机械臂描述独立分割，无FK/模型输入。每点arm-目录保存原始三帧、metadata配对反馈、arm-mask.png、arm-observation.json。采集跨反馈中断、主机配对窗口异常、角度/开口不稳定或分割错误会WAIT_ARM_CAPTURE等待重采，不重复发送已完成动作；不是硬件同步采样。
+
+新arm_outline.py将分割轮廓内侧1像素有效深度反投影，再用冻结外参到基座系；不填补缺失深度，不做隐式配准。完整Piper STL表面按URDF与实测六轴+开口/2驱动，两侧夹指分别用joint7正/ joint8负位移。报告arm-overlay.html蓝色半透明模型/橙色实测轮廓，四姿态下拉切换，含RGB遮罩、轮廓点PLY/NPZ、每姿态数字关节表和深度覆盖率；arm-overlay.json保存模型hash和采图时间窗口。模型URDF原始SHA或仅统一LF/末尾换行后的SHA必须等于冻结运动学来源；实际外部URDF与provenance正是这一文本差异。并非放宽模型几何校验。原始SHA/规范SHA/全部STL SHA均保留。
+
+完整流程仍先原抓取确认，通过后保持原闭爪命令，按实测起点≤10°步长分段回零，不发松爪命令。共享geometry.zero_stages校验全部目标点；不裁剪稍超模型限位的反馈读数，也不改限位。return-plan.json保存加载起点及阶段，根plan追加回零段供报告比较。完成GRASP_RETURNED_ZERO，grasp_confirmed_at=after_lift、holding_at_zero_verified=false，明确回零后是否仍夹住还需现场核验；失败继续等待，不自动重试抓取。该分段回零没有携物碰撞规划能力，下次现场执行前须按实际摆位核验。
+
+执行计划docs/superpowers/plans/2026-11-19-piper-arm-outline-cycle.md。独立review_arm_outline_cycle发现跨WAIT_FEEDBACK恢复会接受长间隔同角反馈，已修复批次feedback_epoch变化重采，逐帧图像host时间必须处于前后读取窗口且跨度≤4s（原相机3s等待+1s反馈新鲜窗口）。新增moved/feedback_outage/long_pair回归，审查复核19项通过无新阻塞。
+
+三包构建通过。原250实际基线上新增19项，共269实际（266通过、3绘图跳过；colcon275包含6包装），无失败；绘图报告14项全通过补验3项跳过，report/vision/semantic三套181项通过。完整真实STL离线渲染验证10部件183746三角面，27MB交互HTML，使用四姿态合成RGB/深度/关节输入，明确标记SYNTHETIC_TEST_ONLY，绝不可当现场标定或四姿态采集证据。测试报告build/piper-arm-outline-20261119/results/synthetic-full-model-final；早期因URDF换行哈希差异失败的synthetic-real-mesh-render保留。
+
+新安装build/piper-arm-outline-20261119/overlay/install/vlm_nav/share/vlm_nav，主要模块/两份配置与源码一致，脚本使用同安装tools/config；完整命令和参数说明在go2_runbook最新“四停靠点机械臂轮廓与闭爪回零”节，证据build/piper-arm-outline-20261119/evidence。机载current仍历史ik8部署，本轮未SSH、未部署、未启动设备；用户下次要求执行时才切换并做现场核验，不能假定新代码已在机载生效。实际分割质量/深度覆盖、外参/夹指几何、主机配对质量与携物回零路径尚未现场验证。
+
+
+### 2026-11-19 用户新授权执行一次：已部署四姿态版本，USB-CAN待现场重新插拔，尚无运动
+
+用户在代码完成后明确“执行一次夹取”，授权本次单周期；已上传独立/home/unitree/piper-arm-outline-20261119，45项SHA通过，机载arm-outline-check-20261119-01=CHECK_OK（Python3.8/NumPy1.17.4/SciPy1.3.3/SDK0.6.2依赖兼容）。稳定current原子切换至该目录，旧链接/home/unitree/piper-vision-current.before-arm-outline-20261119指向ik8。归档SHA256=dccec8d6225f691ff7c9280c62808c37afffd27c5886b4a3a2412d5752cddd34，包与证据build/piper-arm-outline-20261119。
+
+上位机约20:19时uptime17分钟（发生过新的重启）；boot日志曾正常READY，但此时CAN RX固定25904且12次只读均WAIT_FEEDBACK，六轴/夹爪未知，没有运行抓取控制程序。核对USB-CAN序列0046002F5246570520323934、gs_usb接口1-2.1:1.0和1Mbps。按已有管理员恢复授权定向重绑：解绑成功，bind报EPIPE(-32)，can0消失。进一步仅对已核实USB设备001/003执行USBDEVFS_RESET，内核重新枚举失败error -71/设备不响应地址，ioctl ENODEV。没有启停机械臂、使能切换或位置/夹爪目标发送。当前需现场仅重新插拔USB-CAN的USB端，已通过异步问题请求，等待用户回复；不能把CAN恢复当现场动作通过。
+
+开发机新安装模型服务service-arm-outline-20261119-01已MODEL_READY（执行会话63532），专用SSH反向隧道18765会话9609运行。尚未启动本次preview/run，不存在反馈恢复即自动运动的抓取程序。先等USB重新枚举、恢复1Mbps和新鲜feedback，再只读新图规划/检查路径，之后才执行本次单周期。真实新关节/摆位均未知；不能使用旧零位或旧抓取目标。通信日志live-usb-recovery.log和live-before-passive.json保存；没有记录密码/API密钥。
+
+
+现场继续：用户重新插拔USB-CAN后枚举为001/009，按原1Mbps启用can0，12次只读全READY。重启后的实际起点[-0.658,-0.106,0,-2.626,0,5.339]°、夹爪0mm、ctrl_mode0/teach0。准备回零01从待机切CAN但关节持续不动（收据已记录，不在该实例重放），已SIGINT结束；以新鲜CAN模式反馈重新规划准备回零02，完成ZERO_REACHED，最终到位时J3尚0.14°、其余0（随后只读预览初始六轴全0）。两次准备回零证据均在results/live，未将01记为成功。待机切CAN立即发送首个关节目标可能被固件忽略，目前仅为推测，代码未自动重发。
+
+arm-red-preview-20261119-01=PREVIEW_READY，识别新红块；选30°/yaw0，TCP[623.085389,17.333657,-4.606591]mm，36阶段，位置残差近数值零。四点pregrasp/grasp-5/grasp/lift。相机包络去程358姿态0重叠、顶点最小37.669mm，预计回零294姿态0重叠、56.980mm；不包含持物/支撑面完整碰撞保证。预览图已目视红块在纸盒后上方，未用旧目标。用户问示教退出SDK及运行环境，已用机载SDK源码确认MotionCtrl_1(grag_teach_ctrl=0x02)再MotionCtrl_2(1,1,30,0)，说明本次已CAN不需另开控制进程。
+
+已启动本次唯一抓取run arm-red-grasp-20261119-01，执行会话12032，使用新current和原30%/8mm默认参数；将重新采图和开爪后重规划，四点采集后原检查通过才闭爪回零。尚不能宣称抓取成功。专用观察脚本evidence/watch-grasp.py，结果路径/home/unitree/.local/state/piper-vision-grasp/arm-red-grasp-20261119-01；服务63532和隧道9609仍运行。
+
+
+现场预抓暂停与同周期继续：arm-red-grasp-20261119-01完成open和21段joint到pregrasp，共22 receipts；预抓图中机械臂几乎全在视野外，顶部仅一小段，Qwen/SAM持续requested object not found导致WAIT_ARM_CAPTURE。已SIGINT精确PID5260结束监控，保持预抓，尚未合爪。此诊断不可见不应新增运动门槛：arm_outline.segment_capture现仅将模型明确not found记为visibility=NOT_DETECTED、空mask，保留图像/配对关节；网络/相机错误仍等待，报告明确无轮廓点、不代表对齐。新增缺失处理/非notfound错误传播测试，15报告测试通过；三包构建通过，colcon276含6包装/3绘图跳过，无失败（270实际，267通过/3跳过）。
+
+r2新目录/home/unitree/piper-arm-outline-20261119-r2，45SHA+CHECK_OK通过；归档SHA3628390ca385a7164a3d78a8d916a64a0c54d0e2a799379c235433355858d5c2，current已切换，旧r1回退链接before-arm-outline-r2-20261119。API模型worker仍旧实例（分割接口未改）。一次性续行脚本evidence/resume-pregrasp.py复制机载r2根：核对22份先前回执精确匹配，run-id/目录不变，保存pregrasp-pause-result.json和resume-pregrasp.json；确认实测仍在pregrasp±0.3°，重新拍红块检查未移动，随后仅继续剩余阶段，不重复open或先前joint。离线FakeSession基于本次真实计划验证四处采集/只一次close/无先前阶段重复/闭爪回零通过（evidence/test-resume.py），这是操作续行脚本，不是通用重试产品入口。
+
+续行当前执行会话15049（Python路径/home/unitree/piper-arm-outline-20261119-r2/resume-pregrasp.py），12032旧run已退出。若需中止须找resume-pregrasp.py精确PID，不能只扫描main.py。正在恢复观测，未宣称成功；result.json在续行最终覆盖前仍是旧EXITED，监控以最新events.jsonl及进程为准。四姿态报告仅收集成功写成arm-observation.json的目录，其他原始失败采图全部保留。
+
+
+### 2026-11-19 本轮最终：抓空，用户要求补齐观测抬升；四姿态采集完成、六轴已归零
+
+续行到grasp并close后WAIT_CONTACT，反馈约47.1mm；用户目视确认“抓空或位置偏了”。已SIGINT续行PID6283，没有将其当成功抓取。随后用户新指令“合爪抬升的图也采集，物块没有收集观测作用”，明确允许本次空夹爪抬升以完成机械臂观测。一次性evidence/observe-lift-return.py（机载r2同名）先核对已执行回执准确覆盖open/全部非lift/close，复核实测仍在grasp±0.3°，仅发送原计划尚未执行的lift阶段、记录lift组，然后return_zero_holding。没有再次开爪、没有重放已完成阶段。最终OBSERVATION_RETURNED_ZERO、grasp_confirmed=false、observation_only_lift=true。此脚本本次授权已结束；不是普通入口自动越过接触检查的开关。
+
+实际49个关节阶段全部AT_TARGET且各一次，51份receipt（open、49 joint、close），到位最大角误差0.299071°。四处已采pregrasp/grasp-5/grasp/lift，每处3帧、逐帧前后反馈完整；最后帧主机配对窗口约0.242～0.244秒，不是硬件同步。四姿态关节（°）：pregrasp [5.347,120.320,-61.768,17.823,-24.329,-12.118]、开口68.7mm；grasp-5 [4.581,129.118,-72.728,17.464,-22.038,-12.494]、68.7mm；grasp [3.669,139.739,-88.079,19.573,-17.545,-15.462]、68.7mm；lift [3.669,137.013,-87.977,22.869,-14.976,-18.886]、47.0mm。回零后的12次独立只读全READY，最后J1～J6均0.000°、夹爪46.6mm、CAN1/teach0/无故障。final-passive.json保存。进程清单已无main.py/resume/observe续行；模型服务63532和专用隧道9609已Ctrl+C结束（exit130），没有待自动继续任务。
+
+原始四次arm-observation均NOT_DETECTED。查看原图发现grasp的两夹指清晰可见，确定是原“整台Piper”提示词的局部识别失败，并非机械臂完全不入镜。已改为黑色/金属色的“可见机械夹爪或机械臂局部”，独立RGB测试得到夹爪mask，再对保存的四组图重新分割；未采新图、未动机器人，原始数据和mask不改。派生目录build/piper-arm-outline-20261119/results/arm-red-grasp-20261119-01-outline-reprocessed，包含original-arm-observation/mask及reprocessing.json。预抓仍NOT_DETECTED；grasp-5/grasp/lift分别DETECTED，分割边界有效深度点433/1618/931（总边界1628/4478/1444）；预抓0。已目视RGB叠加：grasp混入右侧线缆，lift混入椅背，明确记为分割未验证/背景污染，不能直接当准确机械臂点或外参标定结果。没有用FK裁剪观测点以掩盖不一致。
+
+最终报告派生目录/visualization/index.html，包含四姿态完整STL与轮廓深度点同基座系交互叠加、RGBmask、全部点PLY/NPZ、数值关节表、49阶段反馈、原抓空结果和回零独立反馈链接。report结果VISUALIZED/offline/CAN=0/arm_poses=4，全部链接及12帧配对/49阶段验证通过；总入口build/piper-arm-outline-20261119/results/index.html。四姿态观测完成不代表成功夹取。本次仍未验证外参/TCP/夹指实物几何，不能把视觉偏差只归因于某一参数。
+
+最新代码r3已构建/部署：新增NOT_DETECTED测试后270实际（267通过、3绘图跳过；colcon276含6包装），绘图报告15项全通过；局部提示词在真实保存RGB上验证能分割夹爪，未宣称无背景误检。机载/home/unitree/piper-arm-outline-20261119-r3，current已切换，45SHA+arm-outline-r3-check-20261119-01 CHECK_OK。归档SHA90af710adccc20a8e94619c2fa6532ca721f05d43cd4b2b675d76baddd20be1b，回退链接before-arm-outline-r3-20261119指r2，早期r1/ik8均保留。本地安装build/piper-arm-outline-20261119/overlay/install/vlm_nav/share/vlm_nav。现场缺失和局部提示词修正已同步runbook；未自动提交。
+
+### 2026-11-19 按用户要求去除四姿态空间图橙色掩膜点
+
+仅修改 arm_outline.render 删除橙色分割轮廓 Scatter3d 图层，并同步 report.py 图例说明及现有报告测试。灰色深度场景抽样点、蓝色完整FK模型、四姿态切换不变；原始RGB-D、RGB遮罩、轮廓导出、关节数字不删。其他抓取图的橙色实测FK位置标记不是掩膜点，保留。没有SSH、硬件采集、运动或部署。
+
+在现有本地 arm-outline overlay 三包构建成功；相关基线267通过/3绘图跳过，colcon276含6包装，0错误/失败；绘图环境报告15项通过补验跳过项，无新增用例，仅更新既有显示断言。源/安装两个修改模块一致。使用安装模块从保存的四姿态数据生成 visualization-no-mask；原 visualization 保留，新页保留此前抓空、空夹爪观测、回零及背景误分的事实说明，并更新图层说明。统一入口 build/piper-arm-outline-20261119/results/index.html 指向新页。机载 current 仍前文 r3，未同步此次仅报告显示修改；现场标定仍未验证。
+
+### 2026-11-19 四姿态空间图标注Piper基座原点并裁剪1米外点
+
+用户要求原点设为Piper基座、剔除1米外点。确认原图已有基座系外参变换，本次未改标定或平移模型：增加黑色(0,0,0)原点标记，三轴范围[-1,1]m；在变换后按点到基座原点的三维欧氏距离≤1m过滤，再按原规则抽样显示。橙色掩膜点保持移除；原始RGB-D、轮廓文件和历史报告均保留，模型/数字关节表不变。新增显示元数据和每姿态有效/范围内/显示点数。
+
+沿用arm-outline本地overlay完成三包构建；相关基线267通过/3绘图跳过，colcon276含6包装，0错误/失败；绘图环境报告15项通过。扩展现有四姿态测试，以非零外参平移验证基座距离、恰好1m边界保留和球形距离过滤。使用安装模块生成 visualization-base-1m，自动逐点核验四组实际HTML显示点均在1m内、原点标记齐全、无橙色掩膜层、链接存在；统一results/index.html已切换。没有SSH、部署、相机采集或机械臂运动；机载仍r3，物理标定未重新验证。
+
+### 2026-11-19 抓取/抬升两帧夹爪配准与人工叠加页
+
+用户要求剪裁夹爪模型并匹配点云提取矩阵，后指定基座系z>-0.03、x<0.66（保留此前半径≤1m）、只用抓取和抬升两帧拟合同一矩阵，最后要求仅显示拟合模型叠加、无橙点。已完成离线实验，无SSH/CAN/相机/运动/部署。产品代码及标定未改；一次性脚本和证据位于build/piper-gripper-registration-20261119。前一人工RGB区域实验及加入背景污染的接近中点实验保留作历史，最终只采用spatial-roi/registration.json中grasp/lift frame02，frame00/01只作验证。
+
+从现有URDF/STL提取gripper_base/link7/link8（3个完整mesh），每姿态按实测开口构建夹爪局部模型；只两夹指表面参与匹配。原深度经原T_base_color_optical转换后严格空间截取；不使用RGB掩膜/人工像素区域、不按FK距离裁剪、不补深度。抓取frame02完整22619点、抬升15262点；拟合2mm体素抽样后1097/787点，各夹指面积加权采样18000模型表面点。使用近FK多初值、85%截断对应、SVD刚体ICP，按所有选中观测点20mm封顶距离均方目标在候选中择优，不保证全局最优。保留候选和失败证据，零5mm匹配支持的接近中点没有当有效结果。预抓/接近中点主要截到红块，未用于最终矩阵；本轮用户明确选择grasp/lift。
+
+最终D（列向量p_observed_base=D@p_fk_base，平移m）为[[0.952435565,-0.140101611,0.270625263,0.063948694],[0.111352691,0.986643900,0.118888150,-0.040116564],[-0.283667187,-0.083098451,0.955315432,0.154574720],[0,0,0,1]]。D不是相机外参；JSON另存C=inv(D)、原外参、假设候选C@T_base_camera（未应用），每姿态D@T_base_gripper及inv(T_base_camera)@D@T_base_gripper。抓取/抬升观测→模型中位距离21.41/24.73mm降至1.543/1.525mm，5mm内比例86.6%/85.1%，但全体RMSE仍8.28/10.07mm。RGB投影目视仍有明显轮廓差，近似可见模型→观测中位距离7.18/8.09mm、5mm覆盖仅36.6%/34.2%；已标PARTIAL_ALIGNMENT_ONLY，不能以低单向距离认定标定正确。四个留出帧仍是同传感器静止帧，不是独立物理验收。
+
+已执行合成刚体恢复/部分重叠ICP/矩阵逆向检查；逐点核验最终grasp/lift两姿态六份完整空间截取PLY满足严格阈值，验证D刚性/正交/行列式/逆矩阵、相机变换方向及报告链接。verification.json为最终两姿态核验。最终inspection.html仅两个实测点云trace和两个共同拟合mesh trace（绿色/灰色，无橙标注），完整PLY不抽样显示，基座系不变，只放大视角。统一arm-outline/results/index.html追加最新链接；原报告/数据不覆盖。无产品代码修改，未运行colcon或部署；脚本运行与自检通过不表示实物标定通过。
+
+### 2026-11-19 根据用户尺度进行夹指可见下侧表面三项加权
+
+用户观察点云在模型内部，要求旋转角差/平移差/贴合分别赋权；确认使用“相机看到的下侧外表面”，差值相对原FK。随后指定1°、3mm、3mm为相近影响。最终三个归一化尺度严格固定为1deg/3mm/3mm，默认权重1:1:1，并保留1:1:10、1:1:100贴合优先对照；先前10deg/30mm的fit-priority日志只为历史，未进入最终报告。仍仅抓取/抬升frame02、同一D，原z/x/1m筛选，其他帧验证，无RGB掩膜，未改源数据。
+
+一次性 weighted_fit.py 使用Open3D首交查询+SciPy优化。对每个候选把观测及相机一起逆变换到原FK模型系；对应点取相机沿测量射线首次碰到的夹指表面，未命中时用最近点方向首交引导。几何对象仅link7/link8，完整夹爪模型含gripper_base用于显示。原指STL winding一致但非watertight，故不用signed distance判“实体内部”；“behind_first_surface_over_2mm”只是沿射线落在首交面后的比例。贴合损失按观测点数/姿态数平均，表面后超过1mm加3倍单边惩罚，10mm以上Huber。旋转为SO(3)角差、平移为夹爪原点变化，不把D的平移列当夹爪位移。等权多初值后追加差分进化/Powell检查局部解，仍是有限搜索候选。
+
+最终证据 `build/piper-weighted-surface-fit-20261119/index.html`，统一arm-outline/results/index追加链接；显示仅绿色拟合模型与灰色全部截取点（无橙色点/原模型层）。等权结果equal-scales-refined.json：角1.1695°，grasp/lift位移7.4196/7.2781mm，外表面中位距离22.8026/24.2900mm，射线命中17.87%/0.13%；仍未贴合。fit-weight-10.json：角3.571°、位移26.08/25.60mm、距离13.12/15.21mm。fit-weight-100.json：角10.274°、位移62.13/65.15mm、距离5.692/6.654mm，命中85.45%/65.44%，首交面后>2mm30.36%/3.05%，不宣称完全消除穿入。各JSON含D、C、每姿态D@FK、假设候选外参（applied=false）、目标分项、holdout及搜索记录，TXT矩阵均为列向量模型→观测、平移米。
+
+验证：合成立方体首交/表面后惩罚、刚性及逆向、三权重独立性；1°旋转/3mm平移/3mm前侧贴合各自归一化贡献为1；数值Jacobian有限。三个实际输出刚性/逆矩阵检查通过，目标分项重算与优化cost一致，截取阈值、HTML四trace只模型+点云与链接检查通过。只新增离线证据脚本和文档，未改产品代码/构建/部署/物理标定；未连接或移动机械臂。默认保留等权结果，贴合优先对照不是用户重新选择的控制参数。
+
+### 2026-11-19 以原始FK实际数值为起点的六滑杆人工拟合页
+
+用户要求RPY/XYZ滑杆供人工拟合，并明确“以初始的rpy和xyz值作为起点”。最终使用原始FK（非自动拟合/非零偏移）作为输入。新页build/piper-manual-fit-20261119/index.html，独立自包含Plotly+两帧完整ROI点云+完整gripper_base/link7/link8模型，无橙色点。统一arm-outline/results及weighted报告追加最新入口。没有更改源RGB-D、外参、产品代码、机械臂参数或机载部署，无运动。
+
+抓取原始RPY[-179.857326847,60.094263007,177.142556570]°、XYZ[506.388854291,23.287183357,63.303155483]mm；抬升原始RPY[-179.892669560,59.974708507,177.131365508]°、XYZ[506.208365111,23.331986291,83.188817494]mm。加载时保留完整精度原矩阵/单位D，不因滑杆步长提前舍入模型。RPY=RzRyRx主动基座系，XYZ绝对位置，输入当前帧T后D=T*inv(F_current)，同一D作用另帧；切换帧更新输入、保留D。恢复初始按钮两帧D归单位阵。逐帧原开口不变。矩阵显示当前T及共同D，JSON导出两帧T、D、inverse(D)、单位/来源和applied_to_robot=false。无自动持久化，刷新恢复原FK；页面说明先导出调整。
+
+实现仅新增证据目录generate.py/manual_fit.js/template.html和测试；原产品模块无修改，不运行colcon。Node测试验证RPY与两个真实FK矩阵一致、±90°万向锁等价、mm/m、XYZ/RPY输入、固定点云、两帧联动、快速连续输入最后状态、非法值、重置及JSON下载事件。真实Firefox155.0.1临时WebDriver会话验证页面/WebGL、初始单位D、XYZ和RPY操作后真实Plotly mesh顶点与计算吻合、Base坐标轴米单位、换帧D不变、重置和导出对象；browser-check.json及browser-preview.png保存。沙箱内Snap启动因DBus transient scope受限，自动审批允许的本机临时Firefox测试成功，不使用用户现有浏览器会话；测试结束会话及driver清理。手动拟合仍需用户目视判断，未做物理标定或控制应用。
+
+### 2026-11-20 Piper 手眼重新采样入口
+
+开发机独立工具 `../piper/handeye/loop.py` 的训练数量选项增加 20。沿用原验证数量 5 和同帧人工确认。控制电脑进入 `/home/isee-pst/unitree_ros2/piper`，在交互式 Bash 执行 `bash piper_handeye_loop.sh --session recalib20_20261120 --train-count 20 --board-attached`；仅在标记板实际固定后启动，从同一命令恢复同一安装批次。原图回传后在本机查看。独立 Python 工具直接加载源码。项目手眼环境 58 项原有测试通过，额外临时离线检查覆盖拒收后完整 20+5 分组与自动结束。未连接设备，本次新样本和当前精度均待现场验证。
+
+同日按用户要求补充同流实时预览。控制电脑手眼循环支持 --live-preview，本机入口与机载运行库路径、操作见 go2_runbook 同日章节。本机安装位于 ../piper/handeye，测试在 ../piper/tests/test_live_preview.py。原有 58 项离线手眼用例与新增 4 项均通过，覆盖单次开关相机、慢编码期间采原图、配对、重传、实际子进程管道和 20+5 分组。尚未连接现场设备，CPU/网络负载和 USB 丢帧率未测。
+
+### 2026-11-20 Piper 手眼 20+5 离线求解
+
+开发机数据 ../piper/handeye-data/recalib20_20261120。核对 25 组 OK、角色及原图/元数据来源哈希，按既有 core.py solve 使用全部 20 组 train 拟合 T_base_color_optical 与 T_end_marker，pose27–31 仅验证。训练闭环平移/旋转 RMS 为 20.638 mm / 3.466°，独立验证为 22.655 mm / 3.663°，最大 33.408 mm / 5.073°。相机原点在 Piper 基座中为 [371.690,46.685,-150.677] mm。全精度候选见[结果 JSON](piper_handeye_recalib_20261120_result.json)，[逐组闭环、像素与 FK/SDK 差值](../../build/piper-handeye-recalib-20261120/residuals.csv)。25 组 URDF link6 与 SDK 末端最大差 0.134 mm / 0.0051°，属于软件一致性检查。pose27→28 的 SDK 末端与视觉标记相对旋转角分别为 20.31°、24.76°；刚性安装理想条件下两角应相等，差异来源待查。此次仅离线求解，未更改活动外参，未连接设备或执行实物验证。
+
+### 2026-11-20 Piper 新批次的逐张与每五组质量反馈
+
+控制电脑 ../piper/handeye/loop.py 调用 quality.py；core.py 提取原 PARK 拟合和残差计算供阶段诊断复用。已安装，原有 62 项与新增 2 项离线测试通过。回放上一批：pose22 单帧 0.52 px、与 15 个已收录姿态比较的转角差中位 0.65°，最大 8.09°（pose12）；前 5/10/15 组分别对接下来 5 个训练姿态预测的平移 RMS 为 20.94/34.71/36.82 mm、旋转 RMS 为 2.29/3.50/6.92°。独立验证留到五组齐全，不用于训练。未修改现用外参。已打开新批次 recalib20_20261120_r2 的操作窗口，初始等待现场板固定确认；窗口创建本身不证明已取图。操作及诊断字段见 go2_runbook 同日章节。
+
+### 2026-11-20 Piper 重采 r2 离线求解
+
+recalib20_20261120_r2 已 COLLECTION_COMPLETE。核对全部 25 个 OK、角色、原图与来源元数据 SHA256，从原图复算，20 组拟合、pose28–32 留出验证。训练平移/旋转闭环 RMS 19.966 mm / 0.704°，验证 15.696 mm / 0.699°；验证最大平移 24.708 mm（pose28），最大旋转 0.944°（pose31）。相机原点在 Piper 基座中为 [340.711,27.310,-113.359] mm。正逆矩阵与逐组闭环 RMS 复核通过。20 个已收录训练姿态中最大的两两相对转角差为 1.458°（pose04/26）；已有近似左右对称观测没有控制图像位置与参照，无法据此确认固定侧偏差。候选见[完整结果](piper_handeye_recalib_20261120_r2_result.json)，[逐姿态误差](../../build/piper-handeye-recalib-20261120-r2/residuals.csv)。尚未实物验证，未应用或部署。
+
+### r2 续采准备（30+5）
+
+独立扩采批次 ../piper/handeye-data/recalib30_20261120_r2_ext 已复制原 r2 全部 25 个批准样本；复核原图、审核来源哈希、原角色和派生元数据，图片逐字节一致。原数据集为 20+5，扩采起点为 25 个 train、0 个 validation，接下来 pose33。旧 5 个 validation 仅在扩采批次改为 train，seed_manifest.json 留存来源，新结论须用另采的 5 个 validation。控制机采样入口支持 --train-count 30；64 项原有离线测试通过，另模拟拒收、25→30 训练及 5 个新验证通过。桌面扩采窗口设现场确认后才连接设备。准备工作没有生成 30+5 结果；实际安装连续性及新增进度以现场和采样记录为准。
+
+### 2026-11-20 扩采 30+5 正式复算
+
+recalib30_20261120_r2_ext 已 COLLECTION_COMPLETE。逐一核对 25 个种子样本来源和原始角色、10 个新增样本的 OK 记录、35 张图像及审核元数据哈希。原图正式复算：新增训练 pose33–37，独立验证 pose38、39、40、42、43，pose41 人工 NO。训练平移/旋转闭环 RMS 21.369 mm / 2.540°；验证 39.552 mm / 5.942°，最大 43.956 mm（pose43）/ 6.966°（pose42）。同一 5 个新验证上，原 r2 的 20 组解为 40.028 mm / 6.999°，仅用 25 个种子重新拟合为 41.024 mm / 7.109°。均用各自训练集估计的固定末端到板变换。前 25 个姿态内部的相对转角差最大 1.458°，新增 10 个内部最大 1.322°，跨两段最大 7.484°（pose24/40）；具体物理来源未确定。候选相机原点在基座中为 [340.994,20.672,-109.638] mm。已复核正逆矩阵和训练/验证统计。仅保存[正式候选](piper_handeye_recalib30_20261120_r2_ext_result.json)和[逐姿态对照](../../build/piper-r2-extend-30plus5/ext30-residuals.csv)，未应用、部署或执行实物验证。
+
+扩采 35 姿态逐对复核：以 pose24 和 pose40 分别为参照，各与其余 34 个姿态计算相机和末端的相对转角及其绝对差。pose24 对原 r2 其余 24 组的差值中位数 0.373°、对新增 10 组为 2.661°；pose40 对原 r2 的 25 组为 3.932°、对新增其余 9 组为 0.811°。两侧最大均为 pose24↔40 的 7.484°；成对差异不能单独定位问题姿态。[逐对转角 CSV](../../build/piper-r2-extend-30plus5/pose24-pose40-angle-pairs.csv)
+
+### 2026-11-20 用户选定第二轮原始外参
+
+后续 Piper 手眼标定和实物验证统一引用第二轮 [r2 原始 20+5 结果](piper_handeye_recalib_20261120_r2_result.json)，批次为 `recalib20_20261120_r2`。已核对结果文件 SHA256 与扩采前记录一致。30+5 扩采数据和求解结果仅留作历史排障资料。本次只记录选用决定；仓库抓取配置仍引用 2026-11-17 的外参，r2 的实物精度待验证。
+
+### 2026-11-20 r3 独立采样 20+8
+
+新批次 recalib20v8_20261120_r3 初始为训练 0/20、验证 0/8。控制机 loop.py 已支持 --validation-count 8，原命令默认 5。原 64 项和新增 1 项离线测试均通过；新增回归覆盖 NO、20+5 时暂停、恢复后补齐最后 3 个验证姿态。已打开现场操作窗口，当前批次进度须按实际采样记录核对。r2 原始选定外参仍独立保存。
+
+### r3 前五组图像与平移尺度诊断
+
+只读查看 pose01–05 的完整原图。五张目标黑框完整，pose04 最斜、像素面积最小（约 1.94 万 px²）。按记录 142 mm 重算的逐姿态闭环为 4.95、20.73、8.25、32.62、21.66 mm，RMS 20.28 mm / 0.81°。替换亚像素/轮廓角点后平移 RMS 仍为 19.97/20.19 mm。相对运动沿各自转轴的位移（理想刚体共轭下相等），pose02→04 末端/视觉 102.9/152.8 mm，pose03→04 为 −68.2/−101.6 mm。整体尺度拟合约 0.686，对应有效边长约 97.4 mm，仅为五组数据推算。用同一套 PARK/PnP 在内存假设 100 mm 黑框重算，五组 RMS 4.37 mm / 0.81°，四拟合一留出汇总平移 RMS 从 35.14 降至 8.58 mm。此对照有待实测黑框横竖边长、核对平面度和度量来源；未改采样记录、尺寸配置或现用外参。不能将假设值用作标定真值。
+
+### r3 新板实测 100 mm，前五组已重算
+
+用户确认 100×100 mm 为 r3 前五张标记的黑框外沿尺寸，量尺时板相对末端及相机相对基座均未动。已保留原始审核记录和 142 mm 数据，新批次 ../piper/handeye-data/recalib20v8_20261120_r3_100mm 带独立 board.json；前五张原 PNG 字节和来源哈希核对，新样本沿用原 CAN 反馈/静止窗口，从原图重算 ID25 的 PnP。平移闭环 RMS 20.276→4.374 mm，旋转 0.813°，最大平移 6.280 mm（pose05）。控制机实时入口将批次板配置显式传给单个机载相机进程，solve 默认优先使用同批 board.json，旧数据集保留原默认配置。已打开新窗口，起点为 pose06、训练 5/20、验证 0/8。65 项原有测试（含扩展的相机管道模拟）及 1 项新增自动选批次板的求解测试通过。新窗口需要旧窗口先退出；现场新帧与独立验证待采，不替换 r2 外参。
+
+### r3 完整 20+8 按实测黑框 100 mm 求解
+
+原采样批次 recalib20v8_20261120_r3 已 COLLECTION_COMPLETE，28 张均保存为旧的 142 mm 元数据，另外 100 mm 续采目录只有同源前五张。仅从完整批次原图和同期反馈按 100 mm 重新检测，核实 28 个唯一图像哈希、审核来源、OK 角色及静止窗口，派生数据保存在 build/piper-r3-board100/r3_100mm_20plus8。全部 20 组训练，pose23–30 八组独立验证。训练闭环 RMS 4.312 mm / 0.819°；验证 RMS 3.711 mm / 0.883°，最大 5.550 mm（pose23）/ 1.609°（pose26）。同一验证集按旧 142 mm 为 22.220 mm / 0.883°。相机原点在 Piper 基座中为 [354.844,33.748,-65.293] mm。已复核正逆矩阵和逐样本残差。[候选矩阵与检测结果](piper_handeye_r3_100mm_20plus8_result.json)、[逐组闭环 CSV](../../build/piper-r3-board100/residuals_100mm_20plus8.csv)。未部署，未做实物点位验证，未替换用户此前选定的 r2 外参。
+
+### 2026-11-20 用户选定 r3 并应用于本地 Piper 抓取配置
+
+用户最新选择为 [r3 100 mm 黑框 20+8](piper_handeye_r3_100mm_20plus8_result.json)，取代此前选用 r2 的决定。共享 config/piper_vision_grasp/extrinsics.json 采用该结果的完整 T_base_color_optical，来源文件 SHA256 为 6227be2823bb01f13ecc8dd022dca7062ccdf42be9df15bedd31dc67fcc1b3de，外参配置 SHA256 为 36d057b5d3e91602a3b5b0bdda8449ded28bcd97d98ce49325545ec415a48667。开发机新安装 build/piper-r3-applied/overlay/install/vlm_nav/share/vlm_nav；默认入口离线 CHECK_OK，四种配置与归档矩阵逐元素一致。三包构建成功，Piper 相关原有 270 个用例（含转为历史来源的人工平移断言）加 1 个 r3 回归，268 通过、3 个绘图用例跳过，绘图环境 15 个报告用例全部通过。构建、检查快照与测试日志在 build/piper-r3-applied/evidence。机载未部署，未执行运动或实物验证。

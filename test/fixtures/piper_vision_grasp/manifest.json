@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "samples": [
+    {
+      "directory": "blue-block-after-retreat-rgbd01",
+      "phase": "before_close",
+      "source_directory": "build/piper-bottle-ground-20261113/blue-block-after-retreat-rgbd01",
+      "sha256": {
+        "frame01-color.png": "d0cc89c7471f2deb91b3195cd771137525e965b027835ed030240e7f5e7a2784",
+        "frame02-depth.npz": "f07ce19e31449712aaf53007ce5f7bb4395d0a74df0d560b74d7132beb754470",
+        "frame02-color.png": "32600dcbcb0b5819e184ebbd8ff887e533d017830b53882270999c8c09b22bc1",
+        "metadata.json": "12012191601783722a99b621f39f7e9c6891074282c4db07f80412c1b33a8d2c",
+        "frame00-depth.npz": "be7d06865762e74f5e3ecbd368ceb6cf4ecb08c4500a675bfcbb31613d146a63",
+        "frame01-depth.npz": "a63931fea346e000bd8c1e8e122e940c8eeb87ff952dbd46bb382dc58b23a852",
+        "frame00-color.png": "edc9dd1798dcb41f25bf4d4b4f3decb17f6a0aa3cb417348a0a087a85caed0a3"
+      }
+    },
+    {
+      "directory": "blue-block-half-horizontal-rgbd01",
+      "phase": "before_close_crosscheck",
+      "source_directory": "build/piper-bottle-ground-20261113/blue-block-half-horizontal-rgbd01",
+      "sha256": {
+        "frame01-color.png": "5bfdbe9a292718196be3529956ff713b5e8f24c1d17af9435884924fe10b2a66",
+        "frame02-depth.npz": "bc9eab08a6c5a75b76631dc41cdf2eadde314db65eae683ae57f507ab13cb18f",
+        "frame02-color.png": "14db57fed3d720d76362b553413f7e6df3c64f90433fe48ac05e6f026e8b8f34",
+        "metadata.json": "f970d5e976f2b71b7a6e9b7e8b008d80b1230d2aaee18e89e0ca397d41999d71",
+        "frame00-depth.npz": "425fa84954015a6393f49d353e4380bd46e19fd27fe78238d636602c354d1749",
+        "frame01-depth.npz": "94aa6471abbfe873d1577ec09bace941b9c306d66cab4452a63a58b43291a46d",
+        "frame00-color.png": "1d88f3180adc55e6d02451b5f86ffa311c3dbfa1eee7caa6792129761041d838"
+      }
+    },
+    {
+      "directory": "blue-block-grasp-hold-rgbd01",
+      "phase": "after_lift",
+      "source_directory": "build/piper-bottle-ground-20261113/blue-block-grasp-hold-rgbd01",
+      "sha256": {
+        "metadata.json": "2dbfb7f024db276467c84993f45f4f14cb42802605cc204025f66ac2aeaa8e85",
+        "frame00-depth.npz": "142f8d9a86ff00f53b9c44226029dd57a5988db31dd702787c39872182e40256",
+        "frame00-color.png": "2468636d2b3e39a173833dc01444f4e11f4c44e763de95dd050d993ff60c21e3"
+      }
+    }
+  ]
+}

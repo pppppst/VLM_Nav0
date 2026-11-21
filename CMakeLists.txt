@@ -13,6 +13,7 @@ find_package(dwb_core REQUIRED)
 find_package(dwb_plugins REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(message_filters REQUIRED)
+find_package(multi_agent_task_msgs REQUIRED)
 find_package(nav_2d_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(pcl_conversions REQUIRED)
@@ -93,6 +94,8 @@ if(unitree_api_FOUND)
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
   )
   ament_target_dependencies(twist_to_go2_sport_bridge
+    diagnostic_msgs
+    multi_agent_task_msgs
     geometry_msgs
     rclcpp
     rmw
@@ -167,6 +170,9 @@ install(
   FILES_MATCHING PATTERN "*.sh" PATTERN "*.py"
 )
 install(FILES package.xml pytest.ini DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY tools/piper_vision_grasp
+  DESTINATION share/${PROJECT_NAME}/tools
+  FILES_MATCHING PATTERN "*.py")
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
@@ -209,6 +215,12 @@ if(BUILD_TESTING)
   endif()
 
   ament_add_pytest_test(test_arm_image_recorder test/test_arm_image_recorder.py)
+  ament_add_pytest_test(test_piper_boot test/test_piper_boot.py)
+  ament_add_pytest_test(test_piper_gripper test/test_piper_gripper.py)
+  ament_add_pytest_test(test_piper_vision_grasp test/test_piper_vision_grasp.py TIMEOUT 120)
+  ament_add_pytest_test(test_piper_semantic test/test_piper_semantic.py TIMEOUT 120)
+  ament_add_pytest_test(test_piper_graspnet test/test_piper_graspnet.py TIMEOUT 120)
+  ament_add_pytest_test(test_piper_report test/test_piper_report.py TIMEOUT 120)
   ament_add_pytest_test(test_go2_costmap_rviz test/test_go2_costmap_rviz.py)
   ament_add_pytest_test(test_go2_keepout test/test_go2_keepout.py)
   ament_add_pytest_test(test_easy_case_config test/test_easy_case_config.py)
@@ -216,6 +228,13 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_geometry test/test_geometry.py)
   ament_add_pytest_test(test_latest_frame_worker test/test_latest_frame_worker.py)
   ament_add_pytest_test(test_navigation_gate test/test_navigation_gate.py)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  set(COOPERATIVE_RUNTIME_PYTHON "${Python3_EXECUTABLE}" CACHE FILEPATH "Python with the Go2 runtime dependencies")
+  ament_add_pytest_test(test_legacy_wait_recovery test/test_legacy_wait_recovery.py
+    PYTHON_EXECUTABLE "${COOPERATIVE_RUNTIME_PYTHON}")
+  ament_add_pytest_test(test_go2_control_recovery test/test_go2_control_recovery.py)
+  ament_add_pytest_test(test_go2_manual_recovery test/test_go2_manual_recovery.py)
+  ament_add_pytest_test(test_go2_entry_recovery test/test_go2_entry_recovery.py)
   ament_add_pytest_test(test_raw_depth_probe test/test_raw_depth_probe.py)
   ament_add_pytest_test(test_pipeline test/test_pipeline.py)
   ament_add_pytest_test(test_vlm_client test/test_vlm_client.py)

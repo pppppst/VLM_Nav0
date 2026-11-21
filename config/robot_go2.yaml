@@ -29,6 +29,7 @@ obstacle_cloud_filter:
 vlm_nav:
   ros__parameters:
     enabled: false
+    wait_recovery: true
     target_description: chair
     global_frame: map
     base_frame: base_link

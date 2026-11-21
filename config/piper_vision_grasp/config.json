@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "camera_serial": "151222077264",
+  "usb_serial": "0046002F5246570520323934",
+  "reference": "reference.json",
+  "extrinsics": "extrinsics.json",
+  "kinematics": "kinematics.json",
+  "detector": {
+    "version": "blue-face-v1",
+    "hsv_low": [
+      95,
+      160,
+      30
+    ],
+    "hsv_high": [
+      130,
+      255,
+      255
+    ],
+    "min_area_px": 120,
+    "min_fill": 0.85,
+    "min_depth_ratio": 0.8,
+    "width_m": [
+      0.032,
+      0.052
+    ],
+    "height_m": [
+      0.1,
+      0.13
+    ],
+    "max_plane_residual_m": 0.002,
+    "stability_m": 0.003,
+    "orientation_tolerance_deg": 5
+  },
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 15,
+    "warmup_frames": 20,
+    "count": 3
+  },
+  "motion": {
+    "speed_percent": 30,
+    "joint_tolerance_deg": 0.3,
+    "sample_spacing_m": 0.01,
+    "local_limit_m": [
+      0.03,
+      0.03,
+      0.01
+    ],
+    "lift_m": 0.02
+  },
+  "gripper": {
+    "open_mm": 70,
+    "open_ready_mm": 66,
+    "close_mm": 36,
+    "effort_nm": 0.5,
+    "stable_seconds": 1.0,
+    "stable_range_mm": 0.5,
+    "contact_margin_mm": 2.0
+  },
+  "poll_seconds": 0.1,
+  "frame_max_age_s": 5.0
+}

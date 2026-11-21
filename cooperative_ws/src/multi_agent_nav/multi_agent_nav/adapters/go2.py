@@ -285,6 +285,10 @@ class Go2Adapter:
         self.scan=None
         self.client=None
         self.vision=AsyncVision(config['api_timeout'])
+        self.control_recovery = None
+        if not read_only and config.get('wait_recovery', False):
+            from vlm_nav.go2_control_recovery import ControlRecovery
+            self.control_recovery = ControlRecovery(observer, max_age=observer.p.external_gate_timeout)
         self.node.create_subscription(Odometry,config.get('odom_topic','/odometry'),self.on_odometry,qos_profile_sensor_data)
         self.node.create_subscription(Costmap,config.get('costmap_topic','/local_costmap/costmap_raw'),
             self.on_costmap,QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL))
@@ -294,6 +298,29 @@ class Go2Adapter:
                 QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL))
         if config.get('path_topic'):
             self.node.create_subscription(Path,config['path_topic'],self.on_path_update,10)
+
+    def recover_control(self, allow_resume=True):
+        recovery = getattr(self, 'control_recovery', None)
+        if recovery is None: return
+        health = self.get_health()
+        checks = self.last_health_details['checks']
+        ready = (allow_resume and health.localization_valid and health.stopped and health.motion_terminal
+                 and all(ok for name, ok in checks.items() if name not in ('control_armed_gate', 'rgbd_ready')))
+        recovery.step(ready)
+
+    def cancel_control_recovery(self):
+        recovery = getattr(self, 'control_recovery', None)
+        if recovery is not None: recovery.cancel()
+
+    def begin_control_task(self, task_id):
+        if not task_id or task_id == getattr(self, '_control_task_id', None):return
+        self._control_task_id = task_id
+        old = getattr(self, 'control_recovery', None)
+        if old is not None and old.closed:
+            self.node.destroy_subscription(old.subscription)
+            self.node.destroy_client(old.client)
+            from vlm_nav.go2_control_recovery import ControlRecovery
+            self.control_recovery = ControlRecovery(self.node, max_age=self.node.p.external_gate_timeout)
 
     def selection_camera_snapshot(self):
         snapshot=self.node.latest_snapshot
@@ -502,6 +529,7 @@ class Go2Adapter:
                 monotonic_time=time.monotonic(),**fields))
         except Exception as error:
             if getattr(self, 'single_robot_mode', False):
+                self.evidence_write_failed=True
                 self.node.get_logger().warning('Motion diagnostic write failed: '+str(error))
             elif isinstance(error, OSError):
                 self.evidence_write_failed=True
@@ -595,8 +623,11 @@ class Go2Adapter:
         if self.path and not path_valid and not getattr(self,'path_timeout_logged',False):
             self.path_timeout_logged=True
             self._motion_event('PATH_RECEIVE_TIMEOUT',receive_age_s=now-self.path_at)
+        recovery = getattr(self, 'control_recovery', None)
+        hard_fault = ('local motion identity unknown' if self.motion_fault else
+                      recovery.hard_fault if recovery is not None else '')
         return Health(pose,valid,ready,stopped,list(self.path),path_valid,self.config['footprint'],not self.motions,
-                      'execution path missing or receive timeout' if not path_valid else '')
+                      'execution path missing or receive timeout' if not path_valid else '', hard_fault=hard_fault)
 
     def perception_wait_allowed(self,health):
         if not (health.nav_ready and health.stopped and health.motion_terminal and health.localization_valid):return False
@@ -885,6 +916,8 @@ class Go2Adapter:
             observations=[asdict(o) for o in observations])
 
     def tick(self):
+        recovery = getattr(self, 'control_recovery', None)
+        if recovery is not None: recovery.poll()
         from nav2_msgs.action import Spin
         from rclpy.duration import Duration
         self.vision.poll()
@@ -1033,5 +1066,6 @@ class Go2Adapter:
             scan['attempt']=0;scan['depth_retrying']=False
 
     def close(self,stop=True):
+        self.cancel_control_recovery()
         if stop and not getattr(self,'read_only',False):self.stop_motion('shutdown')
         self.vision.close()

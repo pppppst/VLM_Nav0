@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import replace
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import threading
@@ -115,6 +116,7 @@ class VLMNavigator(Node):
         self.observation_only = observation_only
         defaults = {
             "enabled": False,
+            "wait_recovery": False,
             "target_description": "chair",
             "global_frame": "map",
             "base_frame": "base_link",
@@ -458,6 +460,13 @@ class VLMNavigator(Node):
         self.sensor_wait_started = 0.0
         self.sensor_wait_reason = "none"
         self.sensor_recovery_count = 0
+        self.recovery_requests = set()
+        self.recovery_results = set()
+        self.recovery_hard_fault = ''
+        self.recovery_shutdown = False
+        self.recovery_resume_state = SCANNING
+        self.control_recovery = None
+        self.experiment_status = None
 
         self.target_tracker = TargetTracker(
             int(self.p.confirm_frames), float(self.p.confirmation_radius)
@@ -531,6 +540,8 @@ class VLMNavigator(Node):
         self.initial_costmap_clear_required = False
         self.initial_costmap_clear_requested = False
         self.initial_costmap_clear_pending = 0
+        self.initial_costmap_clear_futures = []
+        self.initial_costmap_clear_query_started = 0.
         self.initial_costmap_clear_token = 0
         self.initial_costmap_clear_errors = []
         self.initial_costmap_clear_baseline_revision = 0
@@ -559,6 +570,16 @@ class VLMNavigator(Node):
             # Cooperative adapter reuses RGB-D/TF grounding, owns every motion goal.
             self.create_timer(0.05, self.resolve_pending_rgbd)
             return
+        if self.wait_recovery_enabled():
+            from .go2_control_recovery import ControlRecovery
+            self.control_recovery = ControlRecovery(self, max_age=self.p.external_gate_timeout)
+            if os.environ.get('GO2_EXPERIMENT_STATUS_FILE'):
+                try:
+                    from multi_agent_nav.experiment_status import ExperimentStatus
+                    self.experiment_status = ExperimentStatus(Path(os.environ['GO2_EXPERIMENT_STATUS_FILE']).parent)
+                    self.experiment_status.path = Path(os.environ['GO2_EXPERIMENT_STATUS_FILE'])
+                except (ImportError, OSError):
+                    self.experiment_status = None
         sample_period = 1.0 / max(0.1, float(self.p.vlm_sample_rate))
         self.sample_timer = self.create_timer(sample_period, self.sample_latest_frame)
         self.result_timer = self.create_timer(0.05, self.drain_worker_results)
@@ -735,6 +756,9 @@ class VLMNavigator(Node):
             getattr(getattr(self, "p", None), "easy_case_mode", False)
         )
 
+    def wait_recovery_enabled(self):
+        return bool(getattr(getattr(self, 'p', None), 'wait_recovery', False)) and not getattr(self, 'observation_only', False)
+
     def on_external_gate(self, name, message):
         setattr(self, name, bool(message.data))
         self.external_gate_receipts[name] = time.monotonic()
@@ -743,10 +767,14 @@ class VLMNavigator(Node):
             and self.p.require_external_safety_gates
             and self.get_parameter("enabled").value
         ):
+            if self.wait_recovery_enabled():
+                self.enter_sensor_wait(f'external safety gate unavailable: {name}')
+                return
             self.get_logger().error(f"{name} lost; disabling VLM task")
             self.set_parameters([Parameter("enabled", value=False)])
 
     def set_vlm_api_ready(self, ready, reason):
+        if self.wait_recovery_enabled() and not ready:self.api_preflight_pending = True
         if (
             not ready
             and getattr(self.p, "require_external_safety_gates", False)
@@ -769,6 +797,10 @@ class VLMNavigator(Node):
             and getattr(self.p, "require_external_safety_gates", False)
             and self.get_parameter("enabled").value
         ):
+            if self.wait_recovery_enabled():
+                self.api_preflight_pending = True
+                self.enter_sensor_wait('VLM API temporarily unavailable')
+                return
             self.get_logger().error(
                 f"VLM API unavailable ({reason}); disabling VLM task"
             )
@@ -786,13 +818,13 @@ class VLMNavigator(Node):
         self.set_vlm_api_ready(ready, reason)
         return ready
 
-    def external_safety_gates_healthy(self):
+    def external_safety_gates_healthy(self, ignore_control_armed=False):
         now = time.monotonic()
         maximum_age = float(self.p.external_gate_timeout)
         return all(
             (
                 self.nav_ready,
-                self.control_armed,
+                self.control_armed or ignore_control_armed,
                 self.vlm_api_ready,
                 maximum_age > 0.0,
                 all(
@@ -892,6 +924,14 @@ class VLMNavigator(Node):
         if "enabled" in values:
             self.p.enabled = requested_enabled
             if requested_enabled:
+                recovery = getattr(self, 'control_recovery', None)
+                if self.wait_recovery_enabled() and recovery is not None and recovery.closed:
+                    self.destroy_subscription(recovery.subscription)
+                    self.destroy_client(recovery.client)
+                    from .go2_control_recovery import ControlRecovery
+                    self.control_recovery = ControlRecovery(self, max_age=self.p.external_gate_timeout)
+                    if not self.recovery_requests and not self.recovery_results and self.recovery_hard_fault.startswith('bridge '):
+                        self.recovery_hard_fault = ''
                 try:
                     record_path = self.image_recorder.start_arm()
                     self.get_logger().info(f"VLM ARM image record: {record_path}")
@@ -916,6 +956,8 @@ class VLMNavigator(Node):
                 self.sensor_wait_reason = "none"
                 self.sensor_recovery_count = 0
             else:
+                recovery = getattr(self, 'control_recovery', None)
+                if recovery is not None:recovery.cancel()
                 self.initial_costmap_clear_token += 1
                 self.initial_costmap_clear_required = False
                 self.initial_costmap_clear_requested = False
@@ -997,6 +1039,14 @@ class VLMNavigator(Node):
         if not bool(getattr(self, "initial_costmap_clear_required", False)):
             return True
         if self.initial_costmap_clear_pending > 0:
+            if self.wait_recovery_enabled() and self.elapsed_since(
+                    self.initial_costmap_clear_query_started, time.monotonic()) > max(.5, self.p.initial_costmap_refresh_timeout):
+                self.initial_costmap_clear_token += 1
+                self.initial_costmap_clear_pending = 0
+                self.initial_costmap_clear_requested = False
+                for future in tuple(self.initial_costmap_clear_futures):future.cancel()
+                self.initial_costmap_clear_futures.clear()
+                self.enter_sensor_wait('Nav2 costmap clear service response temporarily unavailable')
             self.publish_stop()
             return False
         if self.initial_costmap_clear_requested:
@@ -1045,6 +1095,7 @@ class VLMNavigator(Node):
             self.fail_safe("No Nav2 costmap clear services configured")
             return False
         self.initial_costmap_clear_requested = True
+        if self.wait_recovery_enabled():self.initial_costmap_clear_query_started = time.monotonic()
         self.initial_costmap_clear_errors = []
         self.initial_costmap_clear_baseline_revision = int(
             getattr(self, "behavior_costmap_revision", 0)
@@ -1059,6 +1110,7 @@ class VLMNavigator(Node):
                 continue
             self.initial_costmap_clear_pending += 1
             future = client.call_async(ClearEntireCostmap.Request())
+            if self.wait_recovery_enabled():self.initial_costmap_clear_futures.append(future)
             future.add_done_callback(
                 lambda done, costmap=label, generation=token: (
                     self.on_initial_costmap_clear_result(
@@ -1080,6 +1132,8 @@ class VLMNavigator(Node):
         return False
 
     def on_initial_costmap_clear_result(self, future, label, token):
+        if self.wait_recovery_enabled() and future in self.initial_costmap_clear_futures:
+            self.initial_costmap_clear_futures.remove(future)
         if token != getattr(self, "initial_costmap_clear_token", 0):
             return
         try:
@@ -1205,17 +1259,50 @@ class VLMNavigator(Node):
             self.stop_pub.publish(message)
 
     def fail_safe(self, reason):
+        temporary = str(reason).startswith((
+            'Robot TF unavailable', 'NavigateToPose action server unavailable',
+            'ComputePathToPose action server unavailable', 'Spin action server unavailable',
+            'No unblocked ', 'Nav2 cannot plan to any ',
+            'Navigation or path-validation goal timed out',
+            'Target confirmation did not converge within ',
+            'Target depth reobservation result rejected repeatedly:',
+            'Stationary scan result rejected repeatedly at heading ',
+            'Target remains outside reliable depth range after ',
+            'Target depth is unavailable and no observation subgoal ',
+            'Target disappeared during depth reobservation and ',
+            'Approach action cancellation did not become terminal',
+            'Approach motion did not stop with fresh odometry before timeout',
+            'Approach stopped outside target distance contract after retry',
+            'No reachable frontier remains', 'VLM frontier candidates exhausted',
+            'Behavior costmap did not refresh after Nav2 costmap clear',
+            'No Nav2 costmap clear services configured',
+            'Cannot clear Nav2 costmaps before ARM scan:',
+            'Nav2 costmap clear failed before ARM scan:',
+        ))
+        kinds = ('approach', 'easy_approach', 'scan', 'depth_reobserve', 'target_probe', 'target_align')
+        temporary = temporary or any(str(reason) in (
+            f'{kind} goal rejected', f'{kind} goal failed with status {GoalStatus.STATUS_ABORTED}',
+            f'{kind} goal failed while stopping with status {GoalStatus.STATUS_ABORTED}') for kind in kinds)
+        if self.wait_recovery_enabled() and temporary and not getattr(self, 'recovery_hard_fault', ''):
+            self.enter_sensor_wait(reason)
+            return
         self.last_failure_reason = str(reason)
         self.get_logger().error(reason)
         self.cancel_motion(publish_stop=True)
+        recovery = getattr(self, 'control_recovery', None)
+        if recovery is not None:recovery.cancel()
         self.set_state(FAILED)
         self.publish_easy_event("easy_case_failed", reason=str(reason))
 
     def enter_sensor_wait(self, reason):
-        if self.state in (DISARMED, API_ERROR, SUCCEEDED, FAILED):
+        if self.state in (DISARMED, SUCCEEDED, FAILED) or self.state == API_ERROR and not self.wait_recovery_enabled():
             return
-        reason = str(reason)
+        reason = getattr(self, 'recovery_hard_fault', '') or str(reason)
         if self.state != SENSOR_WAITING:
+            if self.wait_recovery_enabled():
+                self.recovery_resume_state = self.state
+                self.recovery_confirmation_started = self.target_confirmation_started
+                self.recovery_resume_scan_observe = bool(getattr(self, 'scan_waiting_for_vlm', False))
             self.sensor_wait_started = time.monotonic()
             self.sensor_recovery_count = 0
             self.latest_snapshot = None
@@ -1233,6 +1320,34 @@ class VLMNavigator(Node):
         pose = self.robot_pose()
         if pose is None:
             return False
+        if self.wait_recovery_enabled():
+            if not self.recovery_ready() or (self.p.require_external_safety_gates and not self.external_safety_gates_healthy()):
+                return False
+            now = time.monotonic()
+            elapsed = max(0., now-self.sensor_wait_started)
+            for name in ('easy_started', 'enabled_since'):
+                if getattr(self, name, 0.) > 0.:setattr(self, name, getattr(self, name)+elapsed)
+            state = getattr(self, 'recovery_resume_state', SCANNING)
+            self.sensor_wait_started = 0.
+            self.sensor_wait_reason = 'none'
+            self.sensor_recovery_count = 0
+            self.api_failures = 0
+            if state == APPROACH_STOPPING and self.target_reference_position is not None:
+                self.set_state(APPROACHING)
+                self.begin_approach_stop('recovered confirmed terminal action', action_terminal=True)
+            elif self.target_reference_position is not None:
+                self.set_state(TARGET_ALIGNING if state == TARGET_ALIGNING and not self.easy_alignment_complete else APPROACHING)
+            elif state in (SCANNING, TARGET_REOBSERVING, TARGET_CONFIRMING):
+                self.set_state(state)
+                if state == TARGET_CONFIRMING and getattr(self, 'recovery_confirmation_started', 0.) > 0.:
+                    self.target_confirmation_started = self.recovery_confirmation_started+elapsed
+                if getattr(self, 'recovery_resume_scan_observe', False):self.prepare_stationary_observation()
+            else:
+                self.frontier_generation += 1
+                self.frontier_request = None
+                self.frontier_request_pending = False
+                self.set_state(EXPLORING)
+            return True
         self.get_logger().info(
             "RGB-D and image-time TF recovered; restarting scan from current pose"
         )
@@ -1255,19 +1370,50 @@ class VLMNavigator(Node):
         self.begin_scan(pose)
         return True
 
+    def recovery_ready(self):
+        now = time.monotonic()
+        ready = bool(not getattr(self, 'recovery_shutdown', False)
+            and self.get_parameter('enabled').value and not getattr(self, 'recovery_hard_fault', '')
+            and not getattr(getattr(self, 'control_recovery', None), 'hard_fault', '')
+            and not self.recovery_requests and not self.recovery_results
+            and self.grid is not None and self.map_message is not None
+            and self.arrival_stationary_count >= int(self.p.arrival_stationary_samples)
+            and self.elapsed_since(self.arrival_last_odom_received, now) <= self.p.arrival_odom_max_age
+            and self.sensor_recovery_count >= max(1, int(self.p.sensor_recovery_frames))
+            and self.elapsed_since(self.last_valid_rgbd_received, now) <= self.p.rgbd_wait_timeout
+            and self.elapsed_since(self.last_camera_tf_success, now) <= self.p.tf_failure_timeout
+            and self.elapsed_since(self.last_robot_tf_success, now) <= self.p.tf_failure_timeout
+            and (not self.p.raw_depth_mode or self.vlm_input_ready())
+            and (not self.p.require_external_safety_gates or self.external_safety_gates_healthy(ignore_control_armed=True)))
+        if ready and getattr(self, 'initial_costmap_clear_required', False):
+            if (not self.initial_costmap_clear_pending and self.initial_costmap_clear_errors
+                    and not self.initial_costmap_clear_completed_at):
+                self.initial_costmap_clear_requested = False
+            return self.ensure_initial_costmap_clear_done()
+        return ready
+
     @staticmethod
     def elapsed_since(timestamp, now):
         return math.inf if timestamp <= 0.0 else max(0.0, now - timestamp)
 
     def safety_tick(self):
+        if getattr(self, 'recovery_shutdown', False):return
+        recovery = getattr(self, 'control_recovery', None)
+        if self.wait_recovery_enabled() and getattr(recovery, 'hard_fault', ''):
+            self.recovery_hard_fault = recovery.hard_fault
+        if self.wait_recovery_enabled() and getattr(self, 'recovery_hard_fault', ''):
+            self.enter_sensor_wait(self.recovery_hard_fault)
         if (
             self.get_parameter("enabled").value
             and bool(getattr(self.p, "require_external_safety_gates", False))
             and not self.external_safety_gates_healthy()
         ):
-            self.get_logger().error("external VLM safety gate became stale or false")
-            self.set_parameters([Parameter("enabled", value=False)])
-            return
+            if self.wait_recovery_enabled():
+                self.enter_sensor_wait('external VLM safety gate became stale or false')
+            else:
+                self.get_logger().error("external VLM safety gate became stale or false")
+                self.set_parameters([Parameter("enabled", value=False)])
+                return
         if not self.get_parameter("enabled").value or self.state in (
             DISARMED,
             API_ERROR,
@@ -1293,6 +1439,16 @@ class VLMNavigator(Node):
             )
 
         if self.state == SENSOR_WAITING:
+            if self.wait_recovery_enabled():
+                recovery = getattr(self, 'control_recovery', None)
+                if recovery is not None:
+                    if self.recovery_hard_fault:recovery.cancel()
+                    else:recovery.step(self.recovery_ready())
+                    if recovery.closed and recovery.reason:
+                        self.recovery_hard_fault = recovery.reason
+                        self.sensor_wait_reason = recovery.reason
+                if not self.recovery_hard_fault:self.recover_from_sensor_wait()
+                return
             hard_timeout = float(self.p.sensor_failure_timeout)
             if (
                 hard_timeout > 0.0
@@ -1417,7 +1573,7 @@ class VLMNavigator(Node):
             float(twist.linear.x), float(twist.linear.y)
         )
         self.arrival_angular_speed = abs(float(twist.angular.z))
-        if self.state != APPROACH_STOPPING:
+        if self.state != APPROACH_STOPPING and not (self.state == SENSOR_WAITING and self.wait_recovery_enabled()):
             return
         if (
             self.arrival_linear_speed
@@ -1791,6 +1947,9 @@ class VLMNavigator(Node):
                 jpeg_quality=int(self.p.jpeg_quality),
             )
         except Exception as error:
+            if self.wait_recovery_enabled() and not isinstance(error, (OSError, RuntimeError, ValueError)):
+                self.fail_safe('VLM client initialization program error; explicit new task required')
+                return False
             self.set_vlm_api_ready(False, f"Cannot initialize VLM client: {error}")
             self.record_api_failure(f"Cannot initialize VLM client: {error}")
             return False
@@ -1813,6 +1972,7 @@ class VLMNavigator(Node):
         return True
 
     def sample_latest_frame(self):
+        if getattr(self, 'recovery_shutdown', False):return
         if getattr(self, "api_preflight_pending", False):
             snapshot = self.latest_snapshot
             if snapshot is None:
@@ -1906,6 +2066,10 @@ class VLMNavigator(Node):
             and self.state != FAILED
             and self.api_failures >= int(self.p.api_failure_limit)
         ):
+            if self.wait_recovery_enabled():
+                self.api_preflight_pending = True
+                self.enter_sensor_wait('VLM API temporarily unavailable')
+                return
             self.cancel_motion(publish_stop=True)
             self.set_state(API_ERROR)
 
@@ -1922,10 +2086,19 @@ class VLMNavigator(Node):
         if self.frontier_decision_failures >= int(
             self.p.frontier_decision_failure_limit
         ):
+            if self.wait_recovery_enabled():
+                self.api_preflight_pending = True
+                self.enter_sensor_wait('frontier VLM temporarily unavailable')
+                return
             self.cancel_motion(publish_stop=True)
             self.set_state(API_ERROR)
 
     def handle_worker_result(self, completed: WorkerResult):
+        if getattr(self, 'recovery_shutdown', False):return
+        if self.wait_recovery_enabled() and str(completed.error or '').startswith((
+                'AssertionError:', 'AttributeError:', 'IndexError:', 'KeyError:', 'NameError:', 'TypeError:')):
+            self.fail_safe('VLM worker program error; explicit new task required')
+            return
         self.last_api_latency = completed.latency_s
         snapshot = completed.snapshot
         age = time.monotonic() - snapshot.captured_monotonic
@@ -2730,6 +2903,7 @@ class VLMNavigator(Node):
         publisher.publish(message)
 
     def navigation_tick(self):
+        if getattr(self, 'recovery_shutdown', False):return
         if (
             not self.get_parameter("enabled").value
             or self.state in (
@@ -2741,14 +2915,16 @@ class VLMNavigator(Node):
                 TARGET_CONFIRMING,
                 FRONTIER_SELECTING,
             )
-            or self.grid is None
-            or self.map_message is None
         ):
+            return
+        if self.grid is None or self.map_message is None:
+            if self.wait_recovery_enabled():self.enter_sensor_wait('map temporarily unavailable')
             return
         pose = self.robot_pose()
         if pose is None:
             return
         if self.state == SCANNING and not self.ensure_initial_costmap_clear_done():
+            if self.wait_recovery_enabled():self.enter_sensor_wait('initial Nav2 costmap clear / refresh pending')
             return
         if self.session_origin is None:
             self.session_origin = pose[:2]
@@ -3037,22 +3213,30 @@ class VLMNavigator(Node):
         goal = ComputePathToPose.Goal()
         goal.goal = self.make_pose_stamped(*self.current_plan_pose)
         goal.use_start = False
-        future = self.path_planner.send_goal_async(goal)
+        future = self.send_native_request(self.path_planner, goal)
+        if future is None:return
         future.add_done_callback(lambda done: self.on_plan_response(done, token))
 
     def on_plan_response(self, future, token):
-        if token != self.plan_token:
+        if token != self.plan_token and not self.wait_recovery_enabled():
             return
         try:
-            handle = future.result()
+            handle, result = self.recovery_action_response(future) if self.wait_recovery_enabled() else (future.result(), None)
         except Exception as error:
+            if token != self.plan_token:return
+            if self.wait_recovery_enabled() and self.recovery_hard_fault:
+                self.fail_safe(self.recovery_hard_fault)
+                return
             self.reject_current_plan(f"Path request failed: {error}", token)
+            return
+        if token != self.plan_token:
+            if handle.accepted:self.cancel_recovery_handle(handle)
             return
         if not handle.accepted:
             self.reject_current_plan("Path request rejected", token)
             return
         self.plan_handle = handle
-        result = handle.get_result_async()
+        result = result if result is not None else handle.get_result_async()
         result.add_done_callback(lambda done: self.on_plan_result(done, token))
 
     def on_plan_result(self, future, token):
@@ -3062,6 +3246,10 @@ class VLMNavigator(Node):
             wrapped = future.result()
             path = wrapped.result.path.poses
         except Exception as error:
+            if self.wait_recovery_enabled():
+                self.recovery_hard_fault = 'native plan result identity unavailable; explicit new task required'
+                self.fail_safe(self.recovery_hard_fault)
+                return
             self.last_plan_status = -1
             self.last_plan_pose_count = 0
             self.last_plan_rejection_reason = (
@@ -3294,6 +3482,9 @@ class VLMNavigator(Node):
         return message
 
     def send_navigation_goal(self, x, y, yaw, kind):
+        if self.wait_recovery_enabled() and (self.recovery_requests or self.recovery_results or self.recovery_hard_fault):
+            self.enter_sensor_wait('waiting for previous native action terminal')
+            return
         if not self.navigator.wait_for_server(timeout_sec=0.5):
             if kind == "frontier":
                 self.reject_selected_frontier(
@@ -3310,11 +3501,15 @@ class VLMNavigator(Node):
         self.goal_kind = kind
         self.goal_pose = (float(x), float(y), float(yaw))
         self.goal_started = time.monotonic()
-        future = self.navigator.send_goal_async(goal)
+        future = self.send_native_request(self.navigator, goal)
+        if future is None:return
         future.add_done_callback(lambda done: self.on_goal_response(done, token, kind))
         self.publish_goal_marker(x, y, yaw, kind)
 
     def send_spin(self, relative_yaw, kind="scan"):
+        if self.wait_recovery_enabled() and (self.recovery_requests or self.recovery_results or self.recovery_hard_fault):
+            self.enter_sensor_wait('waiting for previous native action terminal')
+            return
         if not self.spinner.wait_for_server(timeout_sec=0.5):
             self.fail_safe("Spin action server unavailable")
             return
@@ -3329,15 +3524,19 @@ class VLMNavigator(Node):
         self.goal_kind = str(kind)
         self.goal_pose = None
         self.goal_started = time.monotonic()
-        future = self.spinner.send_goal_async(goal)
+        future = self.send_native_request(self.spinner, goal)
+        if future is None:return
         future.add_done_callback(
             lambda done: self.on_goal_response(done, token, kind)
         )
 
     def on_goal_response(self, future, token, kind):
         try:
-            handle = future.result()
+            handle, result = self.recovery_action_response(future) if self.wait_recovery_enabled() else (future.result(), None)
         except Exception as error:
+            if self.wait_recovery_enabled() and self.recovery_hard_fault:
+                self.fail_safe(self.recovery_hard_fault)
+                return
             if token == self.goal_token:
                 self.goal_pending = False
                 if kind == "frontier":
@@ -3349,7 +3548,8 @@ class VLMNavigator(Node):
             return
         if token != self.goal_token:
             if handle.accepted:
-                handle.cancel_goal_async()
+                if self.wait_recovery_enabled():self.cancel_recovery_handle(handle)
+                else:handle.cancel_goal_async()
             return
         self.goal_pending = False
         if not handle.accepted:
@@ -3359,7 +3559,7 @@ class VLMNavigator(Node):
                 self.fail_safe(f"{kind} goal rejected")
             return
         self.goal_handle = handle
-        result = handle.get_result_async()
+        result = result if result is not None else handle.get_result_async()
         result.add_done_callback(
             lambda done: self.on_navigation_result(done, token, kind)
         )
@@ -3372,6 +3572,10 @@ class VLMNavigator(Node):
         try:
             status = future.result().status
         except Exception as error:
+            if self.wait_recovery_enabled():
+                self.recovery_hard_fault = 'native action terminal unavailable; explicit new task required'
+                self.fail_safe(self.recovery_hard_fault)
+                return
             if kind == "frontier":
                 self.reject_selected_frontier(
                     f"Cannot obtain frontier goal result: {error}"
@@ -3476,9 +3680,11 @@ class VLMNavigator(Node):
         self.goal_token += 1
         self.plan_token += 1
         if self.plan_handle is not None:
-            self.plan_handle.cancel_goal_async()
+            if self.wait_recovery_enabled():self.cancel_recovery_handle(self.plan_handle)
+            else:self.plan_handle.cancel_goal_async()
         if self.goal_handle is not None:
-            self.goal_handle.cancel_goal_async()
+            if self.wait_recovery_enabled():self.cancel_recovery_handle(self.goal_handle)
+            else:self.goal_handle.cancel_goal_async()
         self.plan_handle = None
         self.plan_pending = False
         self.plan_candidates = []
@@ -3492,6 +3698,89 @@ class VLMNavigator(Node):
         self.reset_approach_stop(reset_retry=True)
         if publish_stop:
             self.publish_stop()
+
+    def cancel_recovery_handle(self, handle):
+        try:handle.cancel_goal_async()
+        except Exception:
+            self.recovery_hard_fault = 'native cancellation identity unavailable; explicit new task required'
+
+    def send_native_request(self, client, goal):
+        if getattr(self, 'recovery_shutdown', False):return None
+        if not self.wait_recovery_enabled():return client.send_goal_async(goal)
+        try:
+            future = client.send_goal_async(goal)
+            self.recovery_requests.add(future)
+            return future
+        except Exception:
+            self.recovery_hard_fault = 'native action dispatch identity unavailable; explicit new task required'
+            self.fail_safe(self.recovery_hard_fault)
+            return None
+
+    def recovery_action_response(self, future):
+        self.recovery_requests.discard(future)
+        handle = None
+        try:
+            handle = future.result()
+            if not handle.accepted:return handle, None
+            result = handle.get_result_async()
+            self.recovery_results.add(result)
+            result.add_done_callback(self.recovery_action_terminal)
+            return handle, result
+        except Exception:
+            if handle is not None and getattr(handle, 'accepted', False):self.cancel_recovery_handle(handle)
+            self.recovery_hard_fault = 'native action identity unavailable; explicit new task required'
+            raise
+
+    def recovery_action_terminal(self, future):
+        try:
+            status = future.result().status
+            if status not in (GoalStatus.STATUS_SUCCEEDED, GoalStatus.STATUS_CANCELED, GoalStatus.STATUS_ABORTED):
+                raise ValueError('native action is not terminal')
+            self.recovery_results.discard(future)
+        except Exception:
+            self.recovery_hard_fault = 'native action terminal unavailable; explicit new task required'
+
+    def publish_recovery_status(self, now):
+        status = getattr(self, 'experiment_status', None)
+        if status is None:return
+        try:
+            enabled = bool(self.get_parameter('enabled').value)
+            waiting = self.state == SENSOR_WAITING
+            paused = max(0., now-self.sensor_wait_started) if waiting else 0.
+            elapsed = max(0., now-getattr(self, 'enabled_since', now)-paused)
+            hard = getattr(self, 'recovery_hard_fault', '') or (self.last_failure_reason if self.state == FAILED else '')
+            status.update(state=self.state, phase=self.state,
+                reason=hard or (self.sensor_wait_reason if waiting else 'operator disabled' if not enabled else ''),
+                reason_class='unrecoverable' if hard else 'operator_stop' if not enabled else 'dependency_wait' if waiting else 'none',
+                automatic=enabled and waiting and not bool(hard),
+                required_action='explicit new task required' if hard else 'repair the reported component' if waiting else '',
+                run_elapsed_s=elapsed, pause_elapsed_s=paused,
+                run_remaining_s=max(0., float(getattr(self.p, 'easy_case_timeout', 0.))-elapsed),
+                health=dict(nav_ready=bool(self.nav_ready), control_armed=bool(self.control_armed),
+                    localization_valid=self.elapsed_since(self.last_robot_tf_success, now) <= self.p.tf_failure_timeout,
+                    motion_terminal=not self.recovery_requests and not self.recovery_results and not str(hard).startswith('native '),
+                    stopped=self.arrival_stationary_count >= int(self.p.arrival_stationary_samples)
+                        and self.elapsed_since(self.arrival_last_odom_received, now) <= self.p.arrival_odom_max_age))
+        except Exception:
+            pass  # Diagnostics never own navigation or recovery authority.
+
+    def finish_legacy_control(self, spin, timeout=5.):
+        self.recovery_shutdown = True
+        for timer in self.timers:timer.cancel()
+        self.cancel_motion(publish_stop=True)
+        recovery = getattr(self, 'control_recovery', None)
+        confirmed = recovery is None or recovery.finish_cancel(spin, timeout)
+        if not confirmed:
+            self.get_logger().error('NON_RESUMABLE: control cancellation unconfirmed at shutdown')
+        status = getattr(self, 'experiment_status', None)
+        if status is not None:
+            try:
+                status.update(state='CANCELLED' if confirmed else 'STOP_UNCONFIRMED',
+                    result='CONTROL_CANCEL_CONFIRMED' if confirmed else 'NON_RESUMABLE',
+                    reason='operator shutdown' if confirmed else 'control cancellation unconfirmed',
+                    reason_class='operator_stop' if confirmed else 'unrecoverable', automatic=False)
+            except Exception:pass
+        return confirmed
 
     # ---------- visualization and diagnostics ----------
 
@@ -3980,6 +4269,7 @@ class VLMNavigator(Node):
         }
 
     def publish_diagnostics(self):
+        if self.wait_recovery_enabled():self.publish_recovery_status(time.monotonic())
         status = DiagnosticStatus()
         status.name = "vlm_nav"
         status.hardware_id = "rgbd-vlm-nav2"
@@ -4008,13 +4298,16 @@ class VLMNavigator(Node):
         self.diagnostics_pub.publish(message)
 
     def destroy_node(self):
+        recovery = getattr(self, 'control_recovery', None)
+        if recovery is not None:recovery.cancel()
         if self.worker is not None:
             self.worker.stop()
         return super().destroy_node()
 
 
 def main(args=None):
-    rclpy.init(args=args)
+    from rclpy.signals import SignalHandlerOptions
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = VLMNavigator()
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
@@ -4024,7 +4317,9 @@ def main(args=None):
         pass
     finally:
         if rclpy.ok():
-            node.cancel_motion(publish_stop=True)
+            if node.wait_recovery_enabled():
+                node.finish_legacy_control(lambda: executor.spin_once(timeout_sec=.05), 5.)
+            else:node.cancel_motion(publish_stop=True)
         executor.remove_node(node)
         executor.shutdown()
         node.destroy_node()

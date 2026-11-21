@@ -28,15 +28,15 @@ def test_common_environment_sources_real_overlays_and_checks_network(tmp_path, n
         '[[ "$ROS_DOMAIN_ID" == 0 && "$ROS_LOCALHOST_ONLY" == 0 ]] || exit 92\n'
         '[[ "$RMW_IMPLEMENTATION" == rmw_cyclonedds_cpp && "$GO2_NET_IFACE" == enp4s0 ]] || exit 93\n'
         '[[ -z "${PYTHONHOME:-}" && "$PYTHONPATH" != *stale-overlay* ]] || exit 94\n'
-        '[[ "$VLM_NAV_EXTRA_SETUP_FILES" == "$GO2_CAMERA_OUTPUT/install/local_setup.bash:$GO2_FILTER_OUTPUT/install/local_setup.bash:$GO2_GENERATED_OUTPUT/install/local_setup.bash:$GO2_EXPLORE_OUTPUT/install/local_setup.bash:$GO2_RGBD_OUTPUT/install/local_setup.bash:$GO2_BRIDGE_OUTPUT/install/local_setup.bash" ]] || exit 95\n'
+        '[[ "$VLM_NAV_EXTRA_SETUP_FILES" == "$GO2_COOP_OUTPUT/install/local_setup.bash:$COOP_SETUP_FILE" ]] || exit 95\n'
         '[[ -d "$ROS_LOG_DIR" ]] || exit 96\n'
-        '[[ "$GO2_EXPLORE_OUTPUT" == "$REPO/build/go2-approach-coverage-20261018" ]] || exit 97\n'
+        '[[ "$COOP_SETUP_FILE" == "$REPO/build/go2-codex-compat-20261111/overlay/install/local_setup.bash" ]] || exit 97\n'
         'cd /tmp || exit 98\n'
         '/home/isee-pst/venv/co-nav-real/bin/python -c "import multi_agent_nav.adapters.go2 as g; import multi_agent_nav.go2_exploration as e; import vlm_nav.vlm_client as v; '
-        'assert \'go2-approach-coverage-20261018/install/\' in g.__file__; '
-        'assert \'go2-approach-coverage-20261018/install/\' in e.__file__; '
+        'assert \'go2-codex-compat-20261111/overlay/install/\' in g.__file__; '
+        'assert \'go2-codex-compat-20261111/overlay/install/\' in e.__file__; '
         'assert hasattr(g.Go2Adapter, \'approach_candidate_free\'); '
-        'assert \'go2-manual-takeover-20261015/install/\' in v.__file__"\n',
+        'assert \'go2-codex-compat-20261111/overlay/install/\' in v.__file__"\n',
         'covlm-test', str(ROOT),
     ], cwd=tmp_path, env=env, capture_output=True, text=True)
     if network_ok:

@@ -23,7 +23,8 @@ def mock_config():
 def make_machine(config,robot,simulation):
     alignment=config['alignment'];entry=alignment['robots'][robot]
     context=AgentContext(robot,'',entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],simulation,
-        share_c_coordinates=config['scene'].get('share_c_coordinates',True))
+        share_c_coordinates=config['scene'].get('share_c_coordinates',True),
+        wait_recovery=config[f'robot_{robot}'].get('wait_recovery',False))
     if context.share_c_coordinates:
         frame=FrameAdapter(entry['local_map_id'],entry['map_version'],alignment['common_frame_id'],alignment['alignment_id'],entry['transform'])
     else:

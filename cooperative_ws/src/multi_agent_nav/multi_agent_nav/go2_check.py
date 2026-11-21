@@ -117,9 +117,8 @@ def stop_owned(adapter,spin,timeout,record=None):
             try:
                 record(dict(event='STOP_OBSERVATION',stopped=health.stopped,
                     motion_terminal=health.motion_terminal,pose=asdict(health.pose)))
-            except OSError:
+            except Exception:
                 adapter.evidence_write_failed=True
-                adapter.motion_fault=True
             previous=observed
         if health.stopped and health.motion_terminal:return True
     return False
@@ -137,7 +136,7 @@ def require_ros_environment():
 
 def standalone_explore_steps(adapter, config, frame, deadline, target, record, owners,
                              stop, before_motion, clock=time.monotonic, recovery=None):
-    from .go2_exploration import explore_steps, ExplorationStopped
+    from .go2_exploration import explore_steps, ExplorationStopped, is_recoverable_execution_error
     from .local_approach_execution import LocalApproachExecution, local_target_accepted
     from .single_robot_approach import load_parameters
     from .experiment_recovery import ExperimentRecovery
@@ -152,7 +151,7 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
         if not active or recovery.recovering or recovery.closed or clock()>=deadline:
             raise ExplorationStopped('exploration deadline reached or task ended')
         waiting=getattr(adapter,'perception_wait_allowed',lambda _:False)(health)
-        if owners() or (not health.nav_ready and not waiting) or not health.localization_valid or adapter.costmap_transform() is None:
+        if getattr(health,'hard_fault','') or recovery.check_owners() or recovery.hard_reason or (not health.nav_ready and not waiting) or not health.localization_valid or adapter.costmap_transform() is None:
             raise ExplorationStopped('motion owner/localization/Nav2/costmap health lost')
         error=motion_path_error(replace(health,path_valid=True),[health.pose])
         if error:raise ExplorationStopped(error)
@@ -182,8 +181,8 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
             gates = recovery.gates()
             if gates: yield from recovery.wait(', '.join(gates))
             try:
-                steps = explore_steps(adapter,config,frame,deadline,target,record,owners,
-                    stop,before_motion,clock=clock,task_id=task_id,parent_command_id=command_id,
+                steps = explore_steps(adapter,config,frame,deadline,target,record,recovery.check_owners,
+                    stop,before_motion,clock=recovery.wall_clock,task_clock=clock,task_id=task_id,parent_command_id=command_id,
                     initial_camera_check=True,require_navigation_success=True,success_radius=1.0,
                     approaching=approaching,progress=progress,recovery=recovery)
                 try:
@@ -199,6 +198,7 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
                 reason = 'waiting for reachable viewpoints'
             except ExplorationStopped as error:
                 if clock() >= deadline: raise
+                if not is_recoverable_execution_error(error) and not recovery.hard_reason:raise
                 reason = str(error)
             yield from recovery.wait(reason)
             command_id = uuid.uuid4().hex
@@ -208,6 +208,11 @@ def standalone_explore_steps(adapter, config, frame, deadline, target, record, o
 
 
 def run_ros(config,args,events=None):
+    report=config_report(config,args.map_yaml)
+    result=_run_ros(config,args,events,report)
+    return 1 if report.get('evidence_write_failed') or report.get('evidence_complete') is False else result
+
+def _run_ros(config,args,events,report):
     require_ros_environment()
     import rclpy
     from rclpy.executors import SingleThreadedExecutor
@@ -219,44 +224,41 @@ def run_ros(config,args,events=None):
     rclpy.init(args=[],signal_handler_options=SignalHandlerOptions.NO)
     node=adapter=executor=None
     started=False
-    report=config_report(config,args.map_yaml)
     report['mode']='local_go2_'+args.action
     latest={}; marker_pub=None; run_id=uuid.uuid4().hex; sequence=0
     display=None
     recovery=status=None
     phase='PREPARING'
     next_status=0.
+    def evidence_failed():
+        report['evidence_write_failed']=True
+        report['evidence_complete']=False
+        if adapter:adapter.evidence_write_failed=True
+    def display_call(callback,*values):
+        try:callback(*values)
+        except Exception:report['display_failed']=True
     def write_record(event):
         nonlocal latest, sequence, phase
         if event.get('state') and event['state'] not in ('WAITING','RUNNING'):
             phase=event['state']
-        if display:display.record(event)
-        if events is None:return
-        sequence+=1
-        entry=config['alignment']['robots']['go2']
         if 'state' in event:
             latest=dict(event) if event['state']=='SELECTED' else dict(latest,**event)
-        row=dict(latest,**event)
-        row.update(run_id=run_id,sequence=sequence,wall_time=time.time(),
-            local_map_id=entry['local_map_id'],map_version=entry['map_version'],
-            common_frame_id='lab_ref',target=args.target)
-        try:
-            events.write(json.dumps(row,ensure_ascii=False,allow_nan=False)+'\n')
-            events.flush();os.fsync(events.fileno())
-        except OSError as error:
-            if adapter and getattr(adapter,'single_robot_mode',False):
-                node.get_logger().warning('Task diagnostic write failed: '+str(error))
-            else:
-                report['evidence_write_failed']=True
-                if adapter:
-                    adapter.evidence_write_failed=True
-                    adapter.motion_fault=True
-        if marker_pub and 'state' in event:publish_marker()
+        if events is not None:
+            sequence+=1
+            try:
+                entry=config['alignment']['robots']['go2']
+                row=dict(latest,**event)
+                row.update(run_id=run_id,sequence=sequence,wall_time=time.time(),
+                    local_map_id=entry['local_map_id'],map_version=entry['map_version'],
+                    common_frame_id='lab_ref',target=args.target,
+                    evidence_write_failed=report.get('evidence_write_failed',False) or getattr(adapter,'evidence_write_failed',False))
+                events.write(json.dumps(row,ensure_ascii=False,allow_nan=False)+'\n')
+                events.flush();os.fsync(events.fileno())
+            except Exception:evidence_failed()
+        if display:display_call(display.record,event)
+        if marker_pub and 'state' in event:display_call(publish_marker)
     def record(event):
-        try:write_record(event)
-        except Exception as error:
-            if not adapter or not getattr(adapter,'single_robot_mode',False):raise
-            node.get_logger().warning('Task diagnostic write failed: '+str(error))
+        write_record(event)
     def publish_marker():
         from .go2_exploration import exploration_markers
         markers=exploration_markers(latest)
@@ -274,15 +276,24 @@ def run_ros(config,args,events=None):
             state='WAITING' if recovery.paused_at is not None else 'RUNNING'
             if final:
                 state=('STOP_UNCONFIRMED' if started and not report.get('stop_confirmed') else
+                       'INCOMPLETE' if report.get('evidence_complete') is False else
                        'CANCELLED' if report.get('result')=='operator interrupt' else
                        'FINISHED' if report.get('result') in ('TARGET_FOUND','TARGET_APPROACHED','EXHAUSTED') else 'FAILED')
-            status.update(state=state,phase=phase,reason=recovery.reason,
+            hard = getattr(health,'hard_fault','') or recovery.hard_reason
+            status.update(state=state,phase=phase,reason=('必要证据缺失，本轮不能完整验收' if state=='INCOMPLETE' else report.get('result') if final else hard or recovery.reason),
+                reason_class=('EVIDENCE_INCOMPLETE' if state=='INCOMPLETE' else
+                              'NON_RESUMABLE' if final and state in ('FAILED','STOP_UNCONFIRMED') else
+                              'MANUAL_REQUIRED' if hard else 'WAIT_INPUT' if state=='WAITING' else ''),
+                automatic=not bool(hard) and state!='INCOMPLETE',
+                required_action='保留本轮缺口，后续补写不能改为完整验收' if state=='INCOMPLETE' else '按故障原因人工处理，旧任务不自动解除人工停止' if hard else '',
                 **recovery.timing(deadline),
                 health=dict(nav_ready=health.nav_ready,localization_valid=health.localization_valid,
                     stopped=health.stopped,motion_terminal=health.motion_terminal,
                     rgbd_ready=checks.get('rgbd_ready'),control_armed=checks.get('control_armed_gate'),
                     costmap_valid=adapter.costmap_transform() is not None),
-                result=report.get('result'),stop_confirmed=report.get('stop_confirmed'))
+                result=report.get('result'),stop_confirmed=report.get('stop_confirmed'),
+                evidence_complete=report.get('evidence_complete'),
+                evidence_write_failed=report.get('evidence_write_failed',False),display_failed=report.get('display_failed',False))
         except Exception:
             pass  # A diagnostic failure must never prevent stopping or recovery.
     try:
@@ -306,10 +317,11 @@ def run_ros(config,args,events=None):
             marker_pub=node.create_publisher(MarkerArray,'/vlm_nav/go2_exploration/current_point',
                 QoSProfile(depth=1,durability=DurabilityPolicy.TRANSIENT_LOCAL,reliability=ReliabilityPolicy.RELIABLE))
             from .exploration_display import ExplorationDisplay
-            display=ExplorationDisplay(node,frame)
-            adapter.display_path=lambda path:display.publish('planned_path',path)
-            publish_marker()
-            node.create_timer(.5,publish_marker)
+            try:display=ExplorationDisplay(node,frame)
+            except Exception:report['display_failed']=True
+            if display:adapter.display_path=lambda path:display_call(display.publish,'planned_path',path)
+            display_call(publish_marker)
+            node.create_timer(.5,lambda:display_call(publish_marker))
         parameters=node.create_client(GetParameters,'/map_server/get_parameters')
         active_map=parameters.call_async(GetParameters.Request(names=['yaml_filename']))
         map_requested_at=time.monotonic()
@@ -326,6 +338,8 @@ def run_ros(config,args,events=None):
             recovery=ExperimentRecovery(adapter,lambda:other_owners(node),record,clock=time.monotonic)
             deadline=recovery.clock()+args.timeout
             status=ExperimentStatus(Path(args.output_dir))
+            if os.getenv('GO2_EXPERIMENT_STATUS_FILE'):
+                status.path=Path(os.environ['GO2_EXPERIMENT_STATUS_FILE'])
             publish_status()
             status.launch()
         # Initial data collection is passive, even for an explicit future motion action.
@@ -525,11 +539,21 @@ def run_ros(config,args,events=None):
         if recovery:recovery.closed=True
         if started and adapter:
             report['last_native_action_uuid']=getattr(adapter,'last_action_uuid','')
+            cancel_recovery=getattr(adapter,'cancel_control_recovery',None)
+            if cancel_recovery:cancel_recovery()
+            control=getattr(adapter,'control_recovery',None)
+            if control:
+                adapter.stop_motion('session ending')
+                try:report['recovery_cancel_confirmed']=control.finish_cancel(spin,config['robot_go2'].get('cancel_timeout',5.))
+                except Exception:report['recovery_cancel_confirmed']=False
             try:report['stop_confirmed']=stop_owned(adapter,spin,config['robot_go2'].get('cancel_timeout',5.),record)
             except Exception as error:
                 report['stop_confirmed']=False
                 report['stop_error']=type(error).__name__
-            report['evidence_write_failed']=getattr(adapter,'evidence_write_failed',False)
+            if control and not report['recovery_cancel_confirmed']:
+                report['stop_confirmed']=False
+                report['stop_error']='control recovery cancellation unconfirmed'
+            report['evidence_write_failed']=report.get('evidence_write_failed',False) or getattr(adapter,'evidence_write_failed',False)
         if args.action=='explore' and adapter:
             job=getattr(getattr(adapter,'vision',None),'job',None)
             if hasattr(args,'_evidence_lease'):args._evidence_lease['pending']=job
@@ -538,7 +562,6 @@ def run_ros(config,args,events=None):
                 if handle:handle.cancel_goal_async()
         if recovery:
             report.update(recovery.timing(deadline))
-        publish_status(final=True)
         if events is not None:
             state=latest.get('state','STOPPED')
             if state=='STOPPING' and report.get('stop_confirmed'):state='STOPPED'
@@ -547,14 +570,18 @@ def run_ros(config,args,events=None):
                 'motion_sent':report.get('motion_sent',False),
                 'stop_confirmed':report.get('stop_confirmed') if started else None})
             report['evidence_write_failed']=report.get('evidence_write_failed',False) or getattr(adapter,'evidence_write_failed',False)
+            report['evidence_complete']=not report['evidence_write_failed'] and not report.get('vlm_evidence_pending',False)
             try:
                 (Path(args.output_dir)/'result.json').write_text(json.dumps(report,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
-            except OSError:report['evidence_write_failed']=True
+            except Exception:
+                evidence_failed()
+                report['evidence_complete']=False
+        publish_status(final=True)
         if adapter:adapter.close(stop=False)
         if executor:executor.shutdown()
         if node:node.destroy_node()
         if rclpy.ok():rclpy.shutdown()
-        emit(report)
+        display_call(emit,report)
         if started and not report['stop_confirmed']:
             raise StopUnconfirmed('action terminal and physical stop were not both confirmed')
 

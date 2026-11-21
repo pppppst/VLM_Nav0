@@ -17,7 +17,7 @@ FAST-LIO、RealSense 和底盘驱动依赖各机器人已有工作空间，不�
 | 需要做什么 | 入口文档 |
 |---|---|
 | 了解当前状态、安装位置和待解决问题 | [会话交接](docs/multi_agent/session_handoff.md)，优先读最新日期章节 |
-| 启动双机任务、开始下一轮、暂停和关闭 | [双机协同启动与验收](docs/双机协同启动与验收.md) |
+| 启动双机任务、开始下一轮、暂停和关闭 | [双机协同启动与验收](docs/10.22双机协同启动与验收.md) |
 | 构建、选择环境、离线检查、mock 和 Go2 单机实验 | [Go2 runbook](docs/multi_agent/go2_runbook.md) |
 | 核对双方准备与启动握手 | [异步启动契约](docs/multi_agent/ans_async_startup.md) |
 | 在 Ranger 电脑接入公共任务层 | [Ranger 交接](docs/multi_agent/ranger_handoff.md) |
@@ -146,7 +146,7 @@ Domain 31 仅用于隔离 mock/回放，不接现场 bridge。
 不要最后 source 旧 overlay 覆盖当前包。
 
 截至本次整理，`Cooperative_env.bash` 和 `CoVLM_env.bash` 默认选择
-`build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash`；显式 `COOP_SETUP_FILE`
+`build/go2-codex-compat-20261111/overlay/install/local_setup.bash`；显式 `COOP_SETUP_FILE`
 优先，`COOP_CONFIG` / `GO2_CONFIG` 指向本次配置。这是本机已有安装位置，不是新克隆仓库
 自带产物。换电脑须按 runbook 构建并配置本机路径；已运行进程不会随源码或环境更新。
 
@@ -155,7 +155,7 @@ API 凭据仅通过环境提供。当前入口检查 `DASHSCOPE_API_KEY`、端�
 兼容 `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` 回退，不将密钥写入仓库。
 
 以下是入口索引，具体命令、终端、前置条件和成功判据按
-[正式启动文档](docs/双机协同启动与验收.md)逐步执行，完整流程与分步流程不要叠加：
+[正式启动文档](docs/10.22双机协同启动与验收.md)逐步执行，完整流程与分步流程不要叠加：
 
 | 使用场景 | 入口及行为 |
 |---|---|

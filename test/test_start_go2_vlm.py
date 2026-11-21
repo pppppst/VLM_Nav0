@@ -18,6 +18,20 @@ launcher = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(launcher)
 
 
+def test_wait_retries_only_passive_input_failures_and_allows_cancel(monkeypatch,tmp_path):
+    app=launcher.Launcher(ROOT,False,'target')
+    app.logs=tmp_path
+    attempts=[]
+    monkeypatch.setattr(launcher.time,'sleep',lambda _:None)
+    def probe():
+        attempts.append(1)
+        if len(attempts)<3:raise launcher.WaitingForInput('TF missing')
+        return 'ready'
+    assert app.wait_for(probe)=='ready' and len(attempts)==3
+    with pytest.raises(ValueError):app.wait_for(lambda:(_ for _ in ()).throw(ValueError('bad config')))
+    with pytest.raises(KeyboardInterrupt):app.wait_for(lambda:(_ for _ in ()).throw(KeyboardInterrupt()))
+
+
 @pytest.mark.parametrize('case', ['current', 'wrong_path', 'stale_code', 'wrong_prefix', 'arrival_order'])
 def test_shell_checks_imports_before_launching(tmp_path, case):
     scripts = tmp_path/'scripts'; scripts.mkdir()
@@ -210,7 +224,7 @@ def test_cooperative_startup_expects_target_plan_install_by_default(monkeypatch,
     monkeypatch.setenv('COOP_CONFIG',str(tmp_path/'config'))
     monkeypatch.setenv('GO2_BRIDGE_OUTPUT',str(tmp_path/'old-bridge'))
     monkeypatch.setenv('GO2_EXPLORE_OUTPUT',str(tmp_path/'old-explore'))
-    prefix=tmp_path/'build/go2-recoverable-pause-20261029/overlay/install'
+    prefix=tmp_path/'build/go2-codex-compat-20261111/overlay/install'
     for package in ('vlm_nav','multi_agent_nav'):(prefix/package).mkdir(parents=True)
     app=launcher.Launcher(tmp_path,prepare_only=True,target='cup',cooperative_hardware=True)
     monkeypatch.setattr(app,'check_owners',lambda:None)
@@ -276,7 +290,7 @@ def test_startup_cold_or_reused_stack_never_arms(monkeypatch, tmp_path, capsys, 
             output = f'Double value is: {value}'
         elif args[1:3] == ['topic', 'echo']:
             if '/vlm_nav/nav_ready' in args:
-                assert kwargs['timeout'] == 240
+                assert kwargs['timeout'] == 10
                 assert '/twist_to_go2_sport_bridge' in nodes, 'NAV_READY requires Sport through SYSTEM_READY'
                 nav_ready = True
             output = repr(bridge_state) if 'String' in ' '.join(args) else 'data: true'

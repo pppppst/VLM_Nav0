@@ -24,6 +24,16 @@ class Coordinator:
         self.task_timeout = scene.get('task_timeout', 600.0)
         self.resume_phase = None
         self.awaiting_resume = set()
+        self.wait_recovery = scene.get('wait_recovery', False)
+        if not isinstance(self.wait_recovery, bool):
+            raise ValueError('wait_recovery must be boolean')
+        self._task_clock = TaskClock()
+        self._now = 0.0
+
+    def task_clock(self, now):
+        waiting = self.phase in ('SYNCING', 'PAUSED') or bool(self.awaiting_resume)
+        active = self._task_clock.sample(now, waiting)
+        return active if self.wait_recovery and not self.share_c_coordinates else now
 
     def _identity(self, data):
         if not self.share_c_coordinates:
@@ -38,6 +48,7 @@ class Coordinator:
         return state.localization_valid and state.nav_ready and (state.pose_valid or not self.share_c_coordinates)
 
     def ingest_state(self, state, received_at):
+        self._now = received_at
         if state.robot_id not in ROBOTS:return
         if not self._identity(state) or state.simulation != self.simulation:
             reason = 'schema/map/frame identity mismatch' if state.simulation == self.simulation else 'simulation/live state mismatch'
@@ -106,6 +117,8 @@ class Coordinator:
         self.local_c = {}
         self.resume_phase = None
         self.awaiting_resume.clear()
+        self._now = now
+        self._task_clock.reset(now, waiting=self.phase == 'SYNCING')
         return StartReply(True, self.task_id)
 
     def control(self, robot, action, **kwargs):
@@ -123,6 +136,7 @@ class Coordinator:
             self.awaiting_resume.clear()
         elif self.phase == 'PAUSED' and self.resume_phase is not None and not recoverable:
             self.resume_phase, self.reason = None, reason
+        self.task_clock(self._now)
         return self._pause_commands() if self.task_id else []
 
     def _pause_commands(self):
@@ -132,11 +146,13 @@ class Coordinator:
         state = self.states.get(robot)
         if robot in self.state_errors:return self.state_errors[robot], False
         if state is None:return 'no state received', True
-        if not state.localization_valid:return 'localization invalid', False
+        if not state.localization_valid and not (self.wait_recovery and not self.share_c_coordinates):
+            return 'localization invalid', False
         if self.share_c_coordinates and not state.pose_valid:return 'pose invalid', False
         if state.task_id == self.task_id and state.run_state in ('STOPPING', 'PAUSED'):
             if not is_recoverable_pause(state.reason):return 'agent paused: '+state.reason, False
             if robot not in self.awaiting_resume:return 'agent paused: '+state.reason, True
+        if not state.localization_valid:return 'localization invalid', self.wait_recovery and not self.share_c_coordinates
         if now-self.received_at[robot] > self.lost_timeout:return 'heartbeat timeout', True
         if not state.nav_ready:return 'navigation not ready', True
         return '', False
@@ -176,23 +192,26 @@ class Coordinator:
             del self.commands[robot]
 
     def tick(self, now):
+        self._now = now
         if not self.task_id:
             return []
-        if self.phase not in ('DONE', 'FAILED') and now-self.started > self.task_timeout:
+        if self.phase not in ('DONE', 'FAILED') and self.task_clock(now)-self.started > self.task_timeout:
             self.pause('task timeout')
         if self.phase == 'PAUSED':self._resume(now)
         for robot in list(self.awaiting_resume):
             state = self.states.get(robot)
             if state and state.run_state not in ('STOPPING', 'PAUSED'):
                 self.awaiting_resume.discard(robot)
+        self.task_clock(now)
         if self.phase == 'SYNCING':
-            if now-self.started > self.task_timeout:
+            if self.task_clock(now)-self.started > self.task_timeout:
                 self.pause('task timeout during handshake')
             elif all(robot not in self.state_errors and robot in self.states and now-self.received_at[robot] <= self.lost_timeout and
                 self._healthy(self.states[robot]) and self.states[robot].stopped and
                 self.states[robot].run_state == 'SYNCED' and task_acknowledges(self.states[robot],self.task_id)
                 for robot in ROBOTS):
                 self.phase, self.reason = 'SEARCH_AB', ''
+                self.task_clock(now)
             else:
                 waiting = []
                 for robot in ROBOTS:
@@ -213,7 +232,7 @@ class Coordinator:
             for robot in ROBOTS:
                 reason, recoverable = self._fault(robot, now)
                 if reason:self.pause(f'{robot}: {reason}', recoverable=recoverable)
-            if now-self.started > self.task_timeout:
+            if self.task_clock(now)-self.started > self.task_timeout:
                 self.pause('task timeout')
         output = [self.control(r, 'SYNC', ack_sequence=self.acked[r]) for r in ROBOTS]
         if self.phase == 'PAUSED':

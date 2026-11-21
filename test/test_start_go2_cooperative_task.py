@@ -127,7 +127,7 @@ def test_prepare_skips_paused_check_but_keeps_bridge_and_arm_before_agent(task,m
     app,events=app_fixture(task,monkeypatch,tmp_path)
     states=iter(['DISARMED','ARMED'])
     monkeypatch.setattr(app,'state',lambda:next(states))
-    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true'))
+    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true',returncode=0))
     app.prepare()
     assert events.index('bridge')<events.index('arm')<events.index('agent')<events.index('idle')<events.index('coordinator')
     assert 'ARM' in events and 'start' not in events and 'check' not in events
@@ -136,7 +136,7 @@ def test_prepare_skips_paused_check_but_keeps_bridge_and_arm_before_agent(task,m
 def test_prepare_opens_go2_status_window_using_existing_watch_action(task,monkeypatch,tmp_path):
     app,events=app_fixture(task,monkeypatch,tmp_path)
     monkeypatch.setattr(app,'state',lambda:'ARMED')
-    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true'))
+    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true',returncode=0))
     windows=[]
     monkeypatch.setattr(app,'window',lambda name,args:windows.append((name,args)))
     app.prepare()
@@ -150,7 +150,7 @@ def test_prepare_opens_go2_status_window_using_existing_watch_action(task,monkey
 def test_prepare_fault_never_resets_or_launches_agent(task,monkeypatch,tmp_path):
     app,events=app_fixture(task,monkeypatch,tmp_path)
     monkeypatch.setattr(app,'state',lambda:'FAULT')
-    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true'))
+    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true',returncode=0))
     with pytest.raises(RuntimeError):app.prepare()
     assert 'arm' not in events and 'reset_fault' not in events and 'agent' not in events
 
@@ -220,12 +220,13 @@ def test_restart_preserves_hardware_and_stops_before_next_stage_on_failure(task,
     def ready(*args,**kwargs):
         assert args[:4]==('topic','echo','/vlm_nav/nav_ready','std_msgs/msg/Bool')
         assert '--filter' in args and 'm.data' in args
-        stage('nav-ready' if kwargs['timeout']==240 else 'prepare-ready')
-        return S(stdout='data: true')
+        assert kwargs['timeout']==10
+        stage('prepare-ready' if 'prepare' in events else 'nav-ready')
+        return S(stdout='data: true',returncode=0)
     def inspect(args,**kwargs):
         assert '--action' in args and 'inspect' in args and '--require-ready' in args
         stage('inspect')
-        return S(stdout=json.dumps(dict(active_map_matches=True,costmap_valid=True,rgbd_ready=True,
+        return S(returncode=0,stdout=json.dumps(dict(active_map_matches=True,costmap_valid=True,rgbd_ready=True,
             depth_units_verified=True,health=dict(localization_valid=True,stopped=True),
             health_window=dict(non_motion_inputs_stable=True,transitions=[dict(other_goal_owners=[])]))))
     original_preflight=app.preflight
@@ -270,7 +271,7 @@ def test_existing_component_is_never_launched_again(task,monkeypatch,tmp_path):
 def test_failed_arm_prevents_agent_launch(task,monkeypatch,tmp_path):
     app,events=app_fixture(task,monkeypatch,tmp_path)
     monkeypatch.setattr(app,'state',lambda:'DISARMED')
-    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true'))
+    monkeypatch.setattr(app,'ros',lambda *a,**kw:S(stdout='data: true',returncode=0))
     with pytest.raises(RuntimeError):app.prepare()
     assert 'arm' in events and 'agent' not in events
 

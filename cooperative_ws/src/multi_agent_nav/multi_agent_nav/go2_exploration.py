@@ -21,6 +21,50 @@ class NavigationNotReady(ExplorationStopped):
     pass
 
 
+class LocalizationNotReady(ExplorationStopped):
+    pass
+
+
+class ExecutionNotReady(ExplorationStopped):
+    pass
+
+
+RECOVERABLE_EXECUTION_ERRORS = {
+    'global goal costmap missing, stale or TF unavailable',
+    'candidate planning timeout', 'target approach planning timeout',
+    'target approach path timeout', 'path planning timeout; reachability unknown',
+    'initial camera inference failed', 'initial camera scan incomplete or inference failed',
+    'initial camera target result missing or invalid', 'scan failed',
+    'target scan missing or API/validation error', 'target scan directions incomplete',
+    'incomplete ABC scan or image/API/validation error',
+    'furniture selection timeout', 'late furniture selection discarded',
+    'native action terminal and physical stop unconfirmed', 'stop prerequisites changed',
+    'previous motion has not stopped', 'local rotation check requires confirmed stop',
+    'selection requires confirmed stop', 'initial camera check requires confirmed stop',
+    'initial camera check lost confirmed stop', 'invalid pose or executing path',
+    'motion owner/localization/Nav2/costmap health lost',
+    'motion prerequisites changed during planning',
+    'APPROACH_FAILED: ComputePathToPose action server unavailable',
+    'APPROACH_FAILED: NavigateToPose action server unavailable',
+    'APPROACH_FAILED: Navigation or path-validation goal timed out',
+    'APPROACH_FAILED: Nav2 cannot plan to any approach candidate; last rejection: empty_path',
+    'APPROACH_FAILED: Nav2 cannot plan to any approach candidate; last rejection: planner_action_status_6',
+    'APPROACH_FAILED: approach goal failed with status 6',
+}
+
+def is_recoverable_execution_error(error):
+    if not isinstance(error, ExplorationStopped):return False
+    reason, cause = str(error), error.__cause__
+    known = (isinstance(error, (NavigationNotReady, LocalizationNotReady)) or
+        isinstance(error, ExecutionNotReady) and reason in ('rgbd_ready', 'vision_worker', 'local_rotation_map') or
+        reason in RECOVERABLE_EXECUTION_ERRORS or reason.startswith('candidate selection unavailable: '))
+    expected_cause = (cause is None or isinstance(cause, (TimeoutError, ConnectionError, ScanSpinAborted)) or
+        isinstance(cause, RuntimeError) and str(cause) in
+            ('vision request/validation failed', 'vision busy', 'scan inference failed') or
+        isinstance(cause, ValueError) and reason.startswith('candidate selection unavailable: '))
+    return known and expected_cause
+
+
 def exploration_gates(config, robot_id='go2', cooperative=False):
     errors=go2_local_gates(config,motion=True,vision=cooperative,robot_id=robot_id,local_coordinates=cooperative)
     robot=config[f'robot_{robot_id}']
@@ -86,7 +130,9 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                   target_id='A', success_radius=None, require_navigation_success=False,
                   navigation=None, stopping=None, on_observations=None,
                   initial_observation=None, task_id=None, parent_command_id=None,
-                  initial_camera_check=False, approaching=None, progress=None, recovery=None):
+                  initial_camera_check=False, approaching=None, progress=None, recovery=None,
+                  task_clock=None):
+    action_deadline = deadline if task_clock is None else math.inf
     robot_config = config[f'robot_{robot_id}']
     direct_target = robot_id == 'go2' and require_navigation_success
     task_id = task_id or robot_id + '_explore/' + uuid.uuid4().hex
@@ -115,7 +161,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
 
     def health_check(path=None, navigating=False, began=0., acquired=False):
         health = adapter.get_health()
-        if clock() >= deadline:
+        if (task_clock or clock)() >= deadline:
             raise ExplorationStopped('exploration deadline reached')
         other=owners();local_costmap_ok=adapter.costmap_transform() is not None
         waiting=getattr(adapter,'perception_wait_allowed',lambda _:False)(health)
@@ -127,7 +173,8 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 if not ok and key not in failed:failed.append(key)
             emit('HEALTH_FAILED',failed_gates=failed,health=asdict(health),health_details=details,
                  costmap_checks=getattr(adapter,'last_costmap_checks',{}),other_goal_owners=other)
-            error = NavigationNotReady if not other and health.localization_valid and health.pose.valid else ExplorationStopped
+            error = (ExplorationStopped if other else NavigationNotReady
+                     if health.localization_valid and health.pose.valid else LocalizationNotReady)
             raise error('motion owner/localization/Nav2/costmap health lost: '+', '.join(failed))
         if navigating and approaching is not None:
             checked = replace(health, path_valid=True)
@@ -147,6 +194,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
     def perception_ready():
         health,_=health_check()
         while not health.nav_ready or getattr(adapter,'perception_wait_allowed',lambda _:False)(health):
+            if task_clock is not None and recovery is None:raise ExecutionNotReady('rgbd_ready')
             yield
             health,_=health_check()
         return health
@@ -163,6 +211,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
     def prepare_work(function):
         waiting=False
         while not getattr(adapter.vision, 'available', True):
+            if task_clock is not None and recovery is None:raise ExecutionNotReady('vision_worker')
             if recovery and not waiting:
                 recovery.pause('vision_worker')
                 waiting=True
@@ -204,6 +253,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 emit('WAITING_SCAN_MAP', actual_stopped_pose=asdict(health.pose), local_check=check,
                      stop_confirmed=True)
                 waiting = True
+            if task_clock is not None and recovery is None:raise ExecutionNotReady('local_rotation_map')
             yield
 
     def navigate(goal, command_id, kind, target=None, radius=None, path_accept=None):
@@ -279,7 +329,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                  reason='; '.join(reasons))
             return accepted
 
-        expires = min(deadline, clock()+15.)
+        expires = min(action_deadline, clock()+15.)
         if direct_target:
             goal = object_pose
         else:
@@ -346,7 +396,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         retries = contract['arrival_retry_limit']
         object_pose = frame.to_local(observation.common_position)
         future = adapter.read_approach_parameters()
-        expires = min(deadline, clock()+5.)
+        expires = min(action_deadline, clock()+5.)
         try:
             while not future.done():
                 if clock() >= expires:
@@ -431,7 +481,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                 state.update(candidate['id'], 'navigation_failed', clock(), reason='footprint blocked')
                 continue
             future = adapter.compute_path(goal)
-            plan_deadline = min(deadline, clock() + 15.)
+            plan_deadline = min(action_deadline, clock() + 15.)
             while not future.done():
                 health_check()
                 if clock() >= plan_deadline:
@@ -478,7 +528,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
         record(dict(state='CANDIDATE_REQUEST' if generated else 'FURNITURE_REQUEST', request_type=request_type, **snapshot))
         future = None
         requesting = True
-        expires = min(deadline, clock() + robot_config.get('api_timeout', 20.))
+        expires = min(action_deadline, clock() + robot_config.get('api_timeout', 20.))
         try:
             future = adapter.vision.submit(lambda: policy.next_viewpoint(snapshot))
             while not future.done():
@@ -506,7 +556,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
                         task_id=state.task_id, decision_id=decision_id, motion_sent=False))
             # AsyncVision removes provider details, which may contain credentials.
             retryable={'vision request/validation failed','vision busy'}
-            if (recovery is not None and requesting and not getattr(adapter.client,'selection_evidence_write_failed',False)
+            if ((recovery is not None or task_clock is not None) and requesting and not getattr(adapter.client,'selection_evidence_write_failed',False)
                     and (isinstance(error,(TimeoutError,ConnectionError,ValueError))
                          or isinstance(error,RuntimeError) and str(error) in retryable)):
                 raise ExplorationStopped('candidate selection unavailable: '+
@@ -626,7 +676,7 @@ def explore_steps(adapter, config, frame, deadline, target, record, owners,
             if semantic:update('navigation_failed')
             continue
         future = adapter.compute_path(goal)
-        plan_deadline = min(deadline, clock()+15.)
+        plan_deadline = min(action_deadline, clock()+15.)
         while not future.done():
             health_check()
             if clock() >= plan_deadline:

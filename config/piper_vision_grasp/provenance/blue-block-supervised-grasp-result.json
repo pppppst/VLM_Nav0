@@ -1,0 +1,82 @@
+{
+  "timestamp_utc": "2026-11-14T05:10:50.420465+00:00",
+  "result": "SUPERVISED_BLUE_BLOCK_GRASP_AND_SMALL_LIFT_CONFIRMED",
+  "user_observed_grasp": "两侧已贴住并保持，积木未偏移",
+  "user_observed_lift": "已离开支撑面，悬空稳定保持",
+  "target": {
+    "front_width_cm": 4.2,
+    "depth_cm": 2,
+    "height_cm_approx": 10,
+    "support_height_cm_approx": 18
+  },
+  "closing": {
+    "command_width_mm": 36,
+    "effort_limit_nm": 0.5,
+    "final_width_mm": 52.8,
+    "feedback_effort_nm": -0.523,
+    "command_attempts": 1,
+    "position_target_reached": false
+  },
+  "lift": {
+    "command_z_mm": 20,
+    "feedback_flange_delta_mm": [
+      0.060000000000002274,
+      -0.02499999999999858,
+      19.585999999999984
+    ],
+    "speed_percent": 5,
+    "command_attempts": 1,
+    "final_feedback": {
+      "time": 1794633083.5147426,
+      "joints_deg": [
+        4.296,
+        122.039,
+        -80.152,
+        -34.053,
+        -15.987,
+        35.113
+      ],
+      "sdk_pose_mm_xyz": [
+        476.309,
+        49.859,
+        173.087
+      ],
+      "sdk_pose_euler_deg_xyz": [
+        166.439,
+        66.056,
+        179.175
+      ],
+      "gripper_width_mm": 52.8,
+      "gripper_torque_nm": -0.525,
+      "gripper_enabled": true,
+      "missing_feedback": [],
+      "ctrl_mode": 1,
+      "arm_status": 0,
+      "err_code": 0,
+      "motion_status": 0,
+      "joints_enabled": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "command_attempted": true,
+      "grasp_confirmed": false,
+      "stop_confirmed": null,
+      "deadline_elapsed": true,
+      "state": "AT_TARGET",
+      "reason_class": "NONE",
+      "reason": "fresh position feedback only; not proof of grasp, command acknowledgement or physical stop"
+    }
+  },
+  "current_state": "Holding object with original36mm/.5Nm target; no release, return-to-zero or disable sent",
+  "limitations": [
+    "User-guided pose corrections required after original pregrasp tipped target",
+    "Not autonomous vision grasp acceptance",
+    "Target elevated approximately18cm, not direct ground grasp",
+    "90mm TCP provisional; physical extrinsic/zero correspondence unvalidated",
+    "No placing or extended transport/load endurance test"
+  ]
+}

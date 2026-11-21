@@ -74,3 +74,16 @@ def test_bridge_fault_contract_is_covered_by_native_tests():
         "ArmDoesNotRequireOrActivateCachedCommand",
     ):
         assert behavior in test_source
+
+
+def test_bridge_ownership_allows_stop_and_nav2_cmd_publishers_to_coexist():
+    source = (ROOT / "src/twist_to_go2_sport_bridge.cpp").read_text()
+    ownership_check = source.split("  void check_ownership()", 1)[1].split(
+        "  std::string arm_blocker", 1
+    )[0]
+    # Only SYSTEM_READY has an existing unique-publisher contract.
+    assert "system_ready_sub_->get_publisher_count() > 1" in ownership_check
+    assert "cmd_sub_->get_publisher_count()" not in ownership_check
+    assert "sport_response_sub_->get_publisher_count()" not in ownership_check
+    assert "cmd_sub_->get_publisher_count() == 0" in source
+    assert "sport_response_sub_->get_publisher_count() > 0" in source

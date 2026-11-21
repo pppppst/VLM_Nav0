@@ -10,6 +10,9 @@
 #include <sstream>
 #include <string>
 
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
+#include "multi_agent_task_msgs/srv/recover_go2_control.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rmw/rmw.h"
@@ -78,6 +81,8 @@ public:
       debug_request_topic, rclcpp::QoS(10).reliable());
     state_pub_ = create_publisher<std_msgs::msg::String>(
       state_topic, rclcpp::QoS(1).reliable().transient_local());
+    diagnostics_pub_ = create_publisher<diagnostic_msgs::msg::DiagnosticArray>(
+      "/vlm_nav/go2_bridge_diagnostics", rclcpp::QoS(1).reliable().transient_local());
     control_armed_pub_ = create_publisher<std_msgs::msg::Bool>(
       control_armed_topic, rclcpp::QoS(1).reliable().transient_local());
     sport_interface_ready_pub_ = create_publisher<std_msgs::msg::Bool>(
@@ -118,6 +123,12 @@ public:
         &TwistToGo2SportBridge::on_reset_fault, this, std::placeholders::_1,
         std::placeholders::_2));
 
+    recover_control_service_ = create_service<RecoverGo2Control>(
+      "~/recover_control",
+      std::bind(
+        &TwistToGo2SportBridge::on_recover_control, this, std::placeholders::_1,
+        std::placeholders::_2));
+
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / control_rate),
       std::bind(&TwistToGo2SportBridge::control_tick, this));
@@ -142,6 +153,7 @@ public:
   }
 
 private:
+  using RecoverGo2Control = multi_agent_task_msgs::srv::RecoverGo2Control;
   static constexpr std::int64_t kMoveApiId = 1008;
   static constexpr std::int64_t kStopMoveApiId = 1003;
 
@@ -157,6 +169,7 @@ private:
     ++cmd_rx_count_;
     const auto received = steady_seconds();
     const auto before = state_machine_.state();
+    check_ownership();
     const auto result = state_machine_.handle_twist(
       message->linear.x, message->linear.y, message->linear.z,
       message->angular.x, message->angular.y, message->angular.z,
@@ -178,30 +191,15 @@ private:
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto now = steady_seconds();
-    if (require_system_ready_ && !system_ready_contract_valid(now)) {
+    check_ownership();
+    const auto blocker = arm_blocker(now);
+    if (!blocker.empty()) {
+      state_machine_.revoke_recovery();
       response->success = false;
-      response->message = "SYSTEM_READY gate is false, stale, or has non-unique ownership";
+      response->message = blocker;
       RCLCPP_WARN(get_logger(), "ARM rejected: %s", response->message.c_str());
-      return;
-    }
-    if (cmd_sub_->get_publisher_count() == 0) {
-      response->success = false;
-      response->message = "cmd_vel DDS endpoint is absent";
-      RCLCPP_WARN(get_logger(), "ARM rejected: %s", response->message.c_str());
-      return;
-    }
-    if (!sport_interface_ready_) {
-      response->success = false;
-      response->message = "Sport interface endpoint is not ready";
-      RCLCPP_WARN(get_logger(), "ARM rejected: %s", response->message.c_str());
-      return;
-    }
-    const double quiet_since = last_foreign_sport_request_.value_or(foreign_observation_started_);
-    if (now - quiet_since < foreign_sport_quiet_period_) {
-      response->success = false;
-      response->message = "external Sport traffic has not been quiet for " +
-        std::to_string(foreign_sport_quiet_period_) + " seconds";
-      RCLCPP_WARN(get_logger(), "ARM rejected: %s", response->message.c_str());
+      publish_pending_stop_edge();
+      publish_state();
       return;
     }
     std::string reason;
@@ -212,6 +210,7 @@ private:
     } else {
       RCLCPP_WARN(get_logger(), "ARM rejected: %s", response->message.c_str());
     }
+    publish_pending_stop_edge();
     publish_state();
   }
 
@@ -239,15 +238,17 @@ private:
     if (compare_result != RMW_RET_OK) {
       RCLCPP_ERROR(get_logger(), "publisher GID comparison failed; treating request as foreign");
     }
-    if (before == BridgeState::ARMED) {
-      if (fault_on_foreign_sport_request_) {
-        state_machine_.force_fault("foreign Sport request observed while ARMED");
-      } else {
-        state_machine_.yield_to_external_control();
-        RCLCPP_WARN(get_logger(), "external Sport control took over; DISARMED until explicit ARM");
-      }
-      handle_transition_edges(before);
+    if (fault_on_foreign_sport_request_ &&
+      (before == BridgeState::ARMED || before == BridgeState::FAULT ||
+      state_machine_.recovery_pending()))
+    {
+      state_machine_.force_fault(BridgeFaultCode::FOREIGN_CONTROL,
+        "foreign Sport request observed while ARMED or recovery is pending");
+    } else {
+      state_machine_.yield_to_external_control();
+      RCLCPP_WARN(get_logger(), "external Sport control took over; DISARMED until explicit ARM");
     }
+    handle_transition_edges(before);
   }
 
   void on_system_ready(const std_msgs::msg::Bool::SharedPtr message)
@@ -256,10 +257,12 @@ private:
     const auto before = state_machine_.state();
     system_ready_ = message->data;
     last_system_ready_received_ = steady_seconds();
+    check_ownership();
     if (require_system_ready_ && !system_ready_ && before == BridgeState::ARMED) {
-      state_machine_.force_fault("SYSTEM_READY lost while ARMED");
-      handle_transition_edges(before);
+      state_machine_.force_fault(BridgeFaultCode::SYSTEM_READY_FALSE,
+        "SYSTEM_READY lost while ARMED");
     }
+    handle_transition_edges(before);
   }
 
   void on_disarm(
@@ -298,12 +301,16 @@ private:
     sport_interface_ready_ =
       sport_endpoint_debouncer_.update(raw_sport_endpoint, now);
     publish_sport_interface_ready(sport_interface_ready_);
+    check_ownership();
     if (state_machine_.state() == BridgeState::ARMED) {
       if (require_system_ready_ && !system_ready_contract_valid(now)) {
-        state_machine_.force_fault("SYSTEM_READY became stale or ownership is not unique");
+        state_machine_.force_fault(
+          system_ready_ ? BridgeFaultCode::SYSTEM_READY_STALE : BridgeFaultCode::SYSTEM_READY_FALSE,
+          "SYSTEM_READY became false, stale, or its endpoint is absent");
       }
       if (!sport_interface_ready_) {
-        state_machine_.force_fault("Sport interface endpoint absent beyond debounce");
+        state_machine_.force_fault(BridgeFaultCode::SPORT_ENDPOINT_LOST,
+          "Sport interface endpoint absent beyond debounce");
       }
     }
     state_machine_.tick(now, cmd_sub_->get_publisher_count() > 0);
@@ -311,7 +318,52 @@ private:
     if (const auto command = state_machine_.active_command()) {
       publish_move(command->vx, command->vyaw);
     }
-    publish_state();
+  }
+
+  void check_ownership()
+  {
+    if (require_system_ready_ && system_ready_sub_->get_publisher_count() > 1)
+    {
+      state_machine_.force_fault(BridgeFaultCode::OWNERSHIP_CONFLICT,
+        "SYSTEM_READY has non-unique ownership");
+    }
+  }
+
+  std::string arm_blocker(double now) const
+  {
+    if (require_system_ready_ && !system_ready_contract_valid(now)) {
+      return "SYSTEM_READY gate is false, stale, or has non-unique ownership";
+    }
+    if (cmd_sub_->get_publisher_count() == 0) {
+      return "cmd_vel DDS endpoint is absent";
+    }
+    if (!sport_interface_ready_) {
+      return "Sport interface endpoint is not ready";
+    }
+    const double quiet_since = last_foreign_sport_request_.value_or(foreign_observation_started_);
+    if (now - quiet_since < foreign_sport_quiet_period_) {
+      return "external Sport traffic has not been quiet for " +
+        std::to_string(foreign_sport_quiet_period_) + " seconds";
+    }
+    return "";
+  }
+
+  void on_recover_control(
+    const RecoverGo2Control::Request::SharedPtr request,
+    RecoverGo2Control::Response::SharedPtr response)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto before = state_machine_.state();
+    const auto now = steady_seconds();
+    check_ownership();
+    const auto phase = static_cast<RecoveryPhase>(request->phase);
+    const auto blocker = phase == RecoveryPhase::RESUME ? arm_blocker(now) : "";
+    response->accepted = state_machine_.recover(
+      request->instance_id, request->expected_epoch, phase, now, blocker, &response->reason);
+    response->instance_id = state_machine_.instance_id();
+    response->epoch = state_machine_.epoch();
+    response->state = to_string(state_machine_.state());
+    handle_transition_edges(before);
   }
 
   bool system_ready_contract_valid(double now) const
@@ -330,8 +382,8 @@ private:
           get_logger(), "bridge entered FAULT: %s",
           state_machine_.fault_reason().c_str());
       }
-      publish_state();
     }
+    publish_state();
   }
 
   void publish_pending_stop_edge()
@@ -415,6 +467,28 @@ private:
     std_msgs::msg::Bool armed;
     armed.data = state_machine_.state() == BridgeState::ARMED;
     control_armed_pub_->publish(armed);
+    diagnostic_msgs::msg::DiagnosticArray diagnostics;
+    diagnostics.header.stamp = now();
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.name = "go2_bridge";
+    status.hardware_id = state_machine_.instance_id();
+    status.level = state_machine_.state() == BridgeState::FAULT ?
+      diagnostic_msgs::msg::DiagnosticStatus::ERROR : diagnostic_msgs::msg::DiagnosticStatus::OK;
+    status.message = message.data;
+    const auto add = [&status](const std::string & key, const std::string & value) {
+        diagnostic_msgs::msg::KeyValue item;
+        item.key = key;
+        item.value = value;
+        status.values.push_back(item);
+      };
+    add("state", to_string(state_machine_.state()));
+    add("instance_id", state_machine_.instance_id());
+    add("epoch", std::to_string(state_machine_.epoch()));
+    add("fault_code", to_string(state_machine_.fault_code()));
+    add("recovery_pending", state_machine_.recovery_pending() ? "true" : "false");
+    add("recovery_allowed", state_machine_.recovery_allowed() ? "true" : "false");
+    diagnostics.status.push_back(status);
+    diagnostics_pub_->publish(diagnostics);
   }
 
   void publish_sport_interface_ready(bool ready)
@@ -446,6 +520,7 @@ private:
   rclcpp::Publisher<unitree_api::msg::Request>::SharedPtr sport_request_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr debug_request_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr state_pub_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr control_armed_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr sport_interface_ready_pub_;
   rclcpp::Subscription<unitree_api::msg::Request>::SharedPtr sport_request_sub_;
@@ -455,6 +530,7 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr arm_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr disarm_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_fault_service_;
+  rclcpp::Service<RecoverGo2Control>::SharedPtr recover_control_service_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

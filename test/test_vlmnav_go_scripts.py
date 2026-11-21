@@ -29,9 +29,11 @@ def test_preflight_reuses_fresh_formal_report_without_starting_sensors(tmp_path)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     shutil.copy2(ROOT / "scripts" / "run_go2_preflight.sh", scripts)
-    (scripts / "common.sh").write_text("")
+    (scripts / "common.sh").write_text("set +u\nsource /opt/ros/humble/setup.bash\nset -u\n"+
+        f'export PYTHONPATH="{tmp_path}:$PYTHONPATH"\n')
     (scripts / "go2_network_env.sh").write_text("")
     os.symlink(ROOT / "vlm_nav", tmp_path / "vlm_nav")
+    os.symlink(ROOT / "config", tmp_path / "config")
 
     report = tmp_path / "preflight.json"
     report.write_text(
@@ -63,7 +65,8 @@ def test_preflight_reuses_fresh_formal_report_without_starting_sensors(tmp_path)
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert "reusing fresh formal preflight report" in completed.stdout
+    log=Path(completed.stdout.strip().split('：',1)[1])
+    assert "reusing fresh formal preflight report" in log.read_text()
     assert not calls.exists()
 
 
@@ -119,14 +122,14 @@ esac''',
         check=True,
     )
 
-    assert completed.stdout.rstrip().endswith(
+    log=Path(completed.stdout.strip().split('：',1)[1])
+    assert log.read_text().rstrip().endswith(
         f"true|红色灭火器|localization_mode:=amcl map:={saved_map} amcl_scan_topic:=/scan"
     )
     recorded_calls = calls.read_text()
     assert "go2_camera_preflight" not in recorded_calls
-    assert "gnome-terminal" in recorded_calls
-    assert "/cmd_vel_bridge" in recorded_calls
-    assert "/vlm_nav/diagnostics" in recorded_calls
+    assert "/cmd_vel_bridge" not in recorded_calls
+    assert "/vlm_nav/diagnostics" not in recorded_calls
 
 
 def test_stopgo_disables_then_cancels_then_disarms(tmp_path):

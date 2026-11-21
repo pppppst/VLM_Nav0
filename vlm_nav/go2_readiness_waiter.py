@@ -136,7 +136,7 @@ class ReadinessWaiter(Node):
             return
 
         self.consecutive_ready = 0
-        if time.monotonic() - self.started > self.timeout:
+        if self.timeout > 0.0 and time.monotonic() - self.started > self.timeout:
             self.get_logger().error(
                 "readiness timeout; missing topics=%s transforms=%s"
                 % (missing_topics, missing_transforms)

@@ -21,5 +21,10 @@ fi
 (( $# <= 1 )) || { echo '只接受一个动作；使用 --help。' >&2; exit 2; }
 action="${1:-prepare}"
 case "$action" in prepare|start|pause|disarm|restart) ;; *) echo '未知动作；使用 --help。' >&2; exit 2;; esac
-source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+if [[ -f "$repo/scripts/go2_experiment_status.sh" && "$action" != pause && "$action" != disarm ]]; then
+  source "$repo/scripts/go2_experiment_status.sh"
+  go2_entry_environment "$repo" "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+else
+  source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+fi
 exec /usr/bin/python3 "$repo/scripts/start_go2_cooperative_task.py" "$action"

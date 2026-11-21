@@ -337,6 +337,17 @@ def test_waiter_does_not_succeed_before_required_message_count():
     assert waiter.exit_code == 1
 
 
+def test_zero_readiness_timeout_waits_until_inputs_recover():
+    from vlm_nav.go2_readiness_waiter import ReadinessWaiter
+    waiter=_waiter_state(cloud_count=0,timeout=0.,stable_samples=1)
+    waiter.started=time.monotonic()-7200.
+    ReadinessWaiter.check(waiter)
+    assert not waiter.done
+    waiter.received_counts['/cloud_registered_base']=3
+    ReadinessWaiter.check(waiter)
+    assert waiter.done and waiter.exit_code==0
+
+
 def test_waiter_success_and_timeout_are_fail_closed():
     from vlm_nav.go2_readiness_waiter import ReadinessWaiter
 

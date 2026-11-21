@@ -17,13 +17,16 @@ ROS 命令仍是原 `ros2 run multi_agent_nav multi_agent_go2_check`，安装入
 框架仓库 `/home/isee-pst/unitree_ros2/SenseNova-RoboRSI`，HEAD
 `0208cd72ec7c885a7219040cd2be459d127e374e`，使用其 `.venv/bin/python`（3.10.12，pytest 9.2.0）。
 预检拒绝框架 HEAD/工作树/导入来源变化。未升级或安装依赖。
-Codex 配置入口 `/home/isee-pst/.local/bin/codex`，精确版本 `codex-cli 0.166.0`；解析为
-`/home/isee-pst/.codex/packages/standalone/releases/0.166.0-x86_64-unknown-linux-musl/bin/codex`，
-本次 SHA-256 `b8a11fedf24b2dfb59a70c9e52b030f9a508dcd49cd2dd0d41956f4c785156b8`。
-每次预检记录真实路径和摘要，不回退其他 CLI，也不把历史摘要永久钉住导航算法。
+Codex 配置入口 `/home/isee-pst/.local/bin/codex`。2026-11-11 起使用
+`minimum_version: codex-cli 0.166.0`：接受不低于此基线的稳定版本，预发布或无法解析的版本拒绝。
+每轮重新解析入口，并用 `--version`、顶层和 `exec --help` 检查所需参数；本机 0.167.0 本地预检已通过。
+该轮将实际绝对路径、精确版本及 SHA-256 交给 RoboRSI，保留框架启动前身份复核；下一轮可发现更新。
+不自动升级、降级或选择其他二进制。0.166.0 的原验收记录保留在交接；不将其摘要永久钉住。
+参数预检不证明 MCP、JSON 事件流及模型端到端兼容；`cli_compatibility.model_protocol=unverified`
+明确记录此边界，未知未来版本仍可能需要适配。真实模型与真机阶段尚未验收。
 
 `tools/go2_agent/config.yaml` 固定 `gpt-6-astra` / `high`、`max_turns: null`、
-`max_tokens: null`、`planner_timeout_s: 1200`、`action_timeout_s: 600`。
+`max_tokens: null`、`planner_timeout_s: null`、`action_timeout_s: 600`。
 固定版本的 `LocalToolSpec.handler` 不经过 action timeout；取消由任务管理器实现。
 使用 `EmbodiedAgent.run(skills=[.../SKILL.md])` 静态加载一个搜索技能。
 
@@ -40,7 +43,7 @@ handler 也拒绝额外字段。相同目标重复 start 返回原任务，不�
 框架以 `-I` 启动，清除 ROS/Python/动态库搜索路径并设置框架 PATH；搜索收到原环境副本。
 私密环境仅经管道和进程环境传递，不写 spec 文件；manifest 仅记非敏感环境白名单。
 不改用户 `CODEX_HOME`、认证或全局 `OPENAI_BASE_URL`。CLI 工作目录在独立 `cli-work`，
-使用 `--ignore-rules` 避免读取父仓库开发指引，sandbox 为 read-only、approval 为 never。
+使用 `--ignore-rules` 跳过 execpolicy `.rules`（不能据此断言跳过 AGENTS.md），sandbox 为 read-only、approval 为 never。
 这些设置及提示词**不证明只能调用声明工具或禁止网络/机器人访问**；未验证原生工具完全禁用，
 须在后续假机器人真实 CLI 阶段检查。至多一次由管理器硬约束，不靠提示词。
 
@@ -65,7 +68,7 @@ handler 也拒绝额外字段。相同目标重复 start 返回原任务，不�
 原动作 `CANCELED` 不单独否定成功；缺失/半写/旧报告和迟到视觉证据不能变成成功。
 取消先受理可归 CANCELED，但仍保存原始结果；已完成结果不被晚到 cancel 覆盖。
 整轮还要求无框架错误、宿主 DISARM 并读回 DISARMED；模型 finish 不能代替这些事实。
-未启动就 finish 为 `AGENT_NO_EXECUTION`；提前 finish 或框架异常会取消仍在运行的搜索。
+未启动就 finish 为 `AGENT_NO_EXECUTION`；提前 finish 或框架异常后，宿主继续守护已启动的独立搜索直至终态；不补启动第二次搜索。用户取消仍执行原停止收尾。框架错误和原搜索结果分别记录，不能以搜索成功掩盖框架失败。
 
 ## 取消与保留的限制
 
@@ -111,8 +114,8 @@ SIGKILL、父进程崩溃、系统故障不保证 finally；原报告非原子�
    bash -n scripts/start_go2_agent_task.sh
    ```
 
-3. 可选本地版本预检只调用 `codex --version`，不登录、不请求模型。成功判据为退出 0 且生成
-   `preflight.json`；版本或框架身份不符时先排查，不换二进制、不自动升级。
+3. 可选本地兼容预检只调用 CLI 的 `--version` / `--help`，不登录、不请求模型。成功判据为退出 0 且生成
+   `preflight.json`；版本低于基线、缺少参数或框架身份不符时先排查，不换二进制、不自动升级。
 
    ```bash
    GO2_AGENT_CHECK_DIR="$(mktemp -d "$PWD/build/go2-agent-check.XXXXXX")"

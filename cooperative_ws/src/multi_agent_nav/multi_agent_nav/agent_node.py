@@ -1,4 +1,6 @@
 import time
+import os
+from pathlib import Path
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
@@ -45,7 +47,7 @@ class AgentNode(Node):
             if robot=='go2' and not simulation:
                 from .exploration_display import ExplorationDisplay
                 self.exploration_display=ExplorationDisplay(self.observer,self.machine.frame)
-                self.adapter.display_path=lambda path:self.exploration_display.publish('planned_path',path)
+                self.adapter.display_path=lambda path:self.runner.display_call(self.exploration_display.publish,'planned_path',path)
                 on_event=self.exploration_display.record
             self.runner=AgentRunner(self.machine,self.adapter,config['scene']['targets'],self.publish_observation,config=config,success_radius=1.0,on_event=on_event)
             if not self.machine.context.share_c_coordinates:
@@ -53,6 +55,12 @@ class AgentNode(Node):
                 self.runner.owners=lambda:[name for name in other_owners(self.observer) if name not in
                     ('multi_agent_coordinator','multi_agent_go2_agent','multi_agent_task_agent','multi_agent_go2_rgbd')]
         self.robot,self.config,self.simulation=robot,config,simulation
+        self.experiment_status=None
+        if robot=='go2' and os.getenv('GO2_EXPERIMENT_STATUS_FILE'):
+            from .experiment_status import ExperimentStatus
+            path=Path(os.environ['GO2_EXPERIMENT_STATUS_FILE'])
+            self.experiment_status=ExperimentStatus(path.parent)
+            self.experiment_status.path=path
         self.get_logger().info(f'Task prefix: {prefix}; robot={robot}; simulation={simulation}')
         self.create_subscription(Command,f'{prefix}/go2/command',self.command,qos())
         peer='ranger' if robot=='go2' else 'go2'
@@ -102,6 +110,29 @@ class AgentNode(Node):
                 reason='live configuration gates closed')
         state.stamp=self.get_clock().now().nanoseconds*1e-9
         self.state_pub.publish(to_ros(state))
+        if self.runner and not self.runner.evidence_complete:
+            try:self.get_logger().warning('Required evidence incomplete; physical reply='+state.reply+'; full acceptance unavailable',throttle_duration_sec=5.)
+            except Exception:pass
+        status=getattr(self,'experiment_status',None)
+        if status is not None and self.machine:
+            now=time.monotonic()
+            machine=self.machine
+            active=machine.task_clock(now)
+            clock=machine._task_clock
+            paused=0. if clock.paused_at is None else now-clock.paused_at
+            health=machine.health
+            waiting=machine.paused or machine.awaiting_peer_resume or clock.paused_at is not None
+            automatic=machine.recovery_state is not None or not machine.paused
+            evidence_complete=not self.runner or self.runner.evidence_complete
+            status.update(state=('INCOMPLETE' if not evidence_complete else 'FINISHED') if machine.task_completed else 'WAITING' if waiting else 'RUNNING',
+                phase=machine.phase,reason=state.reason if evidence_complete else '必要证据缺失；物理任务结果保留，本轮不能完整验收',
+                reason_class='EVIDENCE_INCOMPLETE' if not evidence_complete else 'WAIT_INPUT' if automatic else 'MANUAL_REQUIRED',
+                automatic=automatic and not (machine.task_completed and not evidence_complete),run_elapsed_s=max(0.,active-(machine.task_started or active)),
+                evidence_complete=evidence_complete,display_failed=getattr(self.runner,'display_failed',False),
+                pause_elapsed_s=paused,paused_total_s=clock.paused_total+paused,
+                run_remaining_s=max(0.,machine.task_timeout-(active-(machine.task_started or active))),
+                health=dict(nav_ready=health.nav_ready,localization_valid=health.localization_valid,
+                            stopped=health.stopped,motion_terminal=health.motion_terminal),result=state.reply)
 
     def tick(self):
         if self.runner:
@@ -119,6 +150,8 @@ def main(args=None):
     try:executor.spin()
     except KeyboardInterrupt:pass
     finally:
+        control=getattr(node.adapter,'control_recovery',None)
+        if control:control.cancel()
         if node.machine and rclpy.ok():
             node.machine.stop('agent shutdown')
             deadline=time.monotonic()+5
@@ -128,6 +161,14 @@ def main(args=None):
                 if (node.machine.state().run_state=='PAUSED' or node.machine.task_completed
                         and node.machine.health.stopped and node.machine.health.motion_terminal):break
                 executor.spin_once(timeout_sec=.05)
+        if control:
+            try:confirmed=control.finish_cancel(lambda:executor.spin_once(timeout_sec=.05),5.)
+            except Exception:confirmed=False
+            if not confirmed:
+                node.get_logger().error('STOP_UNCONFIRMED: control recovery cancellation unconfirmed')
+                if node.experiment_status:
+                    node.experiment_status.update(state='STOP_UNCONFIRMED',reason='恢复授权取消未确认，请人工核对Sport',
+                        reason_class='NON_RESUMABLE',automatic=False)
         if node.adapter and hasattr(node.adapter,'close'):node.adapter.close()
         executor.shutdown()
         if node.observer:node.observer.destroy_node()

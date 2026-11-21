@@ -2,11 +2,15 @@
 import time
 from .models import Effect, Observation, TARGETS
 
+
+
 class AgentRunner:
     def __init__(self,machine,adapter,descriptions,on_observation,clock=time.monotonic,config=None,success_radius=1.0,on_event=None):
         self.machine,self.adapter,self.descriptions=machine,adapter,descriptions
         self.on_observation=on_observation
         self.on_event=on_event
+        self.record_event=None
+        self.display_failed=False
         self.clock=clock
         self.pending=[]
         self.waiting=[]
@@ -14,6 +18,10 @@ class AgentRunner:
         self.config=config
         self.execution=None
         self.execution_identity=None
+        self.execution_progress={}
+        self.control_task_id=None
+        self.control_cancelled=False
+        self.execution_wait=None
         self.approach=None
         self.local_completion=None
         self.local_approach_result=None
@@ -22,6 +30,17 @@ class AgentRunner:
         self.owners=lambda:[]
         machine.local_execution_enabled=config is not None and not machine.context.share_c_coordinates
         machine.success_radius=success_radius
+
+    @property
+    def evidence_complete(self):
+        return not getattr(self.adapter,'evidence_write_failed',False)
+
+    def display_event(self,event):
+        if self.on_event:self.display_call(self.on_event,event)
+
+    def display_call(self,callback,*values):
+        try:callback(*values)
+        except Exception:self.display_failed=True
 
     def local_approach(self, target, kind, record):
         from .single_robot_approach import load_parameters
@@ -85,7 +104,8 @@ class AgentRunner:
         self.adapter.selection_evidence_dir=directory/'decisions'
         self.adapter.scan_evidence_dir=directory/'views'
         identity=(command.task_id,command.command_id)
-        if self.on_event:self.on_event(dict(state='DISPLAY_RESET',task_id=command.task_id))
+        if identity != self.execution_identity:self.execution_progress={}
+        self.display_event(dict(state='DISPLAY_RESET',task_id=command.task_id))
         def record(event):
             if event.get('state')=='TARGET_REJECTED' and event.get('target_id')=='C':
                 self.machine.local_c_observations.pop(event['observation_id'],None)
@@ -93,11 +113,15 @@ class AgentRunner:
                 from .models import Pose2D
                 self.machine.local_target=Pose2D(**event['object_pose'])
             try:
-                with (directory/'events.jsonl').open('a') as stream:stream.write(json.dumps(event)+'\n')
-                if self.on_event:self.on_event(event)
+                with (directory/'events.jsonl').open('a') as stream:
+                    stream.write(json.dumps(dict(event,evidence_write_failed=not self.evidence_complete))+'\n')
             except Exception as error:
+                self.adapter.evidence_write_failed=True
                 if not self.machine.single_robot_mode:raise
-                self.adapter.node.get_logger().warning('Task diagnostic write failed: '+str(error))
+                try:self.adapter.node.get_logger().warning('Required event evidence incomplete: '+type(error).__name__)
+                except Exception:pass
+            self.display_event(event)
+        self.record_event=record
         def observations(values):
             for value in values:self.machine.on_observation(value,self.clock())
         self.execution_identity=identity
@@ -110,6 +134,8 @@ class AgentRunner:
             on_observations=observations,task_id=command.task_id,parent_command_id=command.command_id,
             initial_camera_check=robot=='go2' and not self.adapter.simulation and command.kind!='APPROACH_DEPOSIT',
             approaching=self.local_approach if self.machine.single_robot_mode else None,
+            task_clock=(lambda:self.machine.task_clock(self.clock())) if self.machine.context.wait_recovery else None,
+            progress=self.execution_progress if self.machine.context.wait_recovery else None,
             initial_observation=self.machine.local_c_observations.get(command.observation_id)
                 if command.kind=='APPROACH_DEPOSIT' else None)
 
@@ -130,14 +156,32 @@ class AgentRunner:
         return self.machine.command is command and self.machine.peer_received is not None and health.stopped and health.motion_terminal
 
     def tick(self,now):
+        if self.machine.context.wait_recovery and self.machine.context.task_id != self.control_task_id:
+            self.control_task_id=self.machine.context.task_id
+            self.control_cancelled=False
+            self.execution_wait=None
+            self.machine.recovery_blocked=False
+            begin=getattr(self.adapter,'begin_control_task',None)
+            if self.control_task_id and begin:begin(self.control_task_id)
         if hasattr(self.adapter,'advance'):self.adapter.advance(now)
         # Stop before the adapter can send another scan Spin or consume a late result.
         health=self.adapter.get_health()
+        if self.execution_wait:
+            if self.execution_wait=='vision_worker':ready=getattr(self.adapter.vision,'available',True)
+            elif self.execution_wait=='rgbd_ready':
+                ready=not getattr(self.adapter,'perception_wait_allowed',lambda _:False)(health)
+            else:
+                ready=(health.localization_valid and health.stopped and health.motion_terminal and
+                    self.adapter.local_rotation_check(health.pose)['status'] in ('free','collision'))
+            self.machine.recovery_blocked=not ready
+            if ready:self.execution_wait=None
         self.machine.check_health(self.clock(),health)
-        if (self.machine.single_robot_mode and (self.execution is not None or self.local_completion is not None)
+        if (self.machine.single_robot_mode and (self.execution is not None or self.local_completion is not None
+                or self.machine.recovery_state is not None)
                 and self.owners()):
             self.machine.stop('other navigation owner present')
         if self.machine.paused:self.dispatch(self.machine.take_effects(),now)
+        self.recover_control()
         if hasattr(self.adapter,'tick'):self.adapter.tick()
         while self.adapter.results:
             self.machine.on_goal_result(self.adapter.results.popleft(),now)
@@ -179,10 +223,19 @@ class AgentRunner:
                 self.machine.health=self.adapter.get_health()
                 self.local_completion=(self.execution_identity,finished.value)
             except Exception as error:
-                from .go2_exploration import NavigationNotReady
+                from .go2_exploration import NavigationNotReady, LocalizationNotReady, ExecutionNotReady, is_recoverable_execution_error
                 self.execution=None
-                if isinstance(error, NavigationNotReady):
+                if isinstance(error, NavigationNotReady) and is_recoverable_execution_error(error):
                     self.machine.stop('local navigation not ready', recoverable=True)
+                elif isinstance(error, LocalizationNotReady) and self.machine.context.wait_recovery and is_recoverable_execution_error(error):
+                    self.machine.stop('local localization temporarily unavailable', recoverable=True)
+                elif isinstance(error, ExecutionNotReady) and self.machine.context.wait_recovery and is_recoverable_execution_error(error):
+                    self.execution_wait=str(error)
+                    self.machine.recovery_blocked=True
+                    self.machine.stop('local execution temporarily unavailable', recoverable=True)
+                elif self.machine.context.wait_recovery and is_recoverable_execution_error(error):
+                    self.machine.stop('local execution temporarily unavailable', recoverable=True)
+                    self.display_event(dict(state='EXECUTION_UNAVAILABLE', reason=str(error)))
                 else:
                     self.machine.stop('local execution failed: '+str(error))
             self.dispatch(self.machine.take_effects(),self.clock())
@@ -195,10 +248,23 @@ class AgentRunner:
                         and identity[0]==self.machine.context.task_id
                         and self.machine.state().reply=='SUCCEEDED'):
                     self.local_approach_result.accepted()
+                if self.record_event:
+                    self.record_event(dict(event='LOCAL_EXECUTION_RESULT',result=self.machine.state().reply,
+                        task_id=identity[0],command_id=identity[1]))
                 self.local_approach_result=None
                 self.local_completion=None
-                self.execution_identity=None
+                if self.machine.recovery_state is None:self.execution_identity=None
                 if self.machine.single_robot_mode:self.adapter.record_event=None
+
+    def recover_control(self):
+        if not self.machine.context.wait_recovery or not self.machine.paused:return
+        if self.machine.recovery_state is not None:
+            recover=getattr(self.adapter,'recover_control',None)
+            if recover:recover(allow_resume=not self.owners())
+        elif not self.control_cancelled:
+            self.control_cancelled=True
+            cancel=getattr(self.adapter,'cancel_control_recovery',None)
+            if cancel:cancel()
 
     def dispatch(self,effects,now):
         command=self.machine.command
@@ -222,8 +288,11 @@ class AgentRunner:
                 try:
                     if goal_id:self.adapter.cancel_navigation(goal_id)
                 finally:
-                    self.adapter.stop_motion(reason)
-                    if self.on_event and not self.machine.task_completed:self.on_event(dict(state='STOPPING'))
+                    try:self.adapter.stop_motion(reason)
+                    finally:
+                        if self.record_event:self.record_event(dict(state='STOPPING',event='EXECUTION_STOP',reason=reason))
+                        elif not self.machine.task_completed:self.display_event(dict(state='STOPPING'))
+                    if self.machine.recovery_state is None:self.recover_control()
             elif command and self.machine.command is command and not self.machine.paused:
                 if effect.kind=='OBSERVATION':
                     self.on_observation(effect.payload)

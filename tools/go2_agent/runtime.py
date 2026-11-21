@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -39,7 +40,7 @@ def load_config():
 
 
 def preflight(directory):
-    from roborsi.planner.codex_cli import preflight_codex_cli
+    from roborsi.planner.codex_cli import preflight_codex_cli, _cli_arguments
     from roborsi.planner.codex_cli_config import CodexCliConfig
     import roborsi
     config = load_config()
@@ -48,12 +49,38 @@ def preflight(directory):
         raise ValueError('RoboRSI checkout or import identity mismatch')
     if subprocess.check_output(['git', '-C', str(FRAMEWORK), 'status', '--porcelain'], text=True).strip():
         raise ValueError('RoboRSI working tree changed')
-    cli = CodexCliConfig.from_dict(config['codex_cli'])
+    cli_values = dict(config['codex_cli'])
+    minimum = cli_values.pop('minimum_version')
+    cli = CodexCliConfig.from_dict(dict(cli_values, expected_version=minimum))
     if not Path(cli.executable).is_absolute():
         raise ValueError('absolute Codex executable required')
+    executable = str(Path(cli.executable).resolve(strict=True))
+    probe = dict(cwd=directory, env=cli.subprocess_env(), stdin=subprocess.DEVNULL,
+                 capture_output=True, text=True, check=True, timeout=5)
+    version = subprocess.run([executable, '--version'], **probe).stdout.strip()
+    versions = [re.fullmatch(r'codex-cli (\d+)\.(\d+)\.(\d+)', value) for value in (minimum, version)]
+    if (not all(versions) or tuple(map(int, versions[1].groups())) < tuple(map(int, versions[0].groups()))):
+        raise ValueError(f'Codex CLI requires a stable version >= {minimum}; got {version!r}')
+    cli = CodexCliConfig.from_dict(dict(cli_values, executable=executable, expected_version=version))
+    identity = preflight_codex_cli(cli, repo_root=directory)
+    global_args, exec_args = _cli_arguments(cli.cli_args)
+    required = set()
+    for args, fixed in [(global_args, set()), (exec_args, {'--config', '--model', '--json', '--color'})]:
+        command = ([executable, *global_args, 'exec', '--json', '--color', 'never',
+                    '--model', config['model'], '-c',
+                    'model_reasoning_effort=' + json.dumps(config['reasoning_effort']), *exec_args]
+                   if fixed else [executable, *global_args])
+        help_text = subprocess.run([*command, '--help'], **probe).stdout
+        options = fixed | {arg.split('=')[0] for arg in args if arg.startswith('--')}
+        missing = options - set(re.findall(r'(?<![\w-])--[\w-]+', help_text))
+        if missing:
+            raise ValueError('Codex CLI missing required options: ' + ', '.join(sorted(missing)))
+        required.update(options)
     return dict(framework_head=head, framework_python=sys.executable,
                 python_version=sys.version.split()[0],
-                cli=preflight_codex_cli(cli, repo_root=directory),
+                cli=identity,
+                cli_compatibility=dict(minimum_version=minimum, required_options=sorted(required),
+                                       model_protocol='unverified'),
                 model=config['model'], reasoning_effort=config['reasoning_effort'],
                 action_timeout_note='does not bound LocalToolSpec handlers',
                 tool_policy='read-only sandbox plus prompt; exclusive tool use not verified')
@@ -102,9 +129,15 @@ def run_session(spec):
         from roborsi.embodied_agent import EmbodiedAgent
         from roborsi.planner.codex_cli_config import CodexCliConfig
         config = load_config()
+        cli_values = dict(config['codex_cli'])
+        cli_values.pop('minimum_version')
+        # Pin this session, so an updater cannot switch the CLI after preflight.
+        cli_values.update(executable=identity['cli']['executable'],
+                          expected_version=identity['cli']['version'],
+                          expected_sha256=identity['cli']['sha256'])
         agent = EmbodiedAgent(mcp_servers=(), local_tools=local_tools(session),
             output_dir=directory/'framework', working_dir=cli_cwd, planner='codex_cli',
-            codex_cli=CodexCliConfig.from_dict(config['codex_cli']),
+            codex_cli=CodexCliConfig.from_dict(cli_values),
             **{key: config[key] for key in ('model', 'reasoning_effort', 'max_turns',
                                           'max_tokens', 'planner_timeout_s', 'action_timeout_s')})
         result = agent.run('本轮唯一目标（JSON 字符串，逐字符解码）：' + json.dumps(session.target, ensure_ascii=False),
@@ -117,7 +150,22 @@ def run_session(spec):
         session.data['framework_error'] = 'INTERRUPTED' if interrupted else type(error).__name__
         framework['status'] = 'FAILED'
     finally:
-        closing = True
+        # The independently owned search survives a planner failure or early finish.
+        try:
+            snapshot = session.status(session.task_id)
+            if snapshot.get('active_process') and not interrupted and snapshot.get('cancel_requested_at') is None:
+                session.data.setdefault('framework_error', None)
+                if not session.data['framework_error']:
+                    session.data['framework_error'] = 'EARLY_FINISH'
+                while snapshot.get('active_process') and snapshot.get('cancel_requested_at') is None:
+                    time.sleep(.2)
+                    snapshot = session.status(session.task_id)
+        except KeyboardInterrupt:
+            session.data['framework_error'] = 'INTERRUPTED'
+        except Exception as error:
+            session.data['framework_error'] = type(error).__name__
+        finally:
+            closing = True
         try:
             snapshot = session.close()
             snapshot['framework'] = framework

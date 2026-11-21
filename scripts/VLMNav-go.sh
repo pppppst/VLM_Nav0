@@ -21,8 +21,21 @@ if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
   exit 1
 fi
 
+status_dir="$(mktemp -d /tmp/go2-vlm-entry.XXXXXX)"
+if [[ -f "${script_dir}/go2_experiment_status.sh" ]]; then
+  source "${script_dir}/go2_experiment_status.sh"
+  go2_status_init "${script_dir}/.." "$status_dir"
+else
+  go2_status() { :; }
+fi
+echo "启动日志：${status_dir}/entry.log"
+exec 3>&1 4>&2
+export GO2_ENTRY_STDOUT_OPEN=1
+exec >"${status_dir}/entry.log" 2>&1
+
 unset PYTHONHOME PYTHONPATH
 source "${script_dir}/common.sh"
+if declare -F go2_load_overlay >/dev/null; then go2_load_overlay; fi
 if [[ -z "${VIRTUAL_ENV:-}" ]]; then
   venv_activate="${VLM_NAV_VENV_ACTIVATE:-/home/isee-pst/venv/co-nav-real/bin/activate}"
   if [[ ! -r "${venv_activate}" ]]; then
@@ -31,16 +44,22 @@ if [[ -z "${VIRTUAL_ENV:-}" ]]; then
   fi
   source "${venv_activate}"
 fi
-source "${script_dir}/go2_network_env.sh"
+until source "${script_dir}/go2_network_env.sh"; do
+  go2_status WAITING '等待Go2网卡和DDS环境；请修复原配置' MANUAL_REQUIRED
+  sleep 1
+done
 export ROS_LOG_DIR=/tmp/VLMNav-go_roslog
 mkdir -p "${ROS_LOG_DIR}"
 
-ping -I "${GO2_NET_IFACE:-enp4s0}" -c 1 -W 2 192.168.123.18 >/dev/null
-if [[ "$(ssh -o BatchMode=yes -o ConnectTimeout=5 unitree@192.168.123.18 \
-  'timedatectl show -p NTPSynchronized --value' 2>/dev/null)" != yes ]]; then
-  echo "ERROR: Go upper computer NTP is not synchronized." >&2
-  exit 1
-fi
+until ping -I "${GO2_NET_IFACE:-enp4s0}" -c 1 -W 2 192.168.123.18 >/dev/null; do
+  go2_status WAITING '等待Go2网络连接' WAIT_INPUT
+  sleep 1
+done
+while [[ "$(ssh -o BatchMode=yes -o ConnectTimeout=5 unitree@192.168.123.18 \
+  'timedatectl show -p NTPSynchronized --value' 2>/dev/null)" != yes ]]; do
+  go2_status WAITING '等待Go2时钟同步或SSH连接恢复' WAIT_INPUT
+  sleep 1
+done
 
 publisher_count() {
   timeout 5 ros2 topic info "$1" 2>/dev/null \
@@ -52,15 +71,15 @@ camera_param_is() {
     | grep -Fqx "$2"
 }
 
-if [[ "$(publisher_count /camera/camera/color/image_raw)" != 1 ||
+while [[ "$(publisher_count /camera/camera/color/image_raw)" != 1 ||
       "$(publisher_count /camera/camera/depth/image_rect_raw)" != 1 ]] ||
    ! camera_param_is depth_module.depth_profile 'String value is: 640x480x15' ||
    ! camera_param_is rgb_camera.color_profile 'String value is: 640x480x15' ||
    ! camera_param_is enable_sync 'Boolean value is: True' ||
-   ! camera_param_is align_depth.enable 'Boolean value is: False'; then
-  echo "ERROR: D435 is absent, duplicated, or has the wrong raw RGB-D parameters." >&2
-  exit 1
-fi
+   ! camera_param_is align_depth.enable 'Boolean value is: False'; do
+  go2_status WAITING '等待D435唯一发布者和原RGB-D参数恢复' WAIT_INPUT
+  sleep 1
+done
 echo "D435进程已启动，不重复启动；跳过相机 preflight。"
 
 units_report="${VLM_DEPTH_UNITS_REPORT:-${HOME}/.config/vlm_nav/raw_depth_units_verified.json}"
@@ -86,12 +105,6 @@ if ! command -v gnome-terminal >/dev/null 2>&1; then
   echo "ERROR: gnome-terminal is required for the VLMNav monitor." >&2
   exit 1
 fi
-
-speed_monitor="bash -lc 'until timeout 2 ros2 topic type /cmd_vel_bridge >/dev/null 2>&1; do sleep 1; done; exec ros2 topic echo /cmd_vel_bridge'"
-diagnostics_monitor="bash -lc 'until timeout 2 ros2 topic type /vlm_nav/diagnostics >/dev/null 2>&1; do sleep 1; done; exec ros2 topic echo /vlm_nav/diagnostics'"
-gnome-terminal \
-  --window --title="Go2 Velocity" --command="${speed_monitor}" \
-  --tab --title="VLM Diagnostics" --command="${diagnostics_monitor}"
 
 unset ALL_PROXY all_proxy
 export VLM_NAV_MODE=true

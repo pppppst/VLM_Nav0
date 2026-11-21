@@ -94,8 +94,9 @@ def test_runner_enables_initial_camera_only_for_live_go2_search(monkeypatch,tmp_
         args[5](dict(state='PATH_PLANNED',path=[]))
     monkeypatch.setattr(exploration,'explore_steps',explore)
     runner=AgentRunner.__new__(AgentRunner)
+    runner.execution_identity=None
     command=S(kind=kind,target_id='A',command_id='command',task_id='task',observation_id='cached')
-    runner.machine=S(command=command,context=S(robot_id=robot),frame=None,task_started=0.,
+    runner.machine=S(command=command,context=S(robot_id=robot,wait_recovery=False),frame=None,task_started=0.,
         success_radius=1.,local_c_observations={},single_robot_mode=robot=='go2' and not simulation)
     runner.config={'scene':{'task_timeout':600.},'robot_'+robot:{'experiment_records_root':str(tmp_path)}}
     runner.adapter=S(simulation=simulation)

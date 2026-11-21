@@ -1,0 +1,26 @@
+[Unit]
+Description=Initialize Go2 Piper CAN and enable joints once at boot
+After=local-fs.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=unitree
+Group=unitree
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/unitree/piper-venv/bin/python -I -u /opt/piper-boot/go2_piper_boot.py --config /opt/piper-boot/piper.json
+TimeoutStartSec=infinity
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=3
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

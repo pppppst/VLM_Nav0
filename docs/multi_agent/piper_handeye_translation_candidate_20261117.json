@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "status": "MANUAL_ALIGNMENT_TRANSLATION_CANDIDATE_NOT_APPLIED",
+  "applied": false,
+  "coordinate_frame": "Piper base_link",
+  "units": "metres; angles degrees when named",
+  "human_observation": "当前位置闭爪可以抓住。据此尝试记录修正外参的偏移量，先不应用",
+  "grasp_lift_verification_performed": false,
+  "method": "Fix R_base_color_optical; delta_t = (t_base_flange + R_base_flange * tcp_offset_flange) - (R_base_color_optical * point_color + t_base_color_optical). Add delta_t in the base frame.",
+  "delta_translation_base_m": [
+    0.07781649147343683,
+    0.005641926626183642,
+    0.03332429949294673
+  ],
+  "delta_translation_base_mm": [
+    77.81649147343683,
+    5.641926626183642,
+    33.32429949294673
+  ],
+  "rotation_changed": false,
+  "baseline_T_base_color_optical": [
+    [
+      -0.03437957062765812,
+      -0.09110824596927092,
+      0.9952473725862647,
+      0.35848696711616207
+    ],
+    [
+      -0.9988557049355746,
+      0.03625996887398386,
+      -0.031184858103177893,
+      0.038146424141330196
+    ],
+    [
+      -0.03324644102931029,
+      -0.9951806379616039,
+      -0.0922505934139366,
+      -0.05656711561965355
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "candidate_T_base_color_optical": [
+    [
+      -0.03437957062765812,
+      -0.09110824596927092,
+      0.9952473725862647,
+      0.4363034585895989
+    ],
+    [
+      -0.9988557049355746,
+      0.03625996887398386,
+      -0.031184858103177893,
+      0.043788350767513834
+    ],
+    [
+      -0.03324644102931029,
+      -0.9951806379616039,
+      -0.0922505934139366,
+      -0.023242816126706825
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "baseline_camera_translation_mm": [
+    358.4869671161621,
+    38.14642414133019,
+    -56.56711561965355
+  ],
+  "candidate_camera_translation_mm": [
+    436.3034585895989,
+    43.78835076751383,
+    -23.242816126706824
+  ],
+  "T_base_flange_from_joint_fk": [
+    [
+      -0.6425057383977893,
+      -0.0546413627046229,
+      0.7643302281132766,
+      0.5817857388225406
+    ],
+    [
+      -0.0354535592866249,
+      0.9985059713203925,
+      0.04157968700494289,
+      0.009457109902521358
+    ],
+    [
+      -0.7654602675905662,
+      -0.0003830395555137339,
+      -0.6434830471899611,
+      0.08943313311224371
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "tcp_offset_flange_m": [
+    0.0,
+    0.0,
+    0.135
+  ],
+  "tcp_base_m": [
+    0.684970319617833,
+    0.01507036764818865,
+    0.0025629217415989586
+  ],
+  "point_color_m": [
+    0.019278112419246676,
+    -0.04937828538784671,
+    0.24600001168437302
+  ],
+  "point_base_before_correction_m": [
+    0.6071538281443961,
+    0.009428441022005008,
+    -0.03076137775134777
+  ],
+  "measured_joints_deg": [
+    0.634,
+    153.348,
+    -127.879,
+    5.642,
+    19.694,
+    -6.939
+  ],
+  "measured_sdk_xyz_mm": [
+    581.839,
+    9.459,
+    89.539
+  ],
+  "measured_sdk_rpy_deg": [
+    -179.966,
+    49.951,
+    -176.841
+  ],
+  "gripper_width_mm": 47.6,
+  "joint_change_during_capture_deg": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "frame_times_unix": [
+    1794918080.5431685,
+    1794918080.609316,
+    1794918080.6759725
+  ],
+  "per_frame_translation_candidate_mm": [
+    [
+      77.81649147343683,
+      5.641926626183642,
+      33.32429949294673
+    ],
+    [
+      77.81649147343683,
+      5.641926626183642,
+      33.32429949294673
+    ],
+    [
+      77.81649147343683,
+      5.641926626183642,
+      33.32429949294673
+    ]
+  ],
+  "per_axis_sample_span_mm": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "fk_sdk_position_difference_mm": [
+    -0.05326117745948977,
+    -0.0018900974786415503,
+    -0.10586688775629227
+  ],
+  "limitations": [
+    "One manually aligned position, not a hand-eye calibration fit or independent accuracy validation.",
+    "Legacy 135mm TCP offset is not physically calibrated; residual includes TCP, object/keypoint/contact geometry, kinematics and camera errors.",
+    "Single correspondence cannot determine rotation; the existing rotation is preserved as an assumption.",
+    "Three-frame spread measures only local observation consistency, not calibration accuracy.",
+    "User identified this position as suitable for closing; successful grasp and lift have not been verified."
+  ],
+  "sources": [
+    {
+      "path": "build/piper-camera-avoid-20261117/evidence/camera-avoid-red-aligned-record-20261117-01/before.json",
+      "sha256": "60f4517e3db2c4ee5b082492217a1709332c4cfdebcff2387590c983520a5fcf"
+    },
+    {
+      "path": "build/piper-camera-avoid-20261117/evidence/camera-avoid-red-aligned-record-20261117-01/after.json",
+      "sha256": "ac611761209ebe22fa2411b5521a9c372ae71126067acd2c1db6680f953e5cb1"
+    },
+    {
+      "path": "build/piper-camera-avoid-20261117/evidence/camera-avoid-red-aligned-record-20261117-01/capture/observation.json",
+      "sha256": "953bb303975f9b678c9ae3115188e653a0d13871b9fdd30041571b805e43e484"
+    },
+    {
+      "path": "build/piper-camera-avoid-20261117/evidence/camera-avoid-red-aligned-record-20261117-01/capture/metadata.json",
+      "sha256": "7cbed08d410886d1bf3c2a986ec0d8b7290323830c7abca51aeefdbac55f26c6"
+    },
+    {
+      "path": "build/piper-camera-avoid-20261117/evidence/camera-avoid-red-aligned-record-20261117-01/capture/frame00-color.png",
+      "sha256": "bd6243529f8fcd87ebd08f2b8c4a654e99f2a3cb7256ec415537cfa4d84500c4"
+    },
+    {
+      "path": "config/piper_vision_grasp/extrinsics.json",
+      "sha256": "10f4208f58454784d5e01113bd7797da3c8206731b6e7c37d189ad333d90b359"
+    },
+    {
+      "path": "config/piper_vision_grasp/kinematics.json",
+      "sha256": "170190929d2d203b720288da354e290904d44b09fe1528c11e73a6d3b13114c9"
+    }
+  ]
+}

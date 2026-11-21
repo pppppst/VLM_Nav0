@@ -6,6 +6,14 @@ project_dir="$(cd "${script_dir}/.." && pwd)"
 report="${GO2_PREFLIGHT_REPORT:-/tmp/go2_costmap_preflight.json}"
 runtime_dir="$(mktemp -d /tmp/go2_preflight.XXXXXX)"
 children=()
+if [[ -f "${script_dir}/go2_experiment_status.sh" ]]; then
+  source "${script_dir}/go2_experiment_status.sh"
+  go2_status_init "${project_dir}" "${runtime_dir}"
+else
+  go2_status() { :; }
+fi
+echo "预检日志：${runtime_dir}/preflight.log"
+exec >"${runtime_dir}/preflight.log" 2>&1
 
 group_alive() {
   kill -0 -- "-$1" 2>/dev/null
@@ -38,8 +46,16 @@ trap cleanup EXIT
 
 unset PYTHONHOME PYTHONPATH
 source "${script_dir}/common.sh"
-source "${script_dir}/go2_network_env.sh"
-export PYTHONPATH="${project_dir}:${PYTHONPATH:-}"
+if declare -F go2_load_overlay >/dev/null; then go2_load_overlay; fi
+until source "${script_dir}/go2_network_env.sh"; do
+  go2_status WAITING '等待Go2网卡/DDS环境，请修复原配置' MANUAL_REQUIRED
+  sleep 1
+done
+
+if ! /usr/bin/python3 -c 'import sys; from pathlib import Path; from vlm_nav.go2_sensor_preflight import load_validated_config; load_validated_config(Path(sys.argv[1]))' "${project_dir}/config/go2_preflight_xt16.yaml"; then
+  go2_status FAILED '静态预检配置或标定无效；修复后重新启动' NON_RESUMABLE sensor "${runtime_dir}/preflight.log"
+  exit 1
+fi
 
 if [[ -r "${report}" ]] && /usr/bin/python3 -c '
 import json, sys, time
@@ -60,26 +76,24 @@ publisher_count() {
 
 wait_for_publisher() {
   local topic="$1" pid="$2" log="$3" attempt
-  for attempt in {1..30}; do
+  while true; do
     if (( $(publisher_count "$topic") == 1 )); then
       return
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
-      echo "ERROR: producer for ${topic} exited; log: ${log}" >&2
-      tail -20 "$log" >&2
-      exit 1
+      go2_status WAITING "${topic} 的组件退出，请在原终端人工恢复" MANUAL_REQUIRED "${topic}" "${log}"
+    else
+      go2_status WAITING "等待 ${topic} 唯一发布者" WAIT_INPUT "${topic}" "${log}"
     fi
     sleep 1
   done
-  echo "ERROR: timed out waiting for one publisher on ${topic}; log: ${log}" >&2
-  exit 1
 }
 
 for topic in /lidar_points /body_imu; do
-  if (( $(publisher_count "$topic") != 0 )); then
-    echo "ERROR: ${topic} already has a publisher; stop the existing staged/temporary process first." >&2
-    exit 1
-  fi
+  while (( $(publisher_count "$topic") != 0 )); do
+    go2_status WAITING "${topic} 已有发布者，请在原终端结束旧预检组件" MANUAL_REQUIRED
+    sleep 1
+  done
 done
 
 echo "Starting temporary XT16 driver and Go2 body-IMU adapter..."
@@ -96,10 +110,24 @@ wait_for_publisher /lidar_points "${children[0]}" "${runtime_dir}/hesai.log"
 wait_for_publisher /body_imu "${children[1]}" "${runtime_dir}/body_imu.log"
 
 echo "Both sensor topics are ready. Keep Go2 stationary for 30 seconds."
-/usr/bin/python3 "${script_dir}/go2_sensor_preflight" \
+attempt=0
+while true; do
+  attempt=$((attempt+1))
+  sample="${runtime_dir}/sample-${attempt}.json"
+  if /usr/bin/python3 "${script_dir}/go2_sensor_preflight" \
   --config="${project_dir}/config/go2_preflight_xt16.yaml" \
   --duration=30 \
-  --output="$report"
+  --output="$sample"; then
+    cp "$sample" "$report"
+    break
+  fi
+  if [[ ! -r "$sample" ]]; then
+    go2_status FAILED '预检未产生报告：程序或证据写入异常，无法可信续接' NON_RESUMABLE sensor "${runtime_dir}/preflight.log"
+    exit 1
+  fi
+  go2_status WAITING '传感器预检未通过，等待修复后重新采样；不重启驱动' WAIT_INPUT sensor "${runtime_dir}/preflight.log"
+  sleep 1
+done
 
 cleanup
 trap - EXIT

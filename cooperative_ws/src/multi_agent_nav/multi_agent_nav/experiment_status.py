@@ -15,8 +15,10 @@ HEALTH = {'nav_ready': '导航就绪', 'localization_valid': '定位有效',
           'rgbd_ready': 'RGB-D就绪', 'control_armed': '控制已解锁',
           'costmap_valid': '代价地图有效'}
 FIELDS = ('state', 'phase', 'reason', 'run_elapsed_s', 'pause_elapsed_s',
-          'paused_total_s', 'run_remaining_s', 'health', 'result', 'stop_confirmed')
-FINAL = ('FINISHED', 'FAILED', 'CANCELLED', 'STOP_UNCONFIRMED')
+          'paused_total_s', 'run_remaining_s', 'health', 'result', 'stop_confirmed',
+          'reason_class', 'automatic', 'required_action', 'component', 'log_path',
+          'evidence_complete', 'evidence_write_failed', 'display_failed')
+FINAL = ('FINISHED', 'FAILED', 'CANCELLED', 'STOP_UNCONFIRMED', 'INCOMPLETE')
 
 
 class ExperimentStatus:
@@ -52,6 +54,7 @@ class ExperimentStatus:
                     pass
 
     def launch(self):
+        if os.environ.get('GO2_EXPERIMENT_STATUS_WINDOW') == str(self.path):return True
         try:
             subprocess.Popen(['gnome-terminal', '--window', '--title=Go2 实验状态', '--',
                               sys.executable, str(Path(__file__).resolve()), '--watch', str(self.path)],
@@ -87,6 +90,10 @@ def format_status(snapshot, now):
     lines = ['Go2 实验状态（只读；关闭窗口不影响实验）',
              '状态：' + _text(state), '阶段：' + _text(snapshot.get('phase')),
              '等待原因：' + _text(snapshot.get('reason'))]
+    for key, label in (('reason_class','原因类别'), ('required_action','需要操作'),
+                       ('component','组件'), ('log_path','日志路径')):
+        if snapshot.get(key):lines.append(label+'：'+_text(snapshot[key]))
+    if 'automatic' in snapshot:lines.append('可自动恢复：'+_boolean(snapshot['automatic']))
     if stale:
         lines.append('状态已过期：计时冻结，等待执行器更新')
     for key, label in (('run_elapsed_s', '运行时间'), ('pause_elapsed_s', '本次暂停'),
@@ -103,6 +110,8 @@ def format_status(snapshot, now):
     lines.extend(label + '：' + _boolean(health.get(key)) for key, label in HEALTH.items())
     lines.extend(('最终结果：' + _text(snapshot.get('result')),
                   '停车确认：' + _boolean(snapshot.get('stop_confirmed'))))
+    if 'evidence_complete' in snapshot:lines.append('必要证据完整：'+_boolean(snapshot['evidence_complete']))
+    if snapshot.get('display_failed'):lines.append('展示异常：是（不改变物理任务结果）')
     return '\n'.join(lines)
 
 
@@ -125,5 +134,20 @@ def watch(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--watch', required=True, type=Path)
-    watch(parser.parse_args().watch)
+    group=parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--watch',type=Path)
+    group.add_argument('--write',type=Path)
+    parser.add_argument('--state',default='WAITING')
+    parser.add_argument('--reason',default='')
+    parser.add_argument('--reason-class',default='WAIT_INPUT')
+    parser.add_argument('--component',default='')
+    parser.add_argument('--log-path',default='')
+    args=parser.parse_args()
+    if args.watch:watch(args.watch)
+    else:
+        status=ExperimentStatus(args.write.parent)
+        status.path=args.write
+        try:status.snapshot=json.loads(args.write.read_text())
+        except (OSError,ValueError):pass
+        status.update(state=args.state,reason=args.reason,reason_class=args.reason_class,
+                      component=args.component,log_path=args.log_path,automatic=args.reason_class=='WAIT_INPUT')

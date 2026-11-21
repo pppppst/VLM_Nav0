@@ -15,6 +15,7 @@ class ExperimentRecovery:
         self.reason = ''
         self.recovering = False
         self.closed = False
+        self.hard_reason = ''
 
     def clock(self):
         return (self.paused_at if self.paused_at is not None else self.wall_clock()) - self.paused_total
@@ -28,7 +29,10 @@ class ExperimentRecovery:
     def gates(self, stationary=True):
         health = self.adapter.get_health()
         gates = []
-        if self.owners(): gates.append('other_goal_owner')
+        if getattr(health, 'hard_fault', ''):gates.append(health.hard_fault)
+        if self.check_owners():
+            gates.append('other_goal_owner')
+        if self.hard_reason:gates.append(self.hard_reason)
         if not health.localization_valid: gates.append('localization_valid')
         if not health.nav_ready:
             checks = getattr(self.adapter, 'last_health_details', {}).get('checks', {})
@@ -41,6 +45,14 @@ class ExperimentRecovery:
         error = motion_path_error(replace(health, path_valid=True), [health.pose])
         if error: gates.append(error)
         return list(dict.fromkeys(gates))
+
+    def check_owners(self):
+        owners = self.owners()
+        if owners and not self.hard_reason:
+            self.hard_reason = 'external goal owner takeover'
+            cancel = getattr(self.adapter, 'cancel_control_recovery', None)
+            if cancel:cancel()
+        return owners
 
     def pause(self, reason):
         if self.paused_at is None:
@@ -74,7 +86,9 @@ class ExperimentRecovery:
         try:
             while True:
                 yield
+                recover = getattr(self.adapter, 'recover_control', None)
                 failed = self.gates()
+                if recover and not self.hard_reason: recover(allow_resume=not self.owners())
                 if not getattr(getattr(self.adapter,'vision',None),'available',True):failed.append('vision_worker')
                 if probe is not None: failed.extend(probe())
                 if not failed:
@@ -84,4 +98,7 @@ class ExperimentRecovery:
                 self.pause(', '.join(dict.fromkeys(failed)))
         finally:
             # Closing this generator is cancellation, never permission to resume motion.
-            if self.recovering: self.closed = True
+            if self.recovering:
+                self.closed = True
+                cancel = getattr(self.adapter, 'cancel_control_recovery', None)
+                if cancel: cancel()

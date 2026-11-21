@@ -3,9 +3,9 @@ model: gpt-6-astra
 reasoning_effort: high
 max_turns: null
 max_tokens: null
-planner_timeout_s: 1200
+planner_timeout_s: null
 action_timeout_s: 600
 codex_cli:
   executable: /home/isee-pst/.local/bin/codex
-  expected_version: codex-cli 0.166.0
+  minimum_version: codex-cli 0.166.0
   cli_args: [--sandbox, read-only, --ask-for-approval, never, --skip-git-repo-check, --ignore-rules]

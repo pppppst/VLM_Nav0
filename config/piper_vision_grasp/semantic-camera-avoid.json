@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "camera_serial": "151222077264",
+  "usb_serial": "0046002F5246570520323934",
+  "extrinsics": "extrinsics.json",
+  "kinematics": "kinematics.json",
+  "detector": {
+    "version": "blue-face-v1",
+    "hsv_low": [
+      95,
+      160,
+      30
+    ],
+    "hsv_high": [
+      130,
+      255,
+      255
+    ],
+    "min_area_px": 120,
+    "min_fill": 0.85,
+    "min_depth_ratio": 0.8,
+    "width_m": [
+      0.032,
+      0.052
+    ],
+    "height_m": [
+      0.1,
+      0.13
+    ],
+    "max_plane_residual_m": 0.002,
+    "stability_m": 0.003,
+    "orientation_tolerance_deg": 5
+  },
+  "camera": {
+    "width": 640,
+    "height": 480,
+    "fps": 15,
+    "warmup_frames": 20,
+    "count": 3
+  },
+  "motion": {
+    "speed_percent": 30,
+    "joint_tolerance_deg": 0.3,
+    "sample_spacing_m": 0.01,
+    "local_limit_m": [
+      0.03,
+      0.03,
+      0.01
+    ],
+    "lift_m": 0.02,
+    "record_arm_outline": true,
+    "return_zero_after_grasp": true
+  },
+  "gripper": {
+    "open_mm": 70,
+    "open_ready_mm": 66,
+    "close_mm": 0,
+    "effort_nm": 0.5,
+    "open_effort_nm": 1.0,
+    "stable_seconds": 1.0,
+    "stable_range_mm": 0.5,
+    "contact_margin_mm": 2.0
+  },
+  "poll_seconds": 0.1,
+  "frame_max_age_s": 120.0,
+  "mode": "semantic",
+  "target": {
+    "color": "红色",
+    "description": "方块"
+  },
+  "semantic": {
+    "endpoint": "http://127.0.0.1:18765",
+    "port": 18765,
+    "timeout_s": 90.0,
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-vl-plus",
+    "sam_checkpoint": "~/unitree_ros2/piper/agent/sam/sam_vit_b_01ec64.pth",
+    "cpu_threads": 4,
+    "tcp_offset_m": [
+      0,
+      0,
+      0.135
+    ],
+    "grasp_offset_base_m": [
+      0,
+      0,
+      0
+    ],
+    "pregrasp_distance_m": 0.1,
+    "close_margin_mm": 4.0,
+    "approach_pitch_deg": 60.0,
+    "pregrasp_offset_base_m": [
+      0,
+      0,
+      0.1
+    ],
+    "entry_clearance_m": 0.1,
+    "angle_search": {
+      "pitch_deg": [
+        40,
+        30,
+        50,
+        20,
+        60,
+        10,
+        70,
+        0,
+        80,
+        90
+      ],
+      "yaw_offset_deg": [
+        0,
+        30,
+        -30,
+        60,
+        -60,
+        90,
+        -90,
+        120,
+        -120,
+        150,
+        -150,
+        180
+      ]
+    },
+    "ik_position_tolerance_m": 0.008
+  }
+}

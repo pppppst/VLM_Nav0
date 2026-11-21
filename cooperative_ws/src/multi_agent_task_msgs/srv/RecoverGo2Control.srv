@@ -1,0 +1,12 @@
+uint8 PREPARE=1
+uint8 RESUME=2
+uint8 CANCEL=3
+string instance_id
+uint64 expected_epoch
+uint8 phase
+---
+bool accepted
+string instance_id
+uint64 epoch
+string state
+string reason

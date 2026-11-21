@@ -15,6 +15,10 @@ import time
 import yaml
 
 
+class WaitingForInput(RuntimeError):
+    """A passive check can be repeated without replaying an operation."""
+
+
 def parse_report(output):
     for match in reversed(list(re.finditer(r'^\{', output, re.M))):
         try:
@@ -37,15 +41,15 @@ def require_inputs(report):
     if not transitions or transitions[-1].get('other_goal_owners') != []:
         failed.append('no_other_goal_owner')
     if failed:
-        raise RuntimeError('现场输入检查未通过：' + ', '.join(failed))
+        raise WaitingForInput('现场输入检查未通过：' + ', '.join(failed))
     if report.get('health_details', {}).get('checks', {}).get('keepout_applied') is False:
-        raise RuntimeError('现场输入检查未通过：keepout_applied')
+        raise WaitingForInput('现场输入检查未通过：keepout_applied')
 
 
 def parse_state(output):
     match = re.search(r"^['\"]?(DISARMED|ARMED|FAULT)(?=['\":\s]|$)", output, re.M)
     if not match:
-        raise RuntimeError('无法读取 Sport 状态，不继续 ARM')
+        raise WaitingForInput('无法读取 Sport 状态，不继续 ARM')
     return match[1]
 
 
@@ -98,10 +102,37 @@ class Launcher:
         self.config = (Path(os.environ['COOP_CONFIG']) if cooperative_hardware
                        else Path(os.environ.get('GO2_EXPLORE_CONFIG', repo / 'cooperative_ws/src/multi_agent_nav/config')))
         self.setup = Path(os.environ.get('COOP_SETUP_FILE') or repo /
-            'build/go2-recoverable-pause-20261029/overlay/install/local_setup.bash')
+            'build/go2-codex-compat-20261111/overlay/install/local_setup.bash')
         self.prepare_only = prepare_only or cooperative_hardware
         self.target = target
         self.logs = None
+        self.status = None
+
+    def open_status(self):
+        try:
+            from multi_agent_nav.experiment_status import ExperimentStatus
+        except ImportError:
+            return False
+        self.status = ExperimentStatus(self.logs)
+        if os.getenv('GO2_EXPERIMENT_STATUS_FILE'):
+            self.status.path=Path(os.environ['GO2_EXPERIMENT_STATUS_FILE'])
+        self.status.update(state='WAITING',phase='PREPARING',reason='等待启动检查',log_path=str(self.logs))
+        self.status.launch()
+        os.environ['GO2_EXPERIMENT_STATUS_FILE']=str(self.status.path)
+        os.environ['GO2_EXPERIMENT_STATUS_WINDOW']=str(self.status.path)
+
+    def wait_for(self, probe):
+        while True:
+            try:
+                result = probe()
+            except (WaitingForInput, subprocess.TimeoutExpired) as error:
+                if self.status:
+                    self.status.update(state='WAITING',phase='PREPARING',reason=str(error),
+                                       reason_class='WAIT_INPUT',automatic=True)
+                time.sleep(1.)
+            else:
+                if self.status:self.status.update(state='RUNNING',reason='')
+                return result
 
     def command(self, args, timeout=20, check=True):
         process = subprocess.Popen([str(x) for x in args], stdout=subprocess.PIPE,
@@ -129,7 +160,8 @@ class Launcher:
             raise
         result = subprocess.CompletedProcess(args, process.returncode, output)
         if check and result.returncode:
-            print(result.stdout, flush=True)
+            if self.logs:
+                with (self.logs/'commands.log').open('a') as stream:stream.write(result.stdout)
             raise RuntimeError('命令失败：' + ' '.join(str(x) for x in args[:5]))
         return result
 
@@ -137,6 +169,9 @@ class Launcher:
         return self.command(['ros2', *args], **kwargs)
 
     def confirm(self, word, message):
+        try:subprocess.Popen(['paplay','/usr/share/sounds/freedesktop/stereo/dialog-warning.oga'],
+                             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except OSError:pass
         if input(f'{message}\n输入 {word} 继续，其他输入退出：').strip() != word:
             raise RuntimeError('用户取消，停止后续步骤')
 
@@ -168,7 +203,7 @@ class Launcher:
         topics = ['/camera/camera/color/image_raw', '/camera/camera/depth/image_rect_raw']
         counts = [self.publishers(t) for t in topics]
         if any(n > 1 for n in counts):
-            raise RuntimeError(f'相机发布者异常 {counts}；不叠加驱动，请在原终端排障')
+            raise WaitingForInput(f'相机发布者异常 {counts}；不叠加驱动，请在原终端排障')
         if counts == [1, 1]:
             print('复用已有唯一相机发布者；相机输入由观察位置停稳等待。', flush=True)
             return
@@ -187,7 +222,7 @@ class Launcher:
                   '/multi_agent_go2_check_motion', '/multi_agent_go2_check_readonly'}
         active = owners.intersection(self.nodes())
         if active:
-            raise RuntimeError('先结束已有上层任务/观察器：' + ', '.join(sorted(active)))
+            raise WaitingForInput('先结束已有上层任务/观察器：' + ', '.join(sorted(active)))
 
     def check(self, *args):
         return ['ros2', 'run', 'multi_agent_nav', 'multi_agent_go2_check',
@@ -195,10 +230,27 @@ class Launcher:
 
     def inspect(self):
         result = self.command(self.check('--action', 'inspect', '--require-ready', '--timeout', '10'),
-                              timeout=45)
+                              timeout=45, check=False)
         (self.logs / 'inspect.log').write_text(result.stdout)
-        print(result.stdout, flush=True)
+        if result.returncode:raise WaitingForInput('输入尚未就绪；日志：'+str(self.logs/'inspect.log'))
         require_inputs(parse_report(result.stdout))
+
+    def require_base_inputs(self):
+        counts = [self.publishers(t) for t in ['/lidar_points', '/body_imu', '/odometry']]
+        if counts != [1, 1, 1]:
+            raise WaitingForInput(f'底层不完整或发布者重复 {counts}；请在原终端修复')
+
+    def require_lowstate(self):
+        if self.publishers('/lowstate') != 1:
+            raise WaitingForInput('/lowstate 必须有唯一真实发布者')
+
+    def wait_nav_ready(self):
+        def probe():
+            result = self.ros('topic', 'echo', '/vlm_nav/nav_ready', 'std_msgs/msg/Bool', '--once',
+                '--filter', 'm.data', '--no-daemon', '--qos-reliability', 'reliable',
+                '--qos-durability', 'transient_local', timeout=10, check=False)
+            if result.returncode:raise WaitingForInput('等待 NAV_READY，检查原组件终端日志')
+        self.wait_for(probe)
 
     def state(self):
         return parse_state(self.ros('topic', 'echo', '/vlm_nav/go2_bridge_state',
@@ -208,11 +260,11 @@ class Launcher:
     def service(self, action):
         result = self.ros('service', 'call', f'/twist_to_go2_sport_bridge/{action}',
                           'std_srvs/srv/Trigger', '{}', timeout=10)
-        print(result.stdout, flush=True)
+        if self.logs:(self.logs/(action+'.log')).write_text(result.stdout)
         require_service_success(result.stdout)
 
     def start(self):
-        self.check_owners()
+        self.wait_for(self.check_owners)
         self.command(['/home/isee-pst/venv/co-nav-real/bin/python', self.repo/'scripts/start_go2_vlm.py',
                       '--check-install', '--expected-setup', self.setup, '--config-dir', self.config])
         for package in ('vlm_nav', 'multi_agent_nav'):
@@ -228,13 +280,14 @@ class Launcher:
             if keepout_mask:
                 from vlm_nav.go2_keepout import KeepoutMask
                 KeepoutMask(keepout_mask)
-        self.camera()
+        self.wait_for(self.camera)
         counts = [self.publishers(t) for t in ['/lidar_points', '/body_imu', '/odometry']]
+        if counts == [0, 0, 0] and any(n in self.nodes() for n in
+                ['/amcl', '/map_server', '/controller_server', '/lio_mapping']):
+            self.wait_for(self.require_base_inputs)
+            counts = [1, 1, 1]
         if counts == [0, 0, 0]:
-            if any(n in self.nodes() for n in ['/amcl', '/map_server', '/controller_server', '/lio_mapping']):
-                raise RuntimeError('已有不完整底层；请在原终端排障，不重复启动')
-            if self.publishers('/lowstate') != 1:
-                raise RuntimeError('/lowstate 必须有唯一真实发布者')
+            self.wait_for(self.require_lowstate)
             print('开始传感器预检；机器人须保持静止，急停人员在场。', flush=True)
             report = self.logs / 'preflight.json'
             if self.cooperative_hardware:
@@ -252,7 +305,7 @@ class Launcher:
                 f'costmap_overrides_file:={self.config}/nav2_go2_cooperative_costmap.yaml',
                 *([f'keepout_mask:={keepout_mask}'] if keepout_mask else [])])
         elif counts != [1, 1, 1]:
-            raise RuntimeError(f'底层不完整或发布者重复 {counts}；请在原终端排障')
+            self.wait_for(self.require_base_inputs)
         else:
             print('复用已有底层；后续检查地图、定位和 Nav2。', flush=True)
         if '/rviz2' not in self.nodes():
@@ -271,13 +324,11 @@ class Launcher:
             self.window('Sport', ['ros2', 'run', 'vlm_nav', 'twist_to_go2_sport_bridge',
                 '--ros-args', '--params-file', self.repo / 'config/go2_bridge.yaml', '-p', 'dry_run:=false'])
             time.sleep(2)
-        state = self.state()
+        state = self.wait_for(self.state)
         print('Sport 状态：' + state, flush=True)
         if self.cooperative_hardware and state != 'DISARMED':
             raise RuntimeError('协同硬件准备要求 Sport 为 DISARMED；请从原终端核对状态')
-        self.ros('topic', 'echo', '/vlm_nav/nav_ready', 'std_msgs/msg/Bool', '--once',
-                 '--filter', 'm.data', '--no-daemon', '--qos-reliability', 'reliable',
-                 '--qos-durability', 'transient_local', timeout=240)
+        self.wait_nav_ready()
         # System starts Nav2/supervisor only after AMCL is initialized.
         if keepout_mask:
             actual = self.ros('param', 'get', '/go2_nav_supervisor', 'keepout_mask', timeout=10).stdout.strip()
@@ -292,7 +343,7 @@ class Launcher:
             match = re.search(r'Double value is:\s*(\S+)', text)
             if not match or float(match[1]) != expected:
                 raise RuntimeError(f'{node} {key} 应为 {expected}，实际：{text.strip()}')
-        self.inspect()
+        self.wait_for(self.inspect)
 
     def agent_preflight(self):
         if str(self.repo) not in sys.path:
@@ -320,7 +371,7 @@ class Launcher:
                 stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT, text=True,
                 env=framework_environment(os.environ), start_new_session=True, shell=False)
             try:
-                process.communicate(input=json.dumps(spec), timeout=1270)
+                process.communicate(input=json.dumps(spec))
             except BaseException:
                 previous = {sig: signal.signal(sig, signal.SIG_IGN)
                             for sig in (signal.SIGINT, signal.SIGTERM)}
@@ -356,11 +407,11 @@ class Launcher:
             raise RuntimeError('缺少 API key / endpoint / model 环境变量；不打印或写入密钥')
         if self.agent_framework:
             self.agent_preflight()
-        self.confirm('ARM', f'将执行一次最长300秒的探索并接近“{self.target}”。\n'
+        self.confirm('ARM', f'将执行一次有效运行预算300秒的探索并接近“{self.target}”（恢复等待不计时）。\n'
                      '确认已有运动授权、机器人停稳、急停人员在场、其他目标 owner 已退出，遥控静默至少2秒。')
-        self.check_owners()
-        self.inspect()
-        state = self.state()
+        self.wait_for(self.check_owners)
+        self.wait_for(self.inspect)
+        state = self.wait_for(self.state)
         if state == 'FAULT':
             self.confirm('RESET', '先消除故障并确认静止；确认允许 reset_fault。')
             self.service('reset_fault')
@@ -391,7 +442,6 @@ class Launcher:
                     for line in process.stdout:
                         stream.write(line)
                         stream.flush()
-                        print(line, end='', flush=True)
                     process.wait()
                 except KeyboardInterrupt:
                     # Forward one interrupt so repeated Ctrl+C cannot interrupt the child's stop handler.
@@ -405,7 +455,6 @@ class Launcher:
                     finally:
                         signal.signal(signal.SIGINT, previous)
                     stream.write(tail)
-                    print(tail, end='', flush=True)
             report = parse_report(log.read_text())
             returncode = process.returncode
         if report.get('stop_confirmed') is not True:
@@ -470,6 +519,7 @@ def main():
         app.logs = Path(tempfile.mkdtemp(prefix=prefix, dir=root))
         print(f'本次检查日志：{app.logs}', flush=True)
         try:
+            app.open_status()
             if app.agent_framework and not app.prepare_only:
                 app.agent_preflight()
             app.start()
@@ -479,6 +529,9 @@ def main():
                 print('HARDWARE_READY：输入检查通过，Sport=DISARMED；按双机文档第5节当前live gates选择后续入口。', flush=True)
             return 0
         except (RuntimeError, OSError, ValueError, subprocess.SubprocessError, EOFError, KeyboardInterrupt) as error:
+            if app.status:
+                app.status.update(state='FAILED',reason=str(error) or '用户中断',
+                    reason_class='NON_RESUMABLE',automatic=False,log_path=str(app.logs))
             print(f'停止：{error or "用户中断"}。不自动重试、重启或清理运动锁。', file=sys.stderr)
             print('若已经 ARM/运动而未确认 DISARM，请先确认停车，必要时现场急停，再按原指引处理。', file=sys.stderr)
             return 1

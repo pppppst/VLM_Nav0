@@ -144,7 +144,8 @@ def test_standalone_deadline_and_owner_guard_at_plan_callback(local_stack):
 @pytest.mark.parametrize('status,located,expected', [
     ('NOT_DETECTED',False,'EXHAUSTED'),('UNCERTAIN',False,'EXHAUSTED'),
     ('DETECTED',False,'EXHAUSTED'),('API_ERROR',False,None),
-    ('missing',False,None),('exception',False,None)])
+    ('missing',False,None),('exception',False,None),
+    ('exception_unknown',False,'HARD'),('exception_program',False,'HARD')])
 def test_standalone_initial_observation_keeps_cooperative_branches(status,located,expected):
     from multi_agent_nav.go2_check import standalone_explore_steps
     from multi_agent_nav.go2_exploration import ExplorationStopped
@@ -154,8 +155,10 @@ def test_standalone_initial_observation_keeps_cooperative_branches(status,locate
     a.client=object()
     def scan(descriptions,scan_id,**kwargs):
         scans.append(kwargs.get('current_view_only',False))
-        if status=='exception' and len(scans)==1:
-            f=Future();f.set_exception(RuntimeError('inference failed'));return f
+        if status.startswith('exception') and len(scans)==1:
+            error = (TypeError('program bug') if status=='exception_program' else
+                RuntimeError('inference failed' if status=='exception_unknown' else 'scan inference failed'))
+            f=Future();f.set_exception(error);return f
         if status=='missing' and len(scans)==1:return completed([])
         return completed([Observation(target_id=t,view_index=0,status=status if t=='A' and len(scans)==1 else 'NOT_DETECTED',
             position_valid=located) for t in descriptions])
@@ -170,6 +173,10 @@ def test_standalone_initial_observation_keeps_cooperative_branches(status,locate
             except StopIteration as r:return r.value
             now[0]+=.05;a.advance(now[0])
         pytest.fail('standalone stalled')
+    if expected=='HARD':
+        with pytest.raises(ExplorationStopped):run()
+        assert scans == [True] and not a.calls
+        return
     if expected is None:
         assert run()=='EXHAUSTED'
         assert any(e.get('state')=='WAITING' for e in events)

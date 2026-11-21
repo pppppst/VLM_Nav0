@@ -11,6 +11,8 @@ class AgentMachine:
             raise ValueError('path_start_timeout must be finite and positive')
         if not isinstance(context.share_c_coordinates, bool):
             raise ValueError('share_c_coordinates must be boolean')
+        if not isinstance(context.wait_recovery, bool):
+            raise ValueError('wait_recovery must be boolean')
         self.context, self.frame, self.lost_timeout = context, frame, lost_timeout
         self.path_start_timeout = path_start_timeout
         self.retired_tasks = set()
@@ -25,6 +27,8 @@ class AgentMachine:
         self.goal_kind = ''
         self.sync_received = None
         self.task_started = None
+        self._task_clock = TaskClock()
+        self._now = 0.0
         self.phase = 'IDLE'
         self.peer_received = None
         self.peer_task_received = None
@@ -38,6 +42,7 @@ class AgentMachine:
         self.last_sequence = 0
         self.paused = False
         self.recovery_state = None
+        self.recovery_blocked = False
         self.pause_sync_received = None
         self.awaiting_peer_resume = False
         self.task_completed = False
@@ -63,11 +68,18 @@ class AgentMachine:
         return replace(self._state) if self.context.share_c_coordinates else replace(
             self._state, common_pose=Pose2D(), pose_valid=False)
 
+    def task_clock(self, now):
+        waiting = self.paused or self.awaiting_peer_resume or bool(
+            self.context.task_id and not self.committed and not self.executing)
+        active = self._task_clock.sample(now, waiting)
+        return active if self.context.wait_recovery and not self.context.share_c_coordinates else now
+
     def take_effects(self):
         effects, self.effects = self.effects, []
         return effects
 
     def receive_peer(self, state, now):
+        self._now = now
         if state.robot_id not in ROBOTS or state.robot_id == self.context.robot_id or (
             state.schema_version != SCHEMA_VERSION or state.simulation != self.context.simulation):
             self._reject_peer('peer schema/robot/mode mismatch')
@@ -95,10 +107,13 @@ class AgentMachine:
             self.peer_task_received = now
         if self.committed or self.executing:
             if state.task_id != self.context.task_id:self.stop('peer restarted: task identity lost')
-            elif not state.localization_valid:
+            elif not state.localization_valid and not self.context.wait_recovery:
                 self.stop('peer localization invalid')
             elif state.run_state in ('STOPPING', 'PAUSED') and not is_recoverable_pause(state.reason):
                 self.stop('peer paused: '+state.reason)
+            elif not state.localization_valid:
+                self.stop('peer localization temporarily unavailable' if self.context.wait_recovery
+                    else 'peer localization invalid', recoverable=self.context.wait_recovery)
             elif not state.nav_ready:
                 self.stop('peer navigation not ready', recoverable=True)
             elif state.run_state in ('STOPPING', 'PAUSED'):
@@ -106,6 +121,7 @@ class AgentMachine:
                     self.stop('peer paused for recovery', recoverable=True)
             else:
                 self.awaiting_peer_resume = False
+        self.task_clock(now)
 
     def _reject_peer(self, reason):
         self.peer_problem = reason
@@ -162,6 +178,7 @@ class AgentMachine:
             self.effects.append(Effect('PLAN', self.selected_goal))
 
     def accept(self, command, now):
+        self._now = now
         # SYNC alone establishes a task; EXECUTE can never silently replace it.
         sync = command.action in ('SYNC', 'SYNC_LOCAL_C')
         if sync and command.task_id != self.context.task_id:
@@ -199,9 +216,11 @@ class AgentMachine:
             self.peer_problem = ''
             self.committed = self.executing = self.task_synced = False
             self.task_started = now
+            self._task_clock.reset(now, waiting=True)
             self.last_sequence = 0
             self.paused = False
             self.recovery_state = None
+            self.recovery_blocked = False
             self.awaiting_peer_resume = False
             self.task_completed = False
         reply = validate_command(command, self.context)
@@ -242,6 +261,7 @@ class AgentMachine:
             self.phase = command.phase
             if not self.context.share_c_coordinates:
                 self._prepare_state(now)
+            self.task_clock(now)
             return reply
         if command.action in ('PAUSE', 'CANCEL'):
             if command.action == 'CANCEL' and (not self.command or command.cancel_command_id != self.command.command_id):
@@ -392,7 +412,9 @@ class AgentMachine:
                 and distance<=self.success_radius)
         self.local_motion=None
         if not success:
-            self.fail(outcome or 'local target acceptance failed')
+            if self.context.wait_recovery and outcome == 'WAITING_VIEWPOINTS':
+                self.stop('local execution temporarily unavailable', recoverable=True)
+            else:self.fail(outcome or 'local target acceptance failed')
             return
         if self.command.kind=='APPROACH_PICKUP':state.ready=True
         elif self.command.kind=='APPROACH_DEPOSIT':state.deposited=True
@@ -434,9 +456,10 @@ class AgentMachine:
         self.effects.append(Effect('STOP', (self._state.goal_id, reason)))
         self._state.goal_id = ''
         self._state.run_state, self._state.reply, self._state.reason = 'STOPPING', 'CANCELED', reason
+        self.task_clock(self._now)
 
     def _resume(self, now):
-        if self.recovery_state is None or self._state.run_state != 'PAUSED':return
+        if self.recovery_state is None or self._state.run_state != 'PAUSED' or self.recovery_blocked:return
         peer = self.peer_state
         if (self.phase not in ('SEARCH_AB', 'SEARCH_C', 'DEPOSIT') or
                 self.sync_received is None or self.sync_received == self.pause_sync_received or
@@ -456,11 +479,13 @@ class AgentMachine:
         self.local_target = None
         self.local_approach_succeeded = False
         self._state.run_state, self._state.reply, self._state.reason = saved.run_state, saved.reply, saved.reason
+        self.task_clock(now)
         if self.command and saved.reply not in ('SUCCEEDED', 'FAILED', 'CANCELED'):
             self._state.run_state, self._state.reply, self._state.reason = 'PLANNING', 'ACCEPTED', ''
             self._plan()
 
     def check_health(self, now, health):
+        self._now = now
         self.health = health
         self._state.pose_valid = self._state.localization_valid = health.localization_valid and health.pose.valid
         self._state.nav_ready, self._state.stopped = health.nav_ready, health.stopped
@@ -485,11 +510,14 @@ class AgentMachine:
         # The first peer state gets one fixed handshake window; later loss gets no new grace.
         peer_since = self.peer_received if self.peer_received is not None else self.task_started
         if not self.context.share_c_coordinates:
-            if self.context.task_id and self.task_started is not None and now-self.task_started > self.task_timeout:
+            if self.context.task_id and self.task_started is not None and self.task_clock(now)-self.task_started > self.task_timeout:
                 self.stop('task timeout')
             if self.committed or self.executing:
-                if not self._state.localization_valid:
-                    self.stop('local localization invalid')
+                if health.hard_fault:
+                    self.stop(health.hard_fault)
+                elif not self._state.localization_valid:
+                    self.stop('local localization temporarily unavailable' if self.context.wait_recovery
+                        else 'local localization invalid', recoverable=self.context.wait_recovery)
                 elif self.sync_received is None or now-self.sync_received > self.lost_timeout:
                     self.stop('coordinator SYNC heartbeat lost', recoverable=True)
                 elif self.peer_task_received is None or now-self.peer_task_received > self.lost_timeout:

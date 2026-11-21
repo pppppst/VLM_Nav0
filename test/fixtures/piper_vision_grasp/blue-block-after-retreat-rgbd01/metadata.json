@@ -1,0 +1,3382 @@
+{
+  "serial": "151222077264",
+  "depth_scale": 0.0010000000474974513,
+  "color_intrinsics": {
+    "width": 640,
+    "height": 480,
+    "fx": 605.8641967773438,
+    "fy": 605.519287109375,
+    "ppx": 326.5206604003906,
+    "ppy": 243.54269409179688,
+    "coeffs": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "model": "distortion.inverse_brown_conrady"
+  },
+  "depth_intrinsics": {
+    "width": 640,
+    "height": 480,
+    "fx": 387.74053955078125,
+    "fy": 387.74053955078125,
+    "ppx": 322.80914306640625,
+    "ppy": 236.79180908203125,
+    "coeffs": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "model": "distortion.brown_conrady"
+  },
+  "depth_to_color": {
+    "rotation": [
+      0.9995088577270508,
+      -0.030899910256266594,
+      -0.005224581807851791,
+      0.030894717201590538,
+      0.9995220899581909,
+      -0.001071954844519496,
+      0.005255207885056734,
+      0.0009100164170376956,
+      0.9999857544898987
+    ],
+    "translation": [
+      0.014840178191661835,
+      -0.00043178239138796926,
+      0.0003077723376918584
+    ]
+  },
+  "frames": [
+    {
+      "stem": "frame00",
+      "host_unix": 1794631988.0715744,
+      "color_frame": 24,
+      "depth_frame": 29,
+      "color_timestamp_ms": 1794631988033.4048,
+      "depth_timestamp_ms": 1794631988052.542,
+      "aligned_intrinsics": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady"
+      }
+    },
+    {
+      "stem": "frame01",
+      "host_unix": 1794631988.6281495,
+      "color_frame": 32,
+      "depth_frame": 37,
+      "color_timestamp_ms": 1794631988551.383,
+      "depth_timestamp_ms": 1794631988569.324,
+      "aligned_intrinsics": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady"
+      }
+    },
+    {
+      "stem": "frame02",
+      "host_unix": 1794631989.1508071,
+      "color_frame": 40,
+      "depth_frame": 45,
+      "color_timestamp_ms": 1794631989078.6553,
+      "depth_timestamp_ms": 1794631989093.1667,
+      "aligned_intrinsics": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady"
+      }
+    }
+  ],
+  "paired_robot": [
+    {
+      "T_base_end": [
+        [
+          -0.6894554549252868,
+          0.008076834280208958,
+          0.7242830526954057,
+          0.461028
+        ],
+        [
+          0.027052623144462516,
+          0.9995273048259637,
+          0.014605563609415706,
+          0.07712999999999999
+        ],
+        [
+          -0.723822720874918,
+          0.029663641977259618,
+          -0.6893480522130134,
+          0.178689
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "robot_snapshot": {
+        "joints_deg": [
+          10.859,
+          119.963,
+          -84.804,
+          -27.23,
+          15.477,
+          35.448
+        ],
+        "sdk_pose_mm_xyz": [
+          461.028,
+          77.13,
+          178.689
+        ],
+        "sdk_pose_euler_deg_xyz": [
+          177.536,
+          46.371,
+          177.753
+        ],
+        "gripper_width_mm": 68.4,
+        "gripper_torque_nm": 0.44,
+        "gripper_enabled": true,
+        "missing_feedback": [],
+        "ctrl_mode": 1,
+        "arm_status": 0,
+        "err_code": 0,
+        "motion_status": 0,
+        "joints_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "teach_status": 0,
+        "time": 1794631988.0938797,
+        "received_monotonic": 7809.283618208,
+        "can_timestamp_range_unix": [
+          1794631988.073676,
+          1794631988.0938041
+        ]
+      },
+      "robot_window": [
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.435,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.442601,
+          "received_monotonic": 7808.632339488,
+          "can_timestamp_range_unix": [
+            1794631987.4188137,
+            1794631987.4423914
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.428,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.4926217,
+          "received_monotonic": 7808.682360032,
+          "can_timestamp_range_unix": [
+            1794631987.4688056,
+            1794631987.492475
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.422,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.5427828,
+          "received_monotonic": 7808.732521376,
+          "can_timestamp_range_unix": [
+            1794631987.518804,
+            1794631987.542506
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.592918,
+          "received_monotonic": 7808.782656544,
+          "can_timestamp_range_unix": [
+            1794631987.5688128,
+            1794631987.5926125
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.421,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.6429412,
+          "received_monotonic": 7808.832679712,
+          "can_timestamp_range_unix": [
+            1794631987.6188037,
+            1794631987.642622
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.43,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.6930788,
+          "received_monotonic": 7808.882817472,
+          "can_timestamp_range_unix": [
+            1794631987.6688037,
+            1794631987.6927366
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.432,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.7431107,
+          "received_monotonic": 7808.932849376,
+          "can_timestamp_range_unix": [
+            1794631987.7188137,
+            1794631987.7427373
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.417,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.7932258,
+          "received_monotonic": 7808.982964576,
+          "can_timestamp_range_unix": [
+            1794631987.7687945,
+            1794631987.792839
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.432,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.8432531,
+          "received_monotonic": 7809.032991904,
+          "can_timestamp_range_unix": [
+            1794631987.8188038,
+            1794631987.8428414
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.439,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.8933988,
+          "received_monotonic": 7809.08313744,
+          "can_timestamp_range_unix": [
+            1794631987.8687944,
+            1794631987.8929636
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.423,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.9435542,
+          "received_monotonic": 7809.133292736,
+          "can_timestamp_range_unix": [
+            1794631987.9187942,
+            1794631987.9429548
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.409,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.9935894,
+          "received_monotonic": 7809.183327968,
+          "can_timestamp_range_unix": [
+            1794631987.96882,
+            1794631987.9929688
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.433,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.0435991,
+          "received_monotonic": 7809.233337664,
+          "can_timestamp_range_unix": [
+            1794631988.0188026,
+            1794631988.0429757
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.44,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.0938797,
+          "received_monotonic": 7809.283618208,
+          "can_timestamp_range_unix": [
+            1794631988.073676,
+            1794631988.0938041
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.428,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.1438825,
+          "received_monotonic": 7809.333620832,
+          "can_timestamp_range_unix": [
+            1794631988.1236784,
+            1794631988.1438038
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.416,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.1938846,
+          "received_monotonic": 7809.383623296,
+          "can_timestamp_range_unix": [
+            1794631988.1736877,
+            1794631988.1938117
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.412,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.2473278,
+          "received_monotonic": 7809.437066048,
+          "can_timestamp_range_unix": [
+            1794631988.2236943,
+            1794631988.2472472
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.439,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.2973506,
+          "received_monotonic": 7809.487088928,
+          "can_timestamp_range_unix": [
+            1794631988.2736857,
+            1794631988.297266
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.422,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.3475456,
+          "received_monotonic": 7809.537284256,
+          "can_timestamp_range_unix": [
+            1794631988.3236885,
+            1794631988.3473532
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.43,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.3975482,
+          "received_monotonic": 7809.587286848,
+          "can_timestamp_range_unix": [
+            1794631988.3736877,
+            1794631988.397353
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.412,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.4475505,
+          "received_monotonic": 7809.637288864,
+          "can_timestamp_range_unix": [
+            1794631988.423687,
+            1794631988.4473526
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.421,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.497712,
+          "received_monotonic": 7809.687450496,
+          "can_timestamp_range_unix": [
+            1794631988.4736876,
+            1794631988.4974637
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.435,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5478745,
+          "received_monotonic": 7809.737613184,
+          "can_timestamp_range_unix": [
+            1794631988.5236776,
+            1794631988.5475864
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.423,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5979066,
+          "received_monotonic": 7809.787645408,
+          "can_timestamp_range_unix": [
+            1794631988.5736866,
+            1794631988.597612
+          ]
+        }
+      ],
+      "stability": {
+        "translation_span_mm": 0.0,
+        "rotation_span_deg": 0.0,
+        "joint_span_deg": 0.0
+      },
+      "pairing_checked_monotonic": 7809.8140536,
+      "pairing": "stationary_bracketing_not_hardware_synchronized"
+    },
+    {
+      "T_base_end": [
+        [
+          -0.6894554549252868,
+          0.008076834280208958,
+          0.7242830526954057,
+          0.461028
+        ],
+        [
+          0.027052623144462516,
+          0.9995273048259637,
+          0.014605563609415706,
+          0.07712999999999999
+        ],
+        [
+          -0.723822720874918,
+          0.029663641977259618,
+          -0.6893480522130134,
+          0.178689
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "robot_snapshot": {
+        "joints_deg": [
+          10.859,
+          119.963,
+          -84.804,
+          -27.23,
+          15.477,
+          35.448
+        ],
+        "sdk_pose_mm_xyz": [
+          461.028,
+          77.13,
+          178.689
+        ],
+        "sdk_pose_euler_deg_xyz": [
+          177.536,
+          46.371,
+          177.753
+        ],
+        "gripper_width_mm": 68.4,
+        "gripper_torque_nm": 0.433,
+        "gripper_enabled": true,
+        "missing_feedback": [],
+        "ctrl_mode": 1,
+        "arm_status": 0,
+        "err_code": 0,
+        "motion_status": 0,
+        "joints_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "teach_status": 0,
+        "time": 1794631988.648011,
+        "received_monotonic": 7809.837749632,
+        "can_timestamp_range_unix": [
+          1794631988.6236784,
+          1794631988.6477067
+        ]
+      },
+      "robot_window": [
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.409,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631987.9935894,
+          "received_monotonic": 7809.183327968,
+          "can_timestamp_range_unix": [
+            1794631987.96882,
+            1794631987.9929688
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.433,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.0435991,
+          "received_monotonic": 7809.233337664,
+          "can_timestamp_range_unix": [
+            1794631988.0188026,
+            1794631988.0429757
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.44,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.0938797,
+          "received_monotonic": 7809.283618208,
+          "can_timestamp_range_unix": [
+            1794631988.073676,
+            1794631988.0938041
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.428,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.1438825,
+          "received_monotonic": 7809.333620832,
+          "can_timestamp_range_unix": [
+            1794631988.1236784,
+            1794631988.1438038
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.416,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.1938846,
+          "received_monotonic": 7809.383623296,
+          "can_timestamp_range_unix": [
+            1794631988.1736877,
+            1794631988.1938117
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.412,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.2473278,
+          "received_monotonic": 7809.437066048,
+          "can_timestamp_range_unix": [
+            1794631988.2236943,
+            1794631988.2472472
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.439,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.2973506,
+          "received_monotonic": 7809.487088928,
+          "can_timestamp_range_unix": [
+            1794631988.2736857,
+            1794631988.297266
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.422,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.3475456,
+          "received_monotonic": 7809.537284256,
+          "can_timestamp_range_unix": [
+            1794631988.3236885,
+            1794631988.3473532
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.43,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.3975482,
+          "received_monotonic": 7809.587286848,
+          "can_timestamp_range_unix": [
+            1794631988.3736877,
+            1794631988.397353
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.412,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.4475505,
+          "received_monotonic": 7809.637288864,
+          "can_timestamp_range_unix": [
+            1794631988.423687,
+            1794631988.4473526
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.421,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.497712,
+          "received_monotonic": 7809.687450496,
+          "can_timestamp_range_unix": [
+            1794631988.4736876,
+            1794631988.4974637
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.435,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5478745,
+          "received_monotonic": 7809.737613184,
+          "can_timestamp_range_unix": [
+            1794631988.5236776,
+            1794631988.5475864
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.423,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5979066,
+          "received_monotonic": 7809.787645408,
+          "can_timestamp_range_unix": [
+            1794631988.5736866,
+            1794631988.597612
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.433,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.648011,
+          "received_monotonic": 7809.837749632,
+          "can_timestamp_range_unix": [
+            1794631988.6236784,
+            1794631988.6477067
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.411,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.6980312,
+          "received_monotonic": 7809.887769504,
+          "can_timestamp_range_unix": [
+            1794631988.6736677,
+            1794631988.6977065
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.7480597,
+          "received_monotonic": 7809.9377984,
+          "can_timestamp_range_unix": [
+            1794631988.723679,
+            1794631988.7476883
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.417,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.7982059,
+          "received_monotonic": 7809.987944608,
+          "can_timestamp_range_unix": [
+            1794631988.773678,
+            1794631988.7978034
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.411,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.8482096,
+          "received_monotonic": 7810.037948128,
+          "can_timestamp_range_unix": [
+            1794631988.823678,
+            1794631988.8478134
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.425,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.8984084,
+          "received_monotonic": 7810.088147072,
+          "can_timestamp_range_unix": [
+            1794631988.8736603,
+            1794631988.897919
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.424,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.9485521,
+          "received_monotonic": 7810.138290624,
+          "can_timestamp_range_unix": [
+            1794631988.923669,
+            1794631988.9479198
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.422,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.9985843,
+          "received_monotonic": 7810.18832304,
+          "can_timestamp_range_unix": [
+            1794631988.9736788,
+            1794631988.9979186
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.0487192,
+          "received_monotonic": 7810.23845776,
+          "can_timestamp_range_unix": [
+            1794631989.0285342,
+            1794631989.0486503
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.437,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.0987735,
+          "received_monotonic": 7810.288512032,
+          "can_timestamp_range_unix": [
+            1794631989.0785244,
+            1794631989.098641
+          ]
+        }
+      ],
+      "stability": {
+        "translation_span_mm": 0.0,
+        "rotation_span_deg": 0.0,
+        "joint_span_deg": 0.0
+      },
+      "pairing_checked_monotonic": 7810.336643008,
+      "pairing": "stationary_bracketing_not_hardware_synchronized"
+    },
+    {
+      "T_base_end": [
+        [
+          -0.6894554549252868,
+          0.008076834280208958,
+          0.7242830526954057,
+          0.461028
+        ],
+        [
+          0.027052623144462516,
+          0.9995273048259637,
+          0.014605563609415706,
+          0.07712999999999999
+        ],
+        [
+          -0.723822720874918,
+          0.029663641977259618,
+          -0.6893480522130134,
+          0.178689
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "robot_snapshot": {
+        "joints_deg": [
+          10.859,
+          119.963,
+          -84.804,
+          -27.23,
+          15.477,
+          35.448
+        ],
+        "sdk_pose_mm_xyz": [
+          461.028,
+          77.13,
+          178.689
+        ],
+        "sdk_pose_euler_deg_xyz": [
+          177.536,
+          46.371,
+          177.753
+        ],
+        "gripper_width_mm": 68.4,
+        "gripper_torque_nm": 0.423,
+        "gripper_enabled": true,
+        "missing_feedback": [],
+        "ctrl_mode": 1,
+        "arm_status": 0,
+        "err_code": 0,
+        "motion_status": 0,
+        "joints_enabled": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "teach_status": 0,
+        "time": 1794631989.1538126,
+        "received_monotonic": 7810.343550912,
+        "can_timestamp_range_unix": [
+          1794631989.123659,
+          1794631989.1472487
+        ]
+      },
+      "robot_window": [
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.435,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5478745,
+          "received_monotonic": 7809.737613184,
+          "can_timestamp_range_unix": [
+            1794631988.5236776,
+            1794631988.5475864
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.423,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.5979066,
+          "received_monotonic": 7809.787645408,
+          "can_timestamp_range_unix": [
+            1794631988.5736866,
+            1794631988.597612
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.433,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.648011,
+          "received_monotonic": 7809.837749632,
+          "can_timestamp_range_unix": [
+            1794631988.6236784,
+            1794631988.6477067
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.411,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.6980312,
+          "received_monotonic": 7809.887769504,
+          "can_timestamp_range_unix": [
+            1794631988.6736677,
+            1794631988.6977065
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.7480597,
+          "received_monotonic": 7809.9377984,
+          "can_timestamp_range_unix": [
+            1794631988.723679,
+            1794631988.7476883
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.417,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.7982059,
+          "received_monotonic": 7809.987944608,
+          "can_timestamp_range_unix": [
+            1794631988.773678,
+            1794631988.7978034
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.411,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.8482096,
+          "received_monotonic": 7810.037948128,
+          "can_timestamp_range_unix": [
+            1794631988.823678,
+            1794631988.8478134
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.425,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.8984084,
+          "received_monotonic": 7810.088147072,
+          "can_timestamp_range_unix": [
+            1794631988.8736603,
+            1794631988.897919
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.424,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.9485521,
+          "received_monotonic": 7810.138290624,
+          "can_timestamp_range_unix": [
+            1794631988.923669,
+            1794631988.9479198
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.422,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631988.9985843,
+          "received_monotonic": 7810.18832304,
+          "can_timestamp_range_unix": [
+            1794631988.9736788,
+            1794631988.9979186
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.0487192,
+          "received_monotonic": 7810.23845776,
+          "can_timestamp_range_unix": [
+            1794631989.0285342,
+            1794631989.0486503
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.437,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.0987735,
+          "received_monotonic": 7810.288512032,
+          "can_timestamp_range_unix": [
+            1794631989.0785244,
+            1794631989.098641
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.423,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.1538126,
+          "received_monotonic": 7810.343550912,
+          "can_timestamp_range_unix": [
+            1794631989.123659,
+            1794631989.1472487
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.452,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.207309,
+          "received_monotonic": 7810.397047232,
+          "can_timestamp_range_unix": [
+            1794631989.1834087,
+            1794631989.207228
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.425,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.257309,
+          "received_monotonic": 7810.447047264,
+          "can_timestamp_range_unix": [
+            1794631989.2334583,
+            1794631989.2572281
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.433,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.3073142,
+          "received_monotonic": 7810.497052448,
+          "can_timestamp_range_unix": [
+            1794631989.2834103,
+            1794631989.3072286
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.414,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.3573143,
+          "received_monotonic": 7810.547052736,
+          "can_timestamp_range_unix": [
+            1794631989.3334098,
+            1794631989.3572292
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.426,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.4075396,
+          "received_monotonic": 7810.597278304,
+          "can_timestamp_range_unix": [
+            1794631989.38341,
+            1794631989.40732
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.42,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.4577024,
+          "received_monotonic": 7810.64744096,
+          "can_timestamp_range_unix": [
+            1794631989.433409,
+            1794631989.457452
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.427,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.5077128,
+          "received_monotonic": 7810.69745136,
+          "can_timestamp_range_unix": [
+            1794631989.4834886,
+            1794631989.5074382
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.444,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.5578713,
+          "received_monotonic": 7810.74761008,
+          "can_timestamp_range_unix": [
+            1794631989.5334089,
+            1794631989.5575545
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.425,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.6080322,
+          "received_monotonic": 7810.797770976,
+          "can_timestamp_range_unix": [
+            1794631989.5834086,
+            1794631989.6076777
+          ]
+        },
+        {
+          "joints_deg": [
+            10.859,
+            119.963,
+            -84.804,
+            -27.23,
+            15.477,
+            35.448
+          ],
+          "sdk_pose_mm_xyz": [
+            461.028,
+            77.13,
+            178.689
+          ],
+          "sdk_pose_euler_deg_xyz": [
+            177.536,
+            46.371,
+            177.753
+          ],
+          "gripper_width_mm": 68.4,
+          "gripper_torque_nm": 0.431,
+          "gripper_enabled": true,
+          "missing_feedback": [],
+          "ctrl_mode": 1,
+          "arm_status": 0,
+          "err_code": 0,
+          "motion_status": 0,
+          "joints_enabled": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "teach_status": 0,
+          "time": 1794631989.6580532,
+          "received_monotonic": 7810.847791744,
+          "can_timestamp_range_unix": [
+            1794631989.6334002,
+            1794631989.6576786
+          ]
+        }
+      ],
+      "stability": {
+        "translation_span_mm": 0.0,
+        "rotation_span_deg": 0.0,
+        "joint_span_deg": 0.0
+      },
+      "pairing_checked_monotonic": 7810.855992448,
+      "pairing": "stationary_bracketing_not_hardware_synchronized"
+    }
+  ],
+  "command_sent": false,
+  "scene": "blue block front4.2cm depth2cm; user stood it up after accidental arm contact; arm retreated toJ2=120deg"
+}

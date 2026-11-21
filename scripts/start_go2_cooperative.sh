@@ -14,7 +14,7 @@ watch自动打开“Go2 当前状态”窗口，显示状态、完整原因、�
 不要求输入CAMERA、START、READY、CURRENT或ARM确认词；运行本入口会自动ARM并发起真实任务。
 Ranger可同时或稍后按原流程准备硬件、bridge及真实agent；本入口持续等待，不远程操作Ranger。
 需Go2控制电脑图形桌面。未初始化的真实位姿仍在RViz设置，SSH未免密时仍需相机凭据。
-准备采样无限等待，每5秒报告原因；600秒整轮预算从start受理开始，执行期通信门槛3秒。
+准备采样无限等待；600秒有效运行预算排除可恢复暂停及恢复握手，执行期通信门槛3秒。
 RViz默认显示：蓝色P编号候选点、橙色VLM选点箭头、绿色ABC目标、青色导航路径。
 已打开的RViz需用 File → Open Config 加载 config/go2_exploration.rviz 才会更新显示配置。
 实际安装由Cooperative_env.bash选定并导出；COOP_SETUP_FILE/COOP_CONFIG可显式覆盖。
@@ -26,5 +26,10 @@ HELP
   exit 0
 fi
 (( $# == 0 )) || { echo '不接受参数；使用 --help。' >&2; exit 2; }
-source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+if [[ -f "$repo/scripts/go2_experiment_status.sh" ]]; then
+  source "$repo/scripts/go2_experiment_status.sh"
+  go2_entry_environment "$repo" "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+else
+  source "$repo/Cooperative_env.bash" go2 "${COOP_CONFIG:-}"
+fi
 exec /usr/bin/python3 "$repo/scripts/start_go2_cooperative_task.py" run

@@ -12,7 +12,7 @@ import sys
 import tempfile
 import time
 
-from start_go2_vlm import Launcher, parse_report
+from start_go2_vlm import Launcher, WaitingForInput, parse_report
 
 
 def idle_issues(message, robot, identity):
@@ -35,7 +35,7 @@ def idle_issues(message, robot, identity):
     return issues
 
 
-def wait_idle(config, bridge_name, timeout=None):
+def wait_idle(config, bridge_name, timeout=None, status=None):
     import rclpy
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from multi_agent_task_msgs.msg import AgentState
@@ -84,7 +84,8 @@ def wait_idle(config, bridge_name, timeout=None):
             if not errors:
                 return {robot:sample[0] for robot,sample in latest.items()}
             if time.monotonic() >= next_report:
-                print('等待真实待命（Ctrl+C 可退出）：'+'; '.join(errors),flush=True)
+                if status:status.update(state='WAITING',phase='WAITING_PEER',reason='; '.join(errors),reason_class='WAIT_INPUT')
+                else:print('等待真实待命（Ctrl+C 可退出）：'+'; '.join(errors),flush=True)
                 next_report = time.monotonic()+5
         raise RuntimeError('真实待命未就绪：'+'; '.join(errors))
     finally:
@@ -114,35 +115,33 @@ class TaskLauncher(Launcher):
         if matches():
             raise RuntimeError(f'已有 {name}，请核对原窗口；不重复启动或自动结束旧进程')
         self.window(action, ['bash',self.repo/'scripts/cooperative.sh','go2',action])
-        deadline = time.monotonic()+20
-        while time.monotonic() < deadline:
+        while True:
             nodes = matches()
             if len(nodes) == 1:
                 return
             if len(nodes) > 1:
-                raise RuntimeError(f'{name} 重复')
+                if self.status:self.status.update(state='WAITING',reason=f'{name} 重复，请在原终端处理',reason_class='MANUAL_REQUIRED')
+            elif self.status:
+                self.status.update(state='WAITING',reason=f'等待 {name}，组件退出时请人工恢复',reason_class='WAIT_INPUT')
             time.sleep(.2)
-        raise RuntimeError(f'{name} 未出现；查看对应组件窗口')
 
     def idle(self, report):
         from multi_agent_nav.config import load_config
-        states = wait_idle(load_config(self.config), report['bridge'])
+        states = wait_idle(load_config(self.config), report['bridge'], status=self.status)
         fields = ('robot_id','stamp','local_map_id','map_version','run_state','localization_valid','nav_ready','stopped')
         summary = {robot:{field:getattr(message,field) for field in fields} for robot,message in states.items()}
         (self.logs/'idle.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
-        print(json.dumps(summary,ensure_ascii=False,indent=2), flush=True)
 
     def prepare(self):
         report = self.preflight()
-        self.check_owners()
+        self.wait_for(self.check_owners)
         self.component('bridge',report['bridge'])
         self.confirm('ARM','确认Go2硬件准备已通过、本机停稳、无其他目标拥有者、急停可用，\n'
                      '允许使能Go2 Sport；本机随后独立准备并等待Ranger，此步不开始任务。')
         state = self.state()
         if state == 'FAULT':
             raise RuntimeError('Sport 为 FAULT；按原流程处理，不自动 reset')
-        self.ros('topic','echo','/vlm_nav/nav_ready','std_msgs/msg/Bool','--once','--filter','m.data',
-                 '--no-daemon','--qos-reliability','reliable','--qos-durability','transient_local',timeout=10)
+        self.wait_nav_ready()
         if state == 'DISARMED':
             self.service('arm')
         if self.state() != 'ARMED':
@@ -150,7 +149,8 @@ class TaskLauncher(Launcher):
         self.component('agent','multi_agent_go2_agent')
         self.idle(report)
         self.component('coordinator','multi_agent_coordinator')
-        self.window('当前状态',['bash',self.repo/'scripts/cooperative.sh','go2','watch'])
+        if self.status is None:
+            self.window('当前状态',['bash',self.repo/'scripts/cooperative.sh','go2','watch'])
         print('COOPERATIVE_READY：两端已独立准备并通过新鲜状态核对；任务尚未开始。',flush=True)
 
     def start_task(self):
@@ -164,10 +164,12 @@ class TaskLauncher(Launcher):
         self.confirm('START','确认两端配置/目标一致，Ranger端peer也收到Go2新鲜WAITING_PEER/STANDBY，实体及目标已就位，\n'
                      '具备本轮运动授权且急停可用；将开始一次真实双机任务。')
         self.idle(report)
-        print(self.cooperative('start').stdout,flush=True)
+        self.cooperative('start')
+        print(f'启动请求日志：{self.logs / "start.log"}',flush=True)
 
     def pause_task(self):
-        print(self.cooperative('pause').stdout,flush=True)
+        self.cooperative('pause')
+        print(f'暂停请求日志：{self.logs / "pause.log"}',flush=True)
         print('暂停请求已受理；仍须从两端state/原诊断确认未完成任务PAUSED（全局已完成保持IDLE/SUCCEEDED）、实际停稳及原生动作终止。',flush=True)
 
     def disarm_task(self):
@@ -184,9 +186,8 @@ class TaskLauncher(Launcher):
                      '保留 Go2 Camera SSH、System、RViz、Sport 和 Ranger 健康底层；本脚本不操作 Ranger。\n'
                      '旧任务组件退出完成后继续；Ranger 随后由操作者在本机检查并重启任务 bridge/agent。')
         self.disarm_task()
-        self.ros('topic','echo','/vlm_nav/nav_ready','std_msgs/msg/Bool','--once','--filter','m.data',
-                 '--no-daemon','--qos-reliability','reliable','--qos-durability','transient_local',timeout=240)
-        self.inspect()
+        self.wait_nav_ready()
+        self.wait_for(self.inspect)
         self.prepare()
         self.start_task()
 
@@ -232,6 +233,7 @@ def main():
     app.logs = Path(tempfile.mkdtemp(prefix='cooperative-task.',dir=root))
     print(f'本次日志：{app.logs}',flush=True)
     try:
+        app.open_status()
         with open('/tmp/go2-cooperative-task-prepare.lock','a') as lock:
             if args.action in ('prepare','restart','run'):
                 fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -244,6 +246,9 @@ def main():
                  'restart':app.restart}[args.action]()
         return 0
     except (RuntimeError,OSError,ValueError,KeyError,subprocess.SubprocessError,EOFError,KeyboardInterrupt) as error:
+        if app.status:
+            app.status.update(state='FAILED',reason=str(error) or '用户中断',
+                reason_class='NON_RESUMABLE',automatic=False,log_path=str(app.logs))
         print(f'停止：{error}。不自动重试、结束旧进程或DISARM。',file=sys.stderr)
         print('组件窗口保留；已ARM或start结果不明时，按原文暂停并确认停稳，不盲目重复start。',file=sys.stderr)
         return 1

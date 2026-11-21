@@ -63,7 +63,7 @@ def _static_transform(name, transform):
     )
 
 
-def _waiter(name, *, topics=(), transforms=(), timeout=30.0, localization_mode="slam"):
+def _waiter(name, *, topics=(), transforms=(), timeout=0.0, localization_mode="slam"):
     waiter_parameters = {
         "timeout": timeout,
         "stable_samples": 3,
@@ -245,7 +245,7 @@ def _build(context):
     base_waiter = _waiter(
         "wait_go2_base_lidar_tf",
         transforms=("base_link->hesai_lidar",),
-        timeout=10.0,
+        timeout=0.0,
     )
     spark = Node(
         package="spark_fast_lio",
@@ -259,7 +259,7 @@ def _build(context):
         "wait_go2_fastlio",
         topics=("/odometry", "/cloud_registered_base"),
         transforms=("odom->base_link", "base_link->hesai_lidar"),
-        timeout=60.0,
+        timeout=0.0,
     )
     obstacle = Node(
         package="vlm_nav",
@@ -276,7 +276,7 @@ def _build(context):
     obstacle_waiter = _waiter(
         "wait_go2_obstacle_cloud",
         topics=("/vlm_nav/obstacle_cloud",),
-        timeout=30.0,
+        timeout=0.0,
     )
     scan = Node(
         package="pointcloud_to_laserscan",
@@ -289,12 +289,12 @@ def _build(context):
         ],
         parameters=[os.path.join(share, "config", "go2_laserscan.yaml")],
     )
-    scan_waiter = _waiter("wait_go2_scan", topics=("/scan",), timeout=30.0)
+    scan_waiter = _waiter("wait_go2_scan", topics=("/scan",), timeout=0.0)
     slam_waiter = _waiter(
         "wait_go2_slam",
         topics=("/map",),
         transforms=("map->odom",),
-        timeout=600.0 if localization_mode == "amcl" else 120.0,
+        timeout=0.0,
         localization_mode=localization_mode,
     )
     nav2 = IncludeLaunchDescription(

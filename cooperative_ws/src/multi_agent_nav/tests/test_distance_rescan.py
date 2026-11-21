@@ -101,8 +101,9 @@ def test_runner_discards_only_rejected_c_cache(monkeypatch,tmp_path):
         args[5](dict(state='TARGET_REJECTED',target_id='C',observation_id='rejected'))
     monkeypatch.setattr(exploration,'explore_steps',explore)
     runner=AgentRunner.__new__(AgentRunner)
+    runner.execution_identity=None
     command=S(kind='APPROACH_DEPOSIT',target_id='C',command_id='command',task_id='task',observation_id='rejected')
-    runner.machine=S(command=command,context=S(robot_id='go2'),frame=None,task_started=0.,
+    runner.machine=S(command=command,context=S(robot_id='go2',wait_recovery=False),frame=None,task_started=0.,
         success_radius=1.,local_c_observations={'rejected':object(),'other':object()},single_robot_mode=True)
     runner.config={'scene':{'task_timeout':600.},'robot_go2':{'experiment_records_root':str(tmp_path)}}
     runner.adapter=S(simulation=False);runner.on_event=None

@@ -46,7 +46,7 @@ def test_initial_unstable_stop_waits_then_runs_initial_observation_once():
     assert any(e.get('state') == 'WAITING' for e in events)
 
 
-@pytest.mark.parametrize('fault', ['localization', 'nav', 'costmap', 'owner', 'terminal'])
+@pytest.mark.parametrize('fault', ['localization', 'nav', 'costmap', 'terminal'])
 def test_runtime_gates_wait_without_ending_task_or_running_clock(fault):
     from multi_agent_nav.experiment_recovery import ExperimentRecovery
     adapter, _ = fixture()
@@ -89,6 +89,24 @@ def test_closing_wait_never_resumes_or_clears_adapter_fault():
     assert not any(e.get('event') == 'RECOVERED' for e in events)
 
 
+def test_external_owner_revokes_automatic_resume_even_after_owner_leaves():
+    from multi_agent_nav.experiment_recovery import ExperimentRecovery
+    adapter,_=fixture()
+    adapter.costmap_transform=lambda **kwargs:object()
+    owners=['external']
+    cancelled=[]
+    adapter.cancel_control_recovery=lambda:cancelled.append(True)
+    recovery=ExperimentRecovery(adapter,lambda:owners,lambda _:None)
+    wait=recovery.wait('owner changed')
+    next(wait)
+    next(wait)
+    owners.clear()
+    next(wait)
+    assert recovery.recovering and cancelled
+    assert 'external goal owner takeover' in recovery.gates()
+    wait.close()
+
+
 def test_two_pauses_accumulate_without_resetting_run_timer():
     from multi_agent_nav.experiment_recovery import ExperimentRecovery
     adapter, _ = fixture()
@@ -102,6 +120,24 @@ def test_two_pauses_accumulate_without_resetting_run_timer():
         with pytest.raises(StopIteration): next(wait)
     assert recovery.timing(30.) == dict(run_elapsed_s=5., pause_elapsed_s=0.,
         paused_total_s=12., run_remaining_s=15.)
+
+
+def test_control_recovery_is_only_polled_after_stop_and_revoked_on_close():
+    from multi_agent_nav.experiment_recovery import ExperimentRecovery
+    adapter, _ = fixture()
+    actions=[]
+    adapter.online=False
+    adapter.stop_motion=lambda reason:actions.append('stop')
+    adapter.recover_control=lambda allow_resume=True:actions.append(('recover',allow_resume))
+    adapter.cancel_control_recovery=lambda:actions.append('cancel_recovery')
+    recovery=ExperimentRecovery(adapter,lambda:[],lambda e:None)
+    wait=recovery.wait('control lost')
+    next(wait)
+    assert actions==['stop']
+    next(wait)
+    assert actions==['stop',('recover',True)]
+    wait.close()
+    assert actions[-1]=='cancel_recovery'
 
 
 def test_camera_wait_outside_scan_freezes_run_budget():

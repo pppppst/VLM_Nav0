@@ -1,0 +1,148 @@
+{
+  "source_run": "semantic-observe-20261114-01",
+  "phase": "before_motion",
+  "command_attempted": false,
+  "frames": [
+    {
+      "depth": "frame00-depth.npz",
+      "mask": "mask00.png",
+      "bbox_px": [
+        236,
+        169,
+        433,
+        434
+      ],
+      "keypoint_px": [
+        336,
+        312
+      ],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady",
+        "depth_scale": 0.0010000000474974513,
+        "aligned_intrinsics": {
+          "width": 640,
+          "height": 480,
+          "fx": 605.8641967773438,
+          "fy": 605.519287109375,
+          "ppx": 326.5206604003906,
+          "ppy": 243.54269409179688,
+          "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "model": "distortion.inverse_brown_conrady"
+        }
+      }
+    },
+    {
+      "depth": "frame01-depth.npz",
+      "mask": "mask01.png",
+      "bbox_px": [
+        235,
+        169,
+        434,
+        433
+      ],
+      "keypoint_px": [
+        336,
+        288
+      ],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady",
+        "depth_scale": 0.0010000000474974513,
+        "aligned_intrinsics": {
+          "width": 640,
+          "height": 480,
+          "fx": 605.8641967773438,
+          "fy": 605.519287109375,
+          "ppx": 326.5206604003906,
+          "ppy": 243.54269409179688,
+          "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "model": "distortion.inverse_brown_conrady"
+        }
+      }
+    },
+    {
+      "depth": "frame02-depth.npz",
+      "mask": "mask02.png",
+      "bbox_px": [
+        235,
+        169,
+        434,
+        433
+      ],
+      "keypoint_px": [
+        336,
+        292
+      ],
+      "camera": {
+        "width": 640,
+        "height": 480,
+        "fx": 605.8641967773438,
+        "fy": 605.519287109375,
+        "ppx": 326.5206604003906,
+        "ppy": 243.54269409179688,
+        "coeffs": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "model": "distortion.inverse_brown_conrady",
+        "depth_scale": 0.0010000000474974513,
+        "aligned_intrinsics": {
+          "width": 640,
+          "height": 480,
+          "fx": 605.8641967773438,
+          "fy": 605.519287109375,
+          "ppx": 326.5206604003906,
+          "ppy": 243.54269409179688,
+          "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "model": "distortion.inverse_brown_conrady"
+        }
+      }
+    }
+  ]
+}

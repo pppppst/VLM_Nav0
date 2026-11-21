@@ -5,6 +5,11 @@ if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
   exec /usr/bin/python3 "$repo/scripts/start_go2_vlm.py" "$@"
 fi
 # ROS setup files are not compatible with nounset.
-source "$repo/CoVLM_env.bash"
+if [[ -f "$repo/scripts/go2_experiment_status.sh" ]]; then
+  source "$repo/scripts/go2_experiment_status.sh"
+  go2_entry_environment "$repo" "$repo/CoVLM_env.bash"
+else
+  source "$repo/CoVLM_env.bash"
+fi
 /home/isee-pst/venv/co-nav-real/bin/python "$repo/scripts/start_go2_vlm.py" --check-install > /dev/null
 exec /usr/bin/python3 "$repo/scripts/start_go2_vlm.py" "$@"

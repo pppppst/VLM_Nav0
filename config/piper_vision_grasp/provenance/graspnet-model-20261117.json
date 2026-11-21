@@ -1,0 +1,32 @@
+{
+  "url": "https://huggingface.co/AIGeeksGroup/GeneralVLA/resolve/main/checkpoints/v1/checkpoint-rs.tar",
+  "mirrors": [
+    {
+      "repo": "AIGeeksGroup/GeneralVLA",
+      "path": "checkpoints/v1/checkpoint-rs.tar",
+      "lfs": {
+        "oid": "60680087c61cba2b6791614fef1519071e294f6dcaf99b3f581bb95f7c51a868",
+        "size": 12468415,
+        "pointerSize": 133
+      }
+    },
+    {
+      "repo": "dgrachev/a2_pretrained",
+      "path": "checkpoint-rs.tar",
+      "lfs": {
+        "oid": "60680087c61cba2b6791614fef1519071e294f6dcaf99b3f581bb95f7c51a868",
+        "size": 12468415,
+        "pointerSize": 133
+      }
+    }
+  ],
+  "sha256": "60680087c61cba2b6791614fef1519071e294f6dcaf99b3f581bb95f7c51a868",
+  "bytes": 12468415,
+  "official_google_drive": "quota exceeded; byte identity with original not independently verified",
+  "baseline_commit": "280c215129f759ed8649cb4e89fc5dfee55f4f80",
+  "api_commit": "eb57dd2092d8dbe05312a29c3d0c22f3226efbfc",
+  "torch": "2.7.1+cu118",
+  "cuda_toolkit": "11.8",
+  "native_source_patches": [],
+  "physical_validation": "NOT_PERFORMED"
+}

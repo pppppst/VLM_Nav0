@@ -21,7 +21,27 @@ def is_recoverable_pause(reason):
         'peer paused for recovery', 'coordinator recoverable pause',
         'local navigation not ready', 'peer navigation not ready',
         'coordinator SYNC heartbeat lost', 'peer heartbeat lost for current task',
+        'local localization temporarily unavailable', 'peer localization temporarily unavailable',
+        'local execution temporarily unavailable',
     }
+
+
+@dataclass
+class TaskClock:
+    paused_at: object = None
+    paused_total: float = 0.0
+
+    def reset(self, now, waiting=False):
+        self.paused_at = now if waiting else None
+        self.paused_total = 0.0
+
+    def sample(self, now, waiting):
+        if waiting and self.paused_at is None:
+            self.paused_at = now
+        elif not waiting and self.paused_at is not None:
+            self.paused_total += now-self.paused_at
+            self.paused_at = None
+        return (self.paused_at if self.paused_at is not None else now)-self.paused_total
 
 
 def clean_private_state(state):
@@ -141,6 +161,7 @@ class AgentContext:
     alignment_id: str
     simulation: bool
     share_c_coordinates: bool = True
+    wait_recovery: bool = False
 
 @dataclass
 class CommandReply:
@@ -167,6 +188,7 @@ class Health:
     footprint: list = field(default_factory=list)
     motion_terminal: bool = True
     reason: str = ''
+    hard_fault: str = ''
 
 def motion_path_error(health, path):
     if not health.localization_valid or not health.pose.valid or not health.path_valid or not path or any(not p.valid for p in path):
