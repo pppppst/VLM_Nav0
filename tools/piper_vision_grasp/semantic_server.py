@@ -13,13 +13,31 @@ import numpy as np
 from .semantic import target_prompt, parse_detection, encode_mask
 
 
+def model_connection(settings):
+    key = os.getenv('DASHSCOPE_API_KEY')
+    if key:
+        workspace = os.getenv('DASHSCOPE_WORKSPACE_ID')
+        workspace_url = f'https://{workspace}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1' if workspace else None
+        url = os.getenv('DASHSCOPE_BASE_URL') or workspace_url or settings['base_url']
+        return key, url, os.getenv('DASHSCOPE_MODEL') or settings['model']
+    key = os.getenv('OPENAI_API_KEY')
+    if key:
+        url = os.getenv('OPENAI_BASE_URL')
+        if not url:
+            raise ValueError('set OPENAI_BASE_URL for the OPENAI_API_KEY model endpoint')
+        return key, url, os.getenv('OPENAI_MODEL') or settings['model']
+    key = os.getenv('PIPER_VLM_API_KEY')
+    if key:
+        return key, settings['base_url'], settings['model']
+    raise ValueError('set DASHSCOPE_API_KEY or OPENAI_API_KEY in the model server environment')
+
+
 class Model:
     def __init__(self,settings):
         import torch
         from segment_anything import sam_model_registry, SamPredictor
         self.settings=settings
-        self.key=os.environ.get('PIPER_VLM_API_KEY') or os.environ.get('DASHSCOPE_API_KEY')
-        if not self.key:raise ValueError('set PIPER_VLM_API_KEY or DASHSCOPE_API_KEY for model server')
+        self.key, self.base_url, self.model_name = model_connection(settings)
         checkpoint=Path(os.environ.get('PIPER_SAM_CHECKPOINT',settings['sam_checkpoint'])).expanduser()
         if not checkpoint.is_file():raise ValueError('SAM checkpoint not found: '+str(checkpoint))
         torch.set_num_threads(settings.get('cpu_threads',4))
@@ -31,10 +49,10 @@ class Model:
     def detect(self,rgb,target):
         started=time.monotonic()
         _,png=cv2.imencode('.png',cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR))
-        payload=dict(model=self.settings['model'],temperature=0.,messages=[dict(role='user',content=[
+        payload=dict(model=self.model_name,temperature=0.,messages=[dict(role='user',content=[
             dict(type='text',text=target_prompt(target)),
             dict(type='image_url',image_url=dict(url='data:image/png;base64,'+base64.b64encode(png).decode()))])])
-        req=request.Request(self.settings['base_url'].rstrip('/')+'/chat/completions',
+        req=request.Request(self.base_url.rstrip('/')+'/chat/completions',
                             data=json.dumps(payload).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+self.key})
         try:
             with request.urlopen(req,timeout=self.settings['timeout_s']) as response:result=json.load(response)

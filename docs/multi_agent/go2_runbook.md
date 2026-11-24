@@ -6051,3 +6051,9 @@ bash piper_handeye_loop.sh --session recalib20v8_20261120_r3_100mm --train-count
 ### 2026-11-20 采用 r3 实测 100 mm 手眼外参（本地）
 
 本轮沿用“追加点云报告的本地安装”的完整三包构建和相关测试命令，输出统一为 `PIPER_VISION_OUTPUT="$PWD/build/piper-r3-applied/overlay"`。本地启动入口为 `$PIPER_VISION_OUTPUT/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh`。入口按自身路径读取同安装的默认 semantic-camera-avoid.json 和共享 extrinsics.json；使用旧安装路径会加载对应旧参数。四个配置的加载矩阵已核对，默认入口离线 check 的实际快照在 build/piper-r3-applied/evidence/installed-check/config_snapshot.json。本次未部署到机载。
+
+### 红色方块 RGB-D 标定工具构建
+
+按“追加点云报告的本地安装”的三包命令与环境构建，输出取 `PIPER_VISION_OUTPUT="$PWD/build/piper-cube-45plus10/overlay"`，定向 CTest 正则中另含 `test_piper_cube_calibration`。采集/求解入口及数据格式见[抓取 runbook](piper_vision_grasp_runbook.md#495-mm-红块的-rgb-d-手眼标定45-个训练姿态10-个留出姿态)。本地安装下的 `share/vlm_nav/scripts/piper_vision_grasp.sh cube-calibrate --help` 可核对入口。
+
+**ArUco ID25 点云标定**沿用上述三包构建与 Piper 定向测试命令，新输出目录选 `build/piper-board-depth/overlay`，CTest 正则另含 `test_piper_board_depth`。开发机入口与采样、审核、断点续采和结果文件见[深度板标定步骤](piper_vision_grasp_runbook.md#100-mm-aruco-id-25-深度点云标定)。

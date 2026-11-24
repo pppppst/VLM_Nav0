@@ -5,6 +5,20 @@
 留在 `go2-cooperative-task-layer` 原目录，不切分支、不合并、不提交。
 本次不运行真实模型、ROS 节点、ARM 或运动；下述现场阶段尚未验收。
 
+## PiPER 抓取与放置工具（2026-11-22）
+
+在 Go2 控制电脑的 Bash 终端进入 `/home/isee-pst/unitree_ros2/VLM_Nav`。使用已有 VLM_Nav 模型环境、Codex CLI 和机载 SSH 别名 `unitree-go`。下列命令各自启动一次真机任务，按意图选一条，并保持终端到结果写出。搜索模式仍使用 `--target`。
+
+```bash
+bash scripts/start_go2_agent_task.sh --grasp "纸盒右侧的红色方块"
+bash scripts/start_go2_agent_task.sh --place 实际抓取编号
+bash scripts/start_go2_agent_task.sh --grasp "纸盒右侧的红色方块" --then-place
+```
+
+宿主按所选任务加载 `piper_grasp(target)`、`piper_place(grasp_id)` 及对应 SKILL.md。模型通过 `piper_status()` 读取同一任务的动作状态。单独放置时，替换示例中的编号；组合任务自动绑定本轮编号。抓取工具沿用现场 RGB、DashScope/SAM、IK、抬升及传感器回零流程。有图形桌面时显示 RGB 预览并在执行器结束时退出；无桌面时沿用相同机载执行器。放置在已记录的抬升位开爪、回零，实际物块落点未经视觉验证。搜索任务只能启动原搜索工具。
+
+开发机终端显示 `actions.json` 和 `agent-result.json` 路径，其中 `grasp_id` 可传给单独放置。`actions.json` 还给出各动作的机载结果路径；同一会话重复调用返回已有状态。机载确认抬升并回零时抓取返回 SUCCEEDED，未确认持物时返回 UNCONFIRMED，组合任务在这里结束。证据缺失或 SSH 结果不确定时查看动作日志和机载结果，核对实际状态后决定是否开始另一轮。
+
 ## 实现与版本
 
 宿主继续负责原硬件准备、定位确认、owner 检查、人工 ARM、DISARM 及读回。

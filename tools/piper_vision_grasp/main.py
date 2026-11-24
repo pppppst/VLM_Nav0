@@ -123,7 +123,7 @@ def wait_snapshot(config,session,events,stage):
         time.sleep(config['poll_seconds'])
 
 
-def acquire(config,session,camera,events,label):
+def acquire(config,session,camera,events,label,retry=True):
     while True:
         before=wait_snapshot(config,session,events,label)
         directory=events.directory/(label+'-'+uuid.uuid4().hex[:8])
@@ -145,11 +145,13 @@ def acquire(config,session,camera,events,label):
             obs=captured['observation']
             if obs['status']!='DETECTED':
                 events.emit(obs['status'],obs['reason'],label,frame_age=age)
+                if not retry:return captured,after
                 time.sleep(config['poll_seconds']);continue
             events.emit('OBSERVED','fresh finite RGB-D with stationary endpoint feedback',label,measured=obs,frame_age=age)
             return captured,after
         except Exception as error:
             events.emit('WAIT_VISION',str(error),label)
+            if not retry:return None,None
             time.sleep(config['poll_seconds'])
 
 
@@ -277,6 +279,10 @@ def wait_gripper(config,session,events,stage,opened_width=None):
         if stable and valid:
             events.emit('OPEN_READY' if stage=='open' else 'CONTACT_CANDIDATE','stable feedback; object grasp not yet verified',stage,target,row,low_level_state=low_level)
             return width
+        if (stage=='close' and (config.get('record_close_lift') or config['motion'].get('return_zero_after_grasp')) and stable
+                and abs(width-target)<=grip['contact_margin_mm'] and width<opened_width-grip['contact_margin_mm']):
+            events.emit('CLOSED_WITHOUT_CONTACT','closed to requested width; contact unconfirmed',stage,target,row)
+            return width
         events.emit('WAIT_OPEN' if stage=='open' else 'WAIT_CONTACT','stable nonempty contact required' if stage!='open' else 'waiting for opening',stage,target,row,low_level_state=low_level)
         time.sleep(config['poll_seconds'])
 
@@ -290,14 +296,16 @@ def arm_capture_stages(plan):
     return selected
 
 
-def record_arm_pose(config,session,events,stage):
+def record_arm_pose(config,session,events,stage,raw_only=False):
     from .arm_outline import segment_capture
+    count=1 if raw_only else 3
     while True:
         directory=events.directory/('arm-'+stage+'-'+uuid.uuid4().hex[:8])
         try:
             feedback_epoch=events.feedback_epoch
-            captured=vision.capture_rgbd(config,directory,count=3,detect=False,
-                snapshot=lambda:wait_snapshot(config,session,events,stage))
+            captured=vision.capture_rgbd(config,directory,count=count,detect=False,
+                snapshot=lambda:wait_snapshot(config,session,events,stage),
+                **({'on_ready': lambda pipeline: None} if raw_only else {}))
             if events.feedback_epoch!=feedback_epoch:
                 raise ValueError('feedback interrupted during arm capture; reacquire after recovery')
             frames=captured['metadata']['frames']
@@ -310,17 +318,20 @@ def record_arm_pose(config,session,events,stage):
             if not 0<=time.time()-min(f['host_unix'] for f in frames)<=config['frame_max_age_s']:
                 raise ValueError('arm capture frames stale/future')
             q=np.asarray([s['joints_deg'] for s in snapshots],dtype=float)
-            if q.shape!=(6,6) or not np.all(np.isfinite(q)) or np.max(np.ptp(q,axis=0))>.3:
+            if q.shape!=(2*count,6) or not np.all(np.isfinite(q)) or np.max(np.ptp(q,axis=0))>.3:
                 raise ValueError('arm moved during contour capture; reacquire')
             widths=np.asarray([s['gripper_width_mm'] for s in snapshots],dtype=float)
             if not np.all(np.isfinite(widths)) or np.any(widths<0) or np.ptp(widths)>1:
                 raise ValueError('gripper moved during contour capture; reacquire')
-            segment_capture(directory,config,stage)
-            events.emit('ARM_POSE_RECORDED','RGB-D, independent image mask and paired joint feedback saved',stage,
+            if not raw_only:
+                segment_capture(directory,config,stage)
+            events.emit('ARM_POSE_RECORDED','RGB-D and paired joint feedback saved',stage,
                         measured=snapshots[-1],capture_dir=str(directory))
             return
         except Exception as error:
             events.emit('WAIT_ARM_CAPTURE',str(error),stage,capture_dir=str(directory))
+            if stage in ('closed','lift','lifted') and config['motion'].get('return_zero_after_grasp'):
+                return
             time.sleep(config['poll_seconds'])
 
 
@@ -351,13 +362,15 @@ def run_once(config,session,camera,out_dir):
     finally:os.close(fd)
     events=Events(config,out_dir)
     try:
-        events.emit('STARTING','one cycle; no automatic release',return_zero=config['motion'].get('return_zero_after_grasp',False))
+        return_home=config['motion'].get('return_zero_after_grasp',False)
+        events.emit('STARTING','one cycle; no automatic release',return_zero=return_home)
         _,plan=prepare_plan(config,session,camera,events)
         send_once(config,session,events,'open','gripper',config['gripper']['open_mm'])
         opened=wait_gripper(config,session,events,'open')
         # Opening may take time; never execute a plan based on stale pre-opening images.
         before,plan=prepare_plan(config,session,camera,events)
-        capture_stages=arm_capture_stages(plan) if config['motion'].get('record_arm_outline') else []
+        paired_capture=config.get('record_close_lift',False)
+        capture_stages=arm_capture_stages(plan) if config['motion'].get('record_arm_outline') and not paired_capture else []
         if capture_stages:
             plan['arm_capture_stages']=capture_stages;save(out_dir/'plan.json',plan)
         events.recovery=False
@@ -370,26 +383,43 @@ def run_once(config,session,camera,out_dir):
         if config.get('mode')=='semantic':config['gripper']['close_mm']=plan['close_mm']
         send_once(config,session,events,'close','gripper',config['gripper']['close_mm'],recover)
         wait_gripper(config,session,events,'close',opened)
+        empty_close=events.last.get('state')=='CLOSED_WITHOUT_CONTACT'
+        if paired_capture:
+            record_arm_pose(config,session,events,'closed',raw_only=True)
         for stage in plan['stages']:
             if stage['phase']!='lift':continue
             send_once(config,session,events,stage['stage_id'],'joint',stage['angles_deg'],recover)
             wait_joints(config,session,events,stage)
             if stage['stage_id'] in capture_stages:record_arm_pose(config,session,events,stage['stage_id'])
-        while True:
-            after,_=acquire(config,session,camera,events,'after-lift')
-            verification=vision.verify_lift(before['observation'],after['observations'],[0,0,config['motion']['lift_m']],config['extrinsics'])
-            save(out_dir/'verification.json',verification)
-            if verification['status']=='VERIFIED':
-                result=dict(events.emit('GRASP_CONFIRMED',verification['reason'],'hold',measured=verification),
-                            grasp_confirmed=True,stop_confirmed=None,automatic_release=False,human_direction_corrections=0)
-                if config['motion'].get('return_zero_after_grasp'):
-                    measured=return_zero_holding(config,session,events,plan)
-                    result=dict(events.emit('GRASP_RETURNED_ZERO','six joints returned; original close command held',
-                        'return-zero-final',[0]*6,measured),grasp_confirmed=True,grasp_confirmed_at='after_lift',
-                        holding_at_zero_verified=False,automatic_release=False,stop_confirmed=None)
+        if paired_capture:
+            record_arm_pose(config,session,events,'lifted',raw_only=True)
+        verification=dict(status='CONTACT_UNCONFIRMED',reason='closed to requested width without confirmed contact')
+        while not empty_close:
+            after,_=acquire(config,session,camera,events,'after-lift',not return_home)
+            if after is None:
+                verification=dict(status='LIFT_UNCONFIRMED',reason=events.last['reason'])
+            else:
+                try:
+                    verification=vision.verify_lift(before['observation'],after['observations'],
+                        [0,0,config['motion']['lift_m']],config['extrinsics'])
+                except (ValueError,TypeError,KeyError,ArithmeticError) as error:
+                    verification=dict(status='LIFT_UNCONFIRMED',reason=str(error))
+            if verification['status']=='VERIFIED' or return_home or paired_capture:
                 break
             events.emit('WAIT_VERIFY',verification['reason'],'hold',measured=verification)
             time.sleep(config['poll_seconds'])
+        save(out_dir/'verification.json',verification)
+        confirmed=verification['status']=='VERIFIED'
+        outcome='CONTACT_UNCONFIRMED' if empty_close else ('GRASP_CONFIRMED' if confirmed else 'LIFT_UNCONFIRMED')
+        result=dict(events.emit(outcome,verification['reason'],'hold',measured=verification),
+                    grasp_confirmed=confirmed,automatic_release=False,stop_confirmed=None)
+        if return_home:
+            measured=return_zero_holding(config,session,events,plan)
+            state='GRASP_RETURNED_ZERO' if confirmed else 'RETURNED_ZERO_UNCONFIRMED'
+            result=dict(events.emit(state,'six sensor angles at zero within tolerance; gripper close command held',
+                        'return-zero-final',[0]*6,measured),returned_to_sensor_zero=True,grasp_outcome=outcome,
+                        grasp_confirmed=confirmed,grasp_confirmed_at='after_lift' if confirmed else None,
+                        holding_at_zero_verified=False,automatic_release=False,stop_confirmed=None)
     except KeyboardInterrupt:
         previous=events.last.get('state')
         result=dict(events.emit('EXITED','monitor exited; no physical stop/release/disable sent',events.last.get('stage','')),
@@ -457,6 +487,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action',choices=['check','observe','preview','run','zero','diagnostics','serve','serve-graspnet','visualize'])
     parser.add_argument('--config',type=Path,default=ROOT/'config/piper_vision_grasp/semantic-camera-avoid.json')
+    parser.add_argument('--record-close-lift',action='store_true',help='record paired RGB-D after closure and lift, including a stable empty close')
     parser.add_argument('--input',type=Path)
     parser.add_argument('--urdf',type=Path,default=Path.home()/'unitree_ros2/piper/agent/piper_pinocchio/piper_description/urdf/piper_description.urdf')
     parser.add_argument('--color')
@@ -465,6 +496,7 @@ def main():
     parser.add_argument('--output-root',type=Path,default=Path.home()/'.local/state/piper-vision-grasp')
     parser.add_argument('--run-id',default=None)
     args=parser.parse_args()
+    if args.record_close_lift and args.action!='run':parser.error('--record-close-lift requires run')
     if args.input and args.action not in ('preview','visualize'):parser.error('--input is only allowed for offline preview/visualize')
     if args.action=='visualize' and not args.input:parser.error('visualize requires --input saved preview directory')
     if args.action=='diagnostics':
@@ -490,6 +522,7 @@ def main():
             if (args.action=='preview' and args.input and config.get('grasp_backend')=='graspnet'
                     and (args.color is not None or args.description is not None)):
                 raise ValueError('offline GraspNet replay uses saved target masks; color/description require new segmentation')
+            if args.record_close_lift:config['record_close_lift']=True
             configure_target(config,args.color,args.description,args.approach_pitch_deg)
             save(out/'config_snapshot.json',config)
             config.update(run_id=run_id,run_dir=str(out),readonly=args.action not in ('run','zero'))
@@ -518,7 +551,16 @@ def main():
                 result=preview_input(config,args.input,out);events.emit(result['state'],result['reason'])
             else:
                 with PiperSession(config) as session:
-                    if args.action=='run':result=run_once(config,session,vision.capture_rgbd,out)
+                    if args.action=='run':
+                        from . import live_rgb
+                        if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+                            try:
+                                subprocess.Popen(['/usr/bin/python3',str(ROOT/'scripts/piper_grasp_rgb.py'),'--view',str(out)],
+                                                 stdout=runtime,stderr=runtime)
+                            except OSError as error:
+                                print('RGB 预览窗口启动失败',error,file=runtime)
+                        with live_rgb.during_grasp(config,out):
+                            result=run_once(config,session,vision.capture_rgbd,out)
                     elif args.action=='zero':result=run_zero(config,session,out)
                     elif args.action=='observe':
                         acquire(config,session,vision.capture_rgbd,events,'observe')

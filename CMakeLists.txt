@@ -170,6 +170,8 @@ install(
   FILES_MATCHING PATTERN "*.sh" PATTERN "*.py"
 )
 install(FILES package.xml pytest.ini DESTINATION share/${PROJECT_NAME})
+install(DIRECTORY tools/go2_agent DESTINATION share/${PROJECT_NAME}/tools
+  FILES_MATCHING PATTERN "*.py" PATTERN "*.yaml" PATTERN "SKILL.md")
 install(DIRECTORY tools/piper_vision_grasp
   DESTINATION share/${PROJECT_NAME}/tools
   FILES_MATCHING PATTERN "*.py")
@@ -218,6 +220,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_piper_boot test/test_piper_boot.py)
   ament_add_pytest_test(test_piper_gripper test/test_piper_gripper.py)
   ament_add_pytest_test(test_piper_vision_grasp test/test_piper_vision_grasp.py TIMEOUT 120)
+  ament_add_pytest_test(test_piper_cube_calibration test/test_piper_cube_calibration.py TIMEOUT 120)
+  ament_add_pytest_test(test_piper_board_depth test/test_piper_board_depth.py TIMEOUT 120)
   ament_add_pytest_test(test_piper_semantic test/test_piper_semantic.py TIMEOUT 120)
   ament_add_pytest_test(test_piper_graspnet test/test_piper_graspnet.py TIMEOUT 120)
   ament_add_pytest_test(test_piper_report test/test_piper_report.py TIMEOUT 120)

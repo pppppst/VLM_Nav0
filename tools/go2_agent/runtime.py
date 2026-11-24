@@ -16,6 +16,8 @@ from tools.go2_agent.session import SearchSession, write_json
 
 ADAPTER = Path(__file__).resolve().parent
 FRAMEWORK = ADAPTER.parents[2]/'SenseNova-RoboRSI'
+if not FRAMEWORK.is_dir():  # Installed share tree on the Go2 control computer.
+    FRAMEWORK = Path.home()/'unitree_ros2/SenseNova-RoboRSI'
 FRAMEWORK_PYTHON = FRAMEWORK/'.venv/bin/python'
 PROMPT = '''只使用 start_find_target、get_task_status、cancel_task 和 finish 工具。
 禁止 shell、ROS 命令、文件编辑、参数调整、其他工具及另起搜索。目标必须逐字符照传。
@@ -107,6 +109,23 @@ def local_tools(session):
     return result
 
 
+def build_agent(directory, cli_cwd, identity, tools):
+    from roborsi.embodied_agent import EmbodiedAgent
+    from roborsi.planner.codex_cli_config import CodexCliConfig
+    config = load_config()
+    cli_values = dict(config['codex_cli'])
+    cli_values.pop('minimum_version')
+    # Pin this session, so an updater cannot switch the CLI after preflight.
+    cli_values.update(executable=identity['cli']['executable'],
+                      expected_version=identity['cli']['version'],
+                      expected_sha256=identity['cli']['sha256'])
+    return EmbodiedAgent(mcp_servers=(), local_tools=tools,
+        output_dir=directory/'framework', working_dir=cli_cwd, planner='codex_cli',
+        codex_cli=CodexCliConfig.from_dict(cli_values),
+        **{key: config[key] for key in ('model', 'reasoning_effort', 'max_turns',
+                                      'max_tokens', 'planner_timeout_s', 'action_timeout_s')})
+
+
 def run_session(spec):
     session = SearchSession(spec)
     directory = session.directory
@@ -126,20 +145,7 @@ def run_session(spec):
     try:
         identity = preflight(cli_cwd)
         write_json(directory/'preflight.json', identity)
-        from roborsi.embodied_agent import EmbodiedAgent
-        from roborsi.planner.codex_cli_config import CodexCliConfig
-        config = load_config()
-        cli_values = dict(config['codex_cli'])
-        cli_values.pop('minimum_version')
-        # Pin this session, so an updater cannot switch the CLI after preflight.
-        cli_values.update(executable=identity['cli']['executable'],
-                          expected_version=identity['cli']['version'],
-                          expected_sha256=identity['cli']['sha256'])
-        agent = EmbodiedAgent(mcp_servers=(), local_tools=local_tools(session),
-            output_dir=directory/'framework', working_dir=cli_cwd, planner='codex_cli',
-            codex_cli=CodexCliConfig.from_dict(cli_values),
-            **{key: config[key] for key in ('model', 'reasoning_effort', 'max_turns',
-                                          'max_tokens', 'planner_timeout_s', 'action_timeout_s')})
+        agent = build_agent(directory, cli_cwd, identity, local_tools(session))
         result = agent.run('本轮唯一目标（JSON 字符串，逐字符解码）：' + json.dumps(session.target, ensure_ascii=False),
                            system_prompt=PROMPT, skills=[ADAPTER/'skills/find_target/SKILL.md'])
         framework = {'status': 'FAILED' if result.error else 'FINISHED', 'finish': result.finish_result,

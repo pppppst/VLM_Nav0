@@ -2,8 +2,9 @@
   "schema_version": 1,
   "camera_serial": "151222077264",
   "usb_serial": "0046002F5246570520323934",
-  "extrinsics": "extrinsics.json",
+  "extrinsics": "extrinsics-r4.json",
   "kinematics": "kinematics.json",
+  "joint_zero_calibration": "provenance/board25_r4_20261122_offset30_result.json",
   "detector": {
     "version": "blue-face-v1",
     "hsv_low": [
@@ -47,7 +48,8 @@
       0.03,
       0.01
     ],
-    "lift_m": 0.02
+    "lift_m": 0.02,
+    "return_zero_after_grasp": true
   },
   "gripper": {
     "open_mm": 70,

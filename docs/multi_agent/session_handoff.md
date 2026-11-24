@@ -6134,3 +6134,65 @@ recalib30_20261120_r2_ext 已 COLLECTION_COMPLETE。逐一核对 25 个种子样
 ### 2026-11-20 用户选定 r3 并应用于本地 Piper 抓取配置
 
 用户最新选择为 [r3 100 mm 黑框 20+8](piper_handeye_r3_100mm_20plus8_result.json)，取代此前选用 r2 的决定。共享 config/piper_vision_grasp/extrinsics.json 采用该结果的完整 T_base_color_optical，来源文件 SHA256 为 6227be2823bb01f13ecc8dd022dca7062ccdf42be9df15bedd31dc67fcc1b3de，外参配置 SHA256 为 36d057b5d3e91602a3b5b0bdda8449ded28bcd97d98ce49325545ec415a48667。开发机新安装 build/piper-r3-applied/overlay/install/vlm_nav/share/vlm_nav；默认入口离线 CHECK_OK，四种配置与归档矩阵逐元素一致。三包构建成功，Piper 相关原有 270 个用例（含转为历史来源的人工平移断言）加 1 个 r3 回归，268 通过、3 个绘图用例跳过，绘图环境 15 个报告用例全部通过。构建、检查快照与测试日志在 build/piper-r3-applied/evidence。机载未部署，未执行运动或实物验证。
+
+### 2026-11-21 红块 RGB-D 手眼标定脚本
+
+49.5 mm 单面中心沿内法向推入 24.75 mm，以块心为 TCP 位置参考；45 个独立训练姿态联合估计相机 TF 和法兰到块心偏移，10 个姿态留出测试。入口、图像审核和运行环境见[抓取 runbook](piper_vision_grasp_runbook.md#495-mm-红块的-rgb-d-手眼标定45-个训练姿态10-个留出姿态)。本轮为本地工具交付，实际采样、测试误差和参数采用待现场验证。
+
+开发机红块识别服务与 VLM_Nav 共用模型环境变量。启动命令已指向本轮构建，见[语义服务启动顺序](piper_vision_grasp_runbook.md#启动顺序)。
+
+红块标定现在逐面推算块心，优先融合相互一致的完整面。用三个试拍姿态保存的 RGB-D 和 SAM 掩膜回放，三个姿态均仅有一个面通过完整性筛选；双面和三面融合通过合成几何测试，实物多面精度仍待验证。分发目录和检查方式见上述抓取 runbook。
+
+2026-11-21 已将多面标定工具部署到 Go2 的 `/home/unitree/piper-cube-multiface`。开发机与机载端核对了分发包 SHA256（3365161d33d5b350e446a39e034a4029329600f1942d147b89aebfbe4969e02e）及 21 个文件。已启动正式批次 `/home/unitree/piper-cube-data/red49-multiface-20261121-140536`，现场配置为 schema 2、49.5 mm、45 训练及 10 留出。启动检查确认模型 MODEL_READY、反向访问连通、相机单一进程持有并已在桌面显示 pose01 的实时预览。最终采样进度及标定结果以该批次的 sample.json、result.json 为准。
+
+按现场要求结束 140536 批次，原目录保留其 7 组已收录样本。新批次独立写入机载 `/home/unitree/piper-cube-data/red49-multiface-20261121-142855`，启动时确认 accepted=0、45 训练及 10 验证，桌面预览已收到新图，采样器进入 pose01。
+
+新增独立的 [100 mm ID25 点云标定入口](piper_vision_grasp_runbook.md#100-mm-aruco-id-25-深度点云标定)，供换装标定板后下次采样。默认 20+8，用深度平面估计每帧板位姿，按新批次求解 T_end_marker。仅交付开发机启动工具；新安装位置的实际外参与验证误差待采集。
+
+ID25 点云标定入口的操作改为终端回车拍摄、OK 收录、NO 弃用、Q 暂停。独立窗口每两秒更新缩略图，审核时展示三帧叠加图，启动终端提供本次审核文件路径。
+
+回车采图后三帧首先显示实际 ArUco 四角 A–D 和黑框连线，深度检查失败仍可在预览与开发机保存的 border.jpg 图中核对边框。
+
+### 2026-11-21 Piper ID25 点云标定续采
+
+批次 `board25-20261121-165820-766a5d` 已在原目录切换到 30 组训练和 5 组独立验证，每组 3 帧 RGB-D。机载端使用 `~/piper-board-depth-data/board25-20261121-165820-766a5d`。切换前后的 pose01–08 共 133 个文件 SHA-256 一致，校验清单位于本机构建目录 `build/piper-board-depth/evidence/plan30-5/original.sha256`。桌面终端已从 pose09 续采，恢复时显示训练 8/30、验证 0/5。
+
+### 2026-11-21 法兰到夹持中心 TCP
+
+用户根据本轮 25+5 姿态的夹爪刚性平移查看器选取法兰系 TCP 为 `[-1.5, -29.5, 151] mm`。该绝对向量已写入开发机三个语义抓取配置的 `semantic.tcp_offset_m`。本轮安装位于 `build/piper-tcp-20261121/overlay`，默认抓取入口的实际加载记录见 `build/piper-tcp-20261121/evidence/installed-check/config_snapshot.json`。本次仅更新本地配置，机载部署与实物抓取精度待验证。
+
+### 2026-11-21 红块实验采用 ID25 深度 25+5 外参和人工 TCP
+
+共享外参采用 [本批次拟合结果](../../config/piper_vision_grasp/provenance/board25_20261121_fit25_result.json) 的 `T_base_color_optical`。原始三帧 RGB-D 采样中仅取 25 个训练姿态拟合；验证 pose31–35 的闭环 RMS 为 16.823 mm / 1.724°。机载默认抓取配置经实际加载，TCP 为法兰系 `[-0.0015, -0.0295, 0.151] m`。三包构建成功，机载分发文件校验和离线 `CHECK_OK` 已通过。本轮开发安装在 `build/piper-fit25-live/overlay`，快照在 `build/piper-fit25-live/evidence/remote-check`。机载 `~/piper-vision-current` 已指向 `~/piper-fit25-tcp-20261121`，前一版本保留为 `~/piper-vision-current.before-fit25-20261121`。
+
+### 2026-11-21 红块单次抓取的闭爪及抬升留证
+
+本轮部署独立目录 `~/piper-fit25-close-lift-20261121`，已校验包文件、通过机载离线检查。新增 `run --record-close-lift`，以闭爪稳定、规划抬升到位为两个采集时刻，复用拍摄前后反馈检查。三项新增测试覆盖空夹、夹住及抬升未验证。开发机证据位于 `build/piper-fit25-live/evidence/close-lift`，包含本轮渲染工具。第一次只读场景三帧中第 3 帧深度尺寸异常，三帧合并判为 WAIT_STABILITY，没有用于运动。控制器停录后仍为 WAIT_CONTROL（2/2）；当前现场授权的单次抓取尚未发送运动指令。
+
+### 2026-11-21 更新夹持中心并切换 CAN
+
+法兰 TCP 取用户指定的 `[-1.5,-39.5,151.0] mm`；开发机三份语义配置和机载默认入口 `~/piper-vision-current` 均已更新。当前机载发布目录为 `~/piper-fit25-tcp395-20261121`，包含闭爪与抬升记录选项。用户确认可靠支撑、人员撤离并允许恢复使能后执行模式切换。CAN 切换过程中六轴反馈短暂为 DISABLED，恢复使能后连续三次复核 READY、ctrl_mode=1、teach_status=0、err_code=0。未发送关节位置或夹爪目标。最终只读关节反馈 J2=-0.074°、J3=+0.420°，略超当前抓取 FK 的零位边界。机载配置和最终反馈已保存至 `build/piper-fit25-live/evidence/tcp395-can`。
+
+### 2026-11-22 机载 R4 30+5 外参与原始 TCP
+
+机载默认抓取入口已切换到 `/home/unitree/piper-r4-30plus5-tcp135-20261122.W3sw1v`。三个语义配置都使用 R4 30+5 外参和法兰系 TCP [0, 0, 135] mm。用户指定关节零位修正仅用于标定。机载核对 FK、IK、控制器 I/O 代码与运动学模型的字节内容均与上一版一致。分发包 SHA-256 与开发机一致，新目录及默认入口均通过离线 CHECK_OK，未执行抓取。开发机部署记录在 `build/piper-r4-deploy-20261122/evidence/activation.log`。
+
+### 2026-11-22 传感器零位统一修正
+
+用户更新角度约定，实际角等于传感器角加 [0.107, -1.956, 2.219, 0, 19.422, 0]°。机载 `/home/unitree/piper-vision-current` 切换到 `/home/unitree/piper-r4-sensor-zero-20261122.T0qudO`，标定板采样器位于 `/home/unitree/.local/share/piper-board-depth/8b57ee4c078cce39e4d9`。210 条 R4 原始传感器反馈的 FK、35 个位姿的平均 FK、5 个验证姿态的 IK 均已在机载验证。保持 R4 30+5 外参与法兰系 TCP [0, 0, 135] mm。机载部署证据为 `/home/unitree/piper-r4-deployment-check.0xICD4/current/result.json`。
+
+一次红块夹取记录在机载 `/home/unitree/piper-r4-grasp-evidence/sensor-zero-01`。闭爪与抬升时开度均为 55.5 mm，抬升到位。两帧实拍可见红块随夹爪升起并离开盒沿。自动验证返回 LIFT_UNCONFIRMED（可见面形状或朝向变化），程序在抬升位结束并保持闭爪。本机闭爪与抬升并排对照图位于 `build/piper-sensor-zero-20261122/evidence/sensor-zero-01/close-lift.jpg`。
+
+### 2026-11-22 闭爪后回传感器零点
+
+按用户约定，“回零”始终指六轴传感器读数全 0°。本次先在机载执行松爪并回零，静止后复读六轴全 0°、开度 68.7 mm、故障码 0。新版默认入口指向 `/home/unitree/piper-close-return-20261122.hNf4Mj`。单次抓取从当前反馈姿态接近 IK 终点，闭爪稳定后抬升 20 mm，保持闭爪并分段回传感器零点。即使视觉未确认或判定闭空，仍执行回零并分别记录抓取与归零结果。机载用模拟反馈验证抬升后相机失败的分支及发令顺序，默认入口离线检查结果在 `/home/unitree/piper-r4-deployment-check.sboyAp/current/result.json`。本轮未重新抓取物块。
+
+### 2026-11-22 三轮 R4 抓取与桌面 RGB 预览
+
+第三轮重新摆放后使用 `close-return-02-repositioned` 完成抓取和回零，实拍显示红块随夹爪抬起，自动验证为 RETURNED_ZERO_UNCONFIRMED。闭爪和抬升反馈均为 55.6 mm，复读六轴传感器全零、错误码 0。三轮完整实拍和 FK 模型叠加点云报告在 `build/piper-r4-three-grasps/report/index.html`。
+
+机载默认入口已切换到 `/home/unitree/piper-live-rgb-20261122.dwg5Dy`。开发机桌面入口是 `bash scripts/piper_vision_grasp.sh desktop-run --record-close-lift`，通过 SSH 显示同一相机流的 320×240 缩略图。实机只读测试中观察到 10 次缩略图更新，平均间隔 2.003 秒，两次正式采图共保存 6 对新 RGB-D 帧，彩色图为 640×480。记录为 `build/piper-live-rgb-20261122/evidence/readonly-rgb.log`。预览版本通过机载离线流程检查和上述只读相机验证，未另行发起抓取。
+
+### 2026-11-22 Go2 Agent 的 PiPER 工具
+
+RoboRSI 工具与调用步骤见 `docs/multi_agent/go2_agent_runbook.md` 的 PiPER 章节。控制机入口 `scripts/start_go2_agent_task.sh` 支持单次抓取、按抓取编号在抬升位放置和确认抓取后放置。开发机安装在 `build/piper-agent-skills/overlay/install/vlm_nav/share/vlm_nav`。本次仅离线验证工具分发和结果绑定。

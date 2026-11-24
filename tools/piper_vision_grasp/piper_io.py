@@ -171,6 +171,9 @@ class PiperSession:
                         command_attempted=bool(self.attempts),sample_time=0.)
         now = time.monotonic()
         result = self.feedback.snapshot(self.arm,now)
+        if result.get('joints_deg') is not None and isinstance(self.config.get('kinematics'), dict):
+            from .geometry import model_angles
+            result['actual_joints_deg'] = model_angles(result['joints_deg'],self.config['kinematics']).tolist()
         state, reason = common.assess(self.arm,self.feedback.seen,now)
         if result['missing_feedback']: state,reason='WAIT_FEEDBACK','missing/old frame'
         elif any(getattr(self.arm.GetArmGripperMsgs().gripper_state.foc_status,f) for f in GRIPPER_FAULTS):

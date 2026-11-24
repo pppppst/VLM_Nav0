@@ -64,11 +64,29 @@ def limits(model):
     return bounds
 
 
+def model_angles(sensor_deg, model):
+    """Actual URDF angles from controller angles, both in degrees."""
+    return np.asarray(sensor_deg, dtype=float) + model.get('joint_offset_deg', 0.)
+
+
+def load_joint_calibration(config, directory):
+    if 'joint_zero_calibration' in config:
+        source = (directory/config['joint_zero_calibration']).resolve()
+        if directory not in source.parents:
+            raise ValueError('joint calibration outside config bundle')
+        offset = np.array(json.loads(source.read_text())['joint_offset_deg'], dtype=float)
+        if offset.shape != (6,) or not np.all(np.isfinite(offset)):
+            raise ValueError('six finite joint zero offsets required')
+        config['kinematics']['joint_offset_deg'] = offset.tolist()
+
+
 def fk(angles_deg, model):
     angles = np.radians(np.asarray(angles_deg, dtype=float))
     bounds = limits(model)
     if angles.shape != (6,) or not np.all(np.isfinite(angles)) or np.any(angles < bounds[:,0]-1e-9) or np.any(angles > bounds[:,1]+1e-9):
         raise ValueError('joint limit violation')
+    # IK optimizes controller coordinates and thus returns controller-ready setpoints.
+    angles = np.radians(model_angles(angles_deg, model))
     result = np.eye(4)
     for angle, joint in zip(angles, model['joints']):
         origin = np.eye(4)
@@ -87,6 +105,11 @@ def solve_ik(target, seed_deg, model):
     tolerance=float(model.get('ik_position_tolerance_m',.001))
     if not np.isfinite(tolerance) or tolerance<=0:raise ValueError('invalid IK position tolerance')
     bounds = limits(model)
+    # IK setpoints must satisfy both the existing controller bounds and URDF
+    # bounds expressed in sensor coordinates. FK can still describe measured zero.
+    offset = np.radians(model_angles(np.zeros(6), model))
+    bounds = np.column_stack((np.maximum(bounds[:,0], bounds[:,0]-offset),
+                              np.minimum(bounds[:,1], bounds[:,1]-offset)))
     seed = np.clip(np.radians(seed_deg), bounds[:,0]+1e-9, bounds[:,1]-1e-9)
     def residual(q):
         actual = fk(np.degrees(q), model)
@@ -240,6 +263,7 @@ def load_config(path):
     if semantic:
         config['reference'] = dict(reference_id='semantic-rgbd-v1')
         transform(config['extrinsics']['T_base_color_optical'])
+        load_joint_calibration(config, path.parent)
         limits(config['kinematics'])
         config['config_path'] = str(path)
         return config
@@ -253,6 +277,8 @@ def load_config(path):
         raise ValueError('reference FK/model mismatch')
     if config['gripper']['effort_nm'] != .5:
         raise ValueError('configuration outside this experiment effort')
+    load_joint_calibration(config, path.parent)
+    ref['T_base_flange'] = fk(ref['joints_deg'],config['kinematics']).tolist()
     ref.update(local_limit_m=config['motion']['local_limit_m'], lift_m=config['motion']['lift_m'],
                sample_spacing_m=config['motion']['sample_spacing_m'],
                orientation_tolerance_deg=config['detector']['orientation_tolerance_deg'])
@@ -289,7 +315,7 @@ def absolute_target(observation, config):
                 tcp_offset_m=config['semantic']['tcp_offset_m'],
                 approach_pitch_deg=float(np.degrees(pitch)),
                 approach_yaw_offset_deg=yaw,
-                tcp_status='legacy offset; physical calibration unverified')
+                tcp_status='configured tool offset; physical calibration unverified')
 
 
 def plan_absolute(current_deg, config, target):
@@ -320,7 +346,7 @@ def plan_absolute(current_deg, config, target):
         reference['entry_offset_base_m']=offset.tolist()
     plan = plan_motion(current_deg, reference, target, model)
     plan['target'] = target
-    plan['scope'] = 'description/RGB-D absolute target; legacy TCP parameter'
+    plan['scope'] = 'description/RGB-D absolute target; configured TCP parameter'
     plan['close_mm'] = max(0., target['grasp_width_m']*1000-config['semantic']['close_margin_mm'])
     plan['measured_grasp_width_mm'] = target['grasp_width_m']*1000
     return plan

@@ -1,5 +1,29 @@
 # Piper 独立蓝色积木视觉抓取
 
+## 当前语义抓取 TCP（2026-11-22）
+
+开发机和机载的基础语义、避相机、GraspNet 三套抓取配置都从 `extrinsics-r4.json` 加载 R4 的 30+5 深度标定外参。夹持中心沿法兰 link6 的正 Z 方向 135 mm，`semantic.tcp_offset_m = [0, 0, 0.135]`。标定、抓取 FK 和模型叠加均使用实际角 = 传感器角 + [0.107, -1.956, 2.219, 0, 19.422, 0]°。IK 在传感器角坐标中优化，返回值可直接发给控制器。反馈中的 `joints_deg` 为传感器角，`actual_joints_deg` 为修正后的实际角。“回零”统一指六轴传感器读数回到 0°，各轴按配置容差验收。开发机安装入口为 `build/piper-live-rgb-20261122/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh`，机载入口为 `/home/unitree/piper-vision-current/scripts/piper_vision_grasp.sh`。
+
+四套抓取配置均已启用闭爪后回传感器零点。从当前反馈姿态规划，经预抓位到达 IK 夹取终点并闭爪；闭爪稳定后，按既有轨迹抬升 20 mm，再保持夹爪命令分段回零。视觉验证成功、未确认或稳定闭空分别写入 `grasp_outcome`，回零到位由独立的 `returned_to_sensor_zero` 和六轴实测值记录。抬升后的相机或识别异常只记录一次。关节、夹爪驱动故障和不确定的发送仍进入原有等待恢复流程。回零到位后维持当前夹爪状态，单独调用 `zero` 也只控制六轴。
+
+## 用目标描述启动一次抓取
+
+在开发机图形桌面的 Bash 终端进入仓库根目录，使用平时运行 VLM_Nav 的模型环境。在目标摆好且运动路径净空后执行：
+
+```bash
+bash scripts/piper_grasp_once.sh "纸盒右侧的红色方块"
+```
+
+引号内是完整目标描述。脚本自行启动本机语义识别、机载 SSH 反向隧道、RGB 预览和一次抓取，沿用机载当前配置的角度搜索与闭爪后回传感器零点流程。请保持终端运行，预览显示抓取结束后可关闭窗口。机载 result.json 记录抓取与回零结果。单独关预览不会停止机械臂。此入口需本机及机载回环端口 18765 可用；若已手动启动了模型和隧道，可直接使用下节的 desktop-run 加 `--color 红色 --description "纸盒右侧的方块"`。上次开爪反馈停在 54.1 mm，若再次出现 WAIT_OPEN，请检查开度和止挡。
+
+## 抓取时查看 RGB
+
+开发机图形桌面的 Bash 终端进入仓库根目录。按本手册既有流程启动识别服务并保持 18765 反向隧道，确认现场可运动后运行 `bash scripts/piper_vision_grasp.sh desktop-run --record-close-lift`。该命令打开本地 RGB 窗口，启动一轮机载抓取，保持此终端运行至抓取结束。单独关窗不停止机械臂。直接在机载图形桌面运行 `run` 也会打开预览窗口。
+
+对于从普通 SSH 启动的运行，开发机可用 `python3 scripts/piper_grasp_rgb.py --host unitree-go --view /机载运行目录` 单独查看。目录取该次终端显示的 events.jsonl 所在目录。此命令只读缩略图，结束不会控制机械臂。窗口显示最近一帧的时间；超过五秒没有更新会显示“等待新帧”。
+
+抓取进程独占一条 RGB-D 流。预览最多每两秒从这条流读取一次彩色帧，缩到 320×240，原子替换运行目录的 live-rgb.jpg。正式拍照期间优先取原分辨率的新 RGB-D 帧，预览跳过正忙的周期。
+
 ## 六关节回零脚本（2026-11-18）
 
 正式入口为 [scripts/piper_return_zero.sh](../../scripts/piper_return_zero.sh)。它调用现有控制程序的 `zero` 动作，
@@ -246,25 +270,24 @@
 
 描述和颜色共同进入模型请求，模型返回目标框和建议关键点，SAM提取轮廓；抓取位置使用有效掩码外接范围的中心及邻域深度，模型建议点仅留作诊断，避免其逐帧跳动；利用实际对齐深度内参计算点云，输出dimensions_base_m及grasp_width_m。尺寸是可见点云在基座各轴的范围，不保证完整隐藏长宽高；不要求用户填写物品尺寸。抓取沿基座-Z顶抓，根据框边缘的实际三维方向确定夹爪朝向，使用当前manual04外参的完整旋转/平移。法兰位置=抓取TCP位置−旋转后的工具偏移。
 
-semantic.json中tcp_offset_m=[0,0,0.135]、grasp_offset_base_m=[0,0,-0.013]来自旧代码试验参数（-18mm与+5mm合并），不是当前已标定结果。预抓沿工具负Z退100mm，保持原20mm抬升/5%速度。用户现场反馈开爪需1–2Nm，语义配置现采用open_effort_nm=1.0（70mm开爪），effort_nm=0.5（闭爪）；未设置open_effort_nm的旧配置仍使用effort_nm开爪。闭爪目标为测得的夹取宽度减4mm且不小于0，不继续写死36mm；现有驱动宽度检查仍按真实设备处理。语义模式帧年龄配置120秒以容纳CPU/网络推理，实际接收时间保留，诊断frame_age包括推理耗时。模型未找到、掩码/深度不可用、接口异常均进入现有等待；不会执行模型生成的代码。
+2026-11-14 的历史配置中 tcp_offset_m=[0,0,0.135]、grasp_offset_base_m=[0,0,-0.013]来自旧代码试验参数（-18mm与+5mm合并），不是当前已标定结果。预抓沿工具负Z退100mm，保持原20mm抬升/5%速度。用户现场反馈开爪需1–2Nm，语义配置现采用open_effort_nm=1.0（70mm开爪），effort_nm=0.5（闭爪）；未设置open_effort_nm的旧配置仍使用effort_nm开爪。闭爪目标为测得的夹取宽度减4mm且不小于0，不继续写死36mm；现有驱动宽度检查仍按真实设备处理。语义模式帧年龄配置120秒以容纳CPU/网络推理，实际接收时间保留，诊断frame_age包括推理耗时。模型未找到、掩码/深度不可用、接口异常均进入现有等待；不会执行模型生成的代码。
 
 ### 启动顺序
 
 先完成[主runbook](go2_runbook.md#2026-11-14-piper语义识别及绝对抓取接入)的新构建和模型环境，下面每步达到成功判据后再继续。模型服务在开发机，控制程序在Go2；无需ROS。新分发目录以实际部署为准，本轮使用 `~/piper-vision-semantic-20261114`，旧目录和日志保留。
 
-1. **开发机终端C**设置模型环境并启动服务，保持运行。已有服务MODEL_READY时不重复启动。凭证在终端静默输入，仅放环境变量：
+1. **开发机终端 C** 使用平时运行 VLM_Nav 的交互式 Bash 环境启动服务，并保持运行。首次切换到这版服务时，先在原服务终端按 Ctrl+C，再执行下列命令。服务启动后可供多轮采样复用。
 
    ```bash
    cd /home/isee-pst/unitree_ros2/VLM_Nav
    export PIPER_VISION_GRASP_PYTHON="$PWD/build/piper-vision-semantic-20261114/model-venv/bin/python"
    export PIPER_SAM_CHECKPOINT=/home/isee-pst/unitree_ros2/piper/agent/sam/sam_vit_b_01ec64.pth
-   read -rs -p '模型API密钥: ' PIPER_VLM_API_KEY
-   export PIPER_VLM_API_KEY
-   bash build/piper-vision-semantic-20261114/overlay/install/vlm_nav/share/vlm_nav/scripts/piper_vision_grasp.sh serve \
-     --config build/piper-vision-semantic-20261114/overlay/install/vlm_nav/share/vlm_nav/config/piper_vision_grasp/semantic.json
+   piper_share="$PWD/build/piper-cube-45plus10/overlay/install/vlm_nav/share/vlm_nav"
+   bash "$piper_share/scripts/piper_vision_grasp.sh" serve \
+     --config "$piper_share/config/piper_vision_grasp/semantic-camera-avoid.json"
    ```
 
-   诊断MODEL_READY说明SAM已加载，未证明云端识别成功；若WAIT_CONFIG/MODEL_LOADING不前进，按日志检查环境/权重，勿反复启动占同一端口。
+   终端 C 自动继承 VLM_Nav 的凭证。优先读取 `DASHSCOPE_API_KEY`，配套使用 `DASHSCOPE_BASE_URL` 或 `DASHSCOPE_WORKSPACE_ID`、`DASHSCOPE_MODEL`；使用 `OPENAI_API_KEY` 的环境需同时提供 `OPENAI_BASE_URL`，模型名取 `OPENAI_MODEL`。机载采样和离线求解无需密钥。诊断 MODEL_READY 表示 SAM 已加载，首次识别返回 MODEL_RESULT 表示模型调用成功。若服务停在 WAIT_CONFIG 或 MODEL_LOADING，按诊断检查环境和权重。
 
 2. **开发机终端D**建立SSH反向隧道并保持：
 
@@ -432,3 +455,70 @@ bash /home/unitree/piper-vision-current/scripts/piper_vision_grasp.sh check
 ### 2026-11-20 本地抓取配置采用 r3
 
 开发机当前共享 extrinsics.json 使用 [r3 的 100 mm 黑框、20+8 标定结果](piper_handeye_r3_100mm_20plus8_result.json)。平移为 [354.844,33.748,−65.293] mm，方向为光学系到 Piper 基座。四个配置共用这份完整旋转和平移。启动路径见[主 runbook](go2_runbook.md#2026-11-20-采用-r3-实测-100-mm-手眼外参本地)。现场抓取精度仍待验证；本次更新范围为本地源码与构建安装。
+
+### 49.5 mm 红块的 RGB-D 手眼标定（45 个训练姿态、10 个留出姿态）
+
+入口为 `scripts/piper_vision_grasp.sh cube-calibrate`。采用抓取的红色方块语义识别、SAM 掩膜、对齐深度和目标点筛选。每个静止姿态采三帧并保存原分辨率彩色、原始/对齐深度、逐帧采图前后关节反馈和识别记录；frame01 是代表图。55 个独立姿态对应 55 张代表图和 165 对原始 RGB-D。
+
+把边长 49.5 mm 的立方体刚性固定在夹爪上，整个批次保持安装位置、开度和相机安装不变。优先让两个相邻面完整可见，并让两面都有有效深度。可以换可见面，每个面推得的块心应相同。前 45 个姿态覆盖抓取工作区的左右、高低、远近，同时绕至少两个不平行轴改变腕部朝向；后 10 个姿态采用新的位置与朝向组合，包含实际工作区。先停止拖动、确认稳定保持再拍。脚本仅被动读取 CAN，不启动运动或抓取。
+
+1. **开发机 Bash，仓库根目录。** 将本次独立工具包复制到机载机并解包。下列命令成功退出即可关闭此终端；若同名目录已存在，先核实是否已是本次工具包，或选另一新目录，避免覆盖历史程序。原机载抓取入口无须切换。
+
+   ```bash
+   cd /home/isee-pst/unitree_ros2/VLM_Nav
+   scp build/piper-cube-45plus10/piper-cube-multiface.tar.gz unitree-go:~/
+   ssh unitree-go 'mkdir ~/piper-cube-multiface && tar -xzf ~/piper-cube-multiface.tar.gz -C ~/piper-cube-multiface'
+   ```
+
+2. **开发机两个终端。** 按本页[语义模型服务和 SSH 隧道启动顺序](#启动顺序)的第 1、2 步启动并保持。终端 C 看到 MODEL_READY，终端 D 确认机载回环端口 18765 转发成功再开始。复用已有正常服务即可。语义服务会使用当前 RGB 调用配置的视觉模型；电脑上的缩略图查看器不打开相机。
+
+3. **机载 Bash，终端 A，无需 ROS，保持运行至本批结束。** 进入新工具目录，使用已有 Piper/RealSense Python 环境。选择一个新数据集路径；中途暂停时用同一路径、同一配置继续。
+
+   ```bash
+   cd ~/piper-cube-multiface
+   export PIPER_VISION_GRASP_PYTHON="$HOME/piper-handeye-20261112/.handeye-venv/bin/python"
+   bash scripts/piper_vision_grasp.sh cube-calibrate collect --dataset "$HOME/piper-cube-data/red49-01"
+   ```
+
+   只有一个进程打开相机，每 2 秒从当前彩色流保存一张 320×240 的 `preview.jpg`。回车后丢弃排队帧，采集新 RGB-D。在 OK 提示时，同一路径换为完整的核对图；每个彩框应分别包住一个完整方形面，箭头从该面中心指向独立估计的块心，紫色十字表示融合块心。正视时二者的二维投影可以重合。OK 收录，NO 重拍，Q 暂停。原始数据与 `review.jpg` 保存在各 pose 目录，未收录的尝试留在 attempts。若识别、反馈或几何检查失败，在该姿态修正后重试。每 5 组训练输出一次累计闭环 RMS 或姿态激励不足的提示。
+
+   **开发机查看图像**时可在另一个 Bash 终端运行下面命令，取回当前缩略图或核对图；OK 前以本次终端 A 打印的 review.jpg 为准。看图终端不连接相机。
+
+   ```bash
+   scp unitree-go:piper-cube-data/red49-01/preview.jpg /tmp/piper-cube-preview.jpg && xdg-open /tmp/piper-cube-preview.jpg
+   ```
+
+   **机载诊断终端 B**在 A 启动后运行 `tail -F ~/piper-cube-data/red49-01/events.jsonl`，看 WAIT_SAMPLE 的原因、采样编号及审核状态。可保持到采样结束。
+
+4. 收齐后自动离线求解。**机载终端 A**如需复算，在相同目录、解释器和数据集路径执行以下命令。看到训练 RMS、留出测试 RMS/最大误差及结果路径即完成，可关闭模型服务、隧道和终端。样本不完整时继续 collect。
+
+   ```bash
+   bash scripts/piper_vision_grasp.sh cube-calibrate solve --dataset "$HOME/piper-cube-data/red49-01"
+   ```
+
+在 SAM 掩膜内按对齐深度拟合至多三个平面，并把共享棱边附近的点分给最近的面。每个候选面需满足原有方形轮廓和边长要求（49.5 ± 7 mm），且由连续的深度点支撑。面中心沿指入方块的单位法向移动 24.75 mm，得到该面独立的块心估计。只剩一个可靠面时使用单面结果；有多个完整面时，各对法向夹角均须在 90° ± 12° 内，独立块心的两两距离须在当前抓取稳定性阈值 3 mm 内，再对块心取等权平均。完整面之间不一致会提示重拍。三帧仍分别估计块心，再检查稳定性。阈值为当前实现参数，面间一致性不代表绝对精度。
+
+终端按帧显示采用的面数和面间块心距离。每姿态的 `sample.json` 保存各面的轮廓、内法向、面心、独立块心、合格面的夹角及最终块心。已有单面数据可续采，旧样本保留原估计；新版样本带有 `center_estimator` 字段。
+
+求解方程为 `T_base_color_optical · p_cube_color = R_base_flange · d_flange_cube + t_base_flange`。训练同时估计刚体外参和法兰坐标系中的固定三维偏移。result.json 包含正反 TF、`flange_to_cube_center_m`、可观测性奇异值、训练及独立测试的逐姿态基座 XYZ 残差、RMS 和最大值。方块中心确实位于实际 TCP 时，这个偏移才代表法兰到 TCP 的位置。中心点观测不能标定工具自身的三个姿态角。结果以候选参数保存，需结合 10 组留出结果和所需抓取精度决定是否采用。实际抓取目前仍瞄准可见表面；仅替换外参不足以使抓取也瞄准块心。
+
+### 100 mm ArUco ID 25 深度点云标定
+
+适用于 11 月 20 日使用的 DICT_ARUCO_ORIGINAL、ID 25，黑框外沿边长 100 mm。板可换安装位置。整个新批次内保持板相对末端、相机相对基座固定，保持夹爪开度。每次换装后开启新批次。默认收录 30 个训练姿态、5 个独立验证姿态，训练同时估计相机到基座矩阵和此次安装的末端到标记矩阵。机械臂输入采用与 r3 一致的 Piper SDK 末端反馈坐标系。
+
+1. **在开发机桌面 Bash 启动并保持终端。** 使用能通过 SSH 别名 `unitree-go` 登录机载端的桌面账户。开发机需要系统 Python 3、Tk 和 Pillow；机载端复用 `~/piper-handeye-20261112/.handeye-venv/bin/python`。连接 D435 与原 USB-CAN，保持 CAN 已启用且为 1 Mbps，并退出占用相机或反馈锁的上一轮采样。启动无需 ROS 或模型密钥。命令自动分发采样代码到用户目录，打开独立的缩略图窗口。所有输入均在启动命令的终端进行，请保持该终端运行。
+
+   ```bash
+   cd /home/isee-pst/unitree_ros2/VLM_Nav
+   /usr/bin/python3 scripts/piper_board_depth.py
+   ```
+
+2. **摆姿与拍摄。** 等终端提示 pose01，同时观察独立窗口里的缩略图。单一相机进程每两秒提供一张预览。保持黑框四角完整可见，手摆后结束示教、静止，在启动终端按回车拍摄。程序丢弃排队帧，保存三组新的原分辨率彩色图、原始/对齐深度、硬件时间戳及拍摄前后的机械臂反馈。配对依靠静止窗口，不假定 CAN 和相机时钟硬同步。
+3. **审核。** 回车拍摄后窗口先并排显示三帧 RGB。黄色闭合线是本帧 ID 25 实际检出的黑框外沿，紫色十字和 A–D 标明四个角点（按标记解码顺序）。检查每条黄线是否贴合真实黑白交界，尤其注意角点是否延伸到白边。无法唯一识别的帧会显示提示。深度检查失败时窗口保留本次黑框图，终端列出对应文件路径；通过时审核图另加绿色板面内点。确认标记正确、点分布在板面不同区域，且三帧位置稳定后在终端输入 `OK` 并回车收录。输入 `NO` 并回车会弃用本次尝试，原文件保留，新姿态沿用当前有效样本编号。审核时终端会显示中间帧的机载拍摄时间及三张本地审核图的完整路径。识别、深度或反馈失败时终端显示原因，修正后回车返回预览，再回车拍摄。每五个训练姿态显示一次暂定训练残差或激励不足的原因。训练时覆盖抓取区并绕两个不平行轴转腕，验证时另选新的位置与朝向组合。
+4. **完成与续采。** 收齐后自动求解，终端显示留出验证的平移和旋转 RMS 及结果文件路径。机载目录为 `~/piper-board-depth-data/<批次>/`，每帧保存的 `frame*-board.ply` 是用于拟合的板面内点，单位米、坐标系为相机彩色光学系。原始深度 NPZ 与 metadata.json 可重建全场景点云。开发机 `~/Pictures/piper-handeye-depth/<批次>/` 保存审核图、诊断日志和最终 result.json。结果含正反相机 TF、此次 `T_end_marker`、训练和验证逐姿态及整体残差；不自动发布或覆盖真机 TF。在终端输入 `Q` 并回车可暂停，已收录姿态保留。缩略图窗口可最小化。保持本次安装不变时，在开发机使用终端打印的带 `--resume` 完整命令续采；默认启动命令每次新建批次。
+
+深度点由原始深度图反投影并根据设备出厂的深度到彩色外参转换到彩色光学系；同像素优先采用最近表面。RGB 解码确定标记身份和角点射线，黑框内部收缩区域的实测点决定平面。四条角点射线与平面相交，按 100 mm 正方形拟合板的三维位姿。缺深度、覆盖不足、边长不符或三帧不一致时要求重拍。当前 D435 流使用零畸变系数，遇不支持的非零畸变将报告错误。11 月 20 日旧样本仅有 RGB，不能加入本次点云拟合。
+
+本方案中一次收录代表一个独立姿态，每姿态仍拍三帧 RGB-D。30+5 批次的 pose01–30 用于训练，pose31–35 只用于验证。续采仅含训练数据的旧 20+8 批次时，程序保留已收录的原文件，并在数据集锁内更新目标数量。已开始验证的历史批次仍按其原划分读取与求解。
+
+一次抓取需要记录闭爪与抬升两帧时，可在 `run` 加 `--record-close-lift`。本轮机载实验入口为 `~/piper-vision-current/scripts/piper_vision_grasp.sh`。此模式分别在闭爪稳定和本轮规划的抬升到位后保存一帧原始 RGB、原始及对齐深度、相机标定及前后夹爪反馈，事件 `ARM_POSE_RECORDED` 给出实际目录。稳定闭到目标宽度且未检出接触时仍记录计划内抬升，结束状态为 `CONTACT_UNCONFIRMED`；检测到接触后依旧需要视觉证据才计作成功。设备故障或运动未到位时等待，不把其他时刻的图当成这两帧。开发机使用本轮 `build/piper-fit25-live/evidence/close-lift/render_pair.py` 可从复制的运行目录导出基座系米制彩色 PLY 和分阶段三维查看页。

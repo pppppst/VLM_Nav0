@@ -539,12 +539,17 @@ class FakeSession:
         return dict(state='COMMAND_ATTEMPTED',command_attempted=True)
 
 
-def run_fake(tmp_path,monkeypatch,kind='success'):
+def run_fake(tmp_path,monkeypatch,kind='success',record_pair=False,return_home=False):
     m=main_module();g=geometry_module()
     config=g.load_config(CONFIG/'config.json')
+    # Replay the historical RGB-D fixture with its original FK and grasp reference.
+    config['kinematics'].pop('joint_offset_deg',None)
+    config['reference']['T_base_flange']=read(CONFIG/'reference.json')['T_base_flange']
     config['gripper']['stable_seconds']=.2
     config['poll_seconds']=0
     config['run_id']='test-cycle'
+    config['record_close_lift']=record_pair
+    config['motion']['return_zero_after_grasp']=return_home
     session=FakeSession(empty=kind=='empty',fault_after_send=kind=='dropout')
     rgb,depth,camera=sample()
     before=detect(np.roll(rgb,12,axis=1),np.roll(depth,12,axis=1),camera)
@@ -929,7 +934,7 @@ def test_arm_capture_retries_changed_pose_without_command_or_replay(tmp_path,mon
     assert [e['state'] for e in events if e['state']!='WAIT_FEEDBACK']==['WAIT_ARM_CAPTURE','ARM_POSE_RECORDED']
 
 
-def test_failed_grasp_confirmation_never_starts_loaded_return(tmp_path,monkeypatch):
+def test_failed_grasp_confirmation_returns_with_close_command_held(tmp_path,monkeypatch):
     m=main_module();cfg=geometry_module().load_config(CONFIG/'semantic-camera-avoid.json');s=FakeSession()
     cfg['poll_seconds']=0
     plan=dict(close_mm=40.,stages=[dict(stage_id=name,phase=phase,angles_deg=[0,20,-10,0,0,0]) for name,phase in
@@ -941,8 +946,9 @@ def test_failed_grasp_confirmation_never_starts_loaded_return(tmp_path,monkeypat
     monkeypatch.setattr(m.vision,'verify_lift',lambda *a:dict(status='WAIT_VERIFY',reason='not lifted'))
     monkeypatch.setattr(m.time,'sleep',lambda _:(_ for _ in ()).throw(KeyboardInterrupt()))
     result=m.run_once(cfg,s,None,tmp_path)
-    assert result['state']=='EXITED' and result['grasp_confirmed'] is False
-    assert not any(c[0].startswith('return-zero') for c in s.calls)
+    assert result['state']=='RETURNED_ZERO_UNCONFIRMED' and result['grasp_confirmed'] is False
+    assert result['returned_to_sensor_zero'] and s.joints==[0]*6
+    assert result['grasp_outcome']=='LIFT_UNCONFIRMED'
     assert [c[0] for c in s.calls if c[1]=='gripper']==['open','close']
 
 
@@ -951,3 +957,57 @@ def test_capture_and_return_switches_reject_string_booleans(tmp_path,name):
     cfg=read(CONFIG/'semantic-camera-avoid.json');cfg['motion'][name]='false'
     path=tmp_path/'invalid.json';path.write_text(json.dumps(cfg))
     with pytest.raises(ValueError,match='must be boolean'):geometry_module().load_config(path)
+
+
+@pytest.mark.parametrize('kind,state',[('empty','CONTACT_UNCONFIRMED'),('success','GRASP_CONFIRMED'),
+                                        ('not_lifted','LIFT_UNCONFIRMED')])
+def test_close_lift_pair_recorded_once_even_on_empty_close(tmp_path,monkeypatch,kind,state):
+    m=main_module()
+    captures=[]
+    def record(c,s,e,stage,raw_only):
+        assert raw_only
+        captures.append((stage,s.calls[-1][0]))
+    monkeypatch.setattr(m,'record_arm_pose',record)
+    result,session=run_fake(tmp_path,monkeypatch,kind,record_pair=True)
+    assert result['state']==state
+    assert result['grasp_confirmed']==(kind=='success')
+    assert captures==[('closed','close'),('lifted','lift')]
+    assert sum(stage=='close' for stage,_,_ in session.calls)==1
+
+
+@pytest.mark.parametrize('kind,outcome',[('empty','CONTACT_UNCONFIRMED'),('occluded','LIFT_UNCONFIRMED')])
+def test_stable_close_returns_to_sensor_zero_even_without_visual_confirmation(tmp_path,monkeypatch,kind,outcome):
+    result,session=run_fake(tmp_path,monkeypatch,kind,return_home=True)
+    assert result['state']=='RETURNED_ZERO_UNCONFIRMED' and result['grasp_outcome']==outcome
+    assert session.joints==[0]*6 and not result['grasp_confirmed']
+    assert [c[0] for c in session.calls if c[1]=='gripper']==['open','close']
+    assert sum(c[0]=='grasp' for c in session.calls)==1
+
+
+def test_grasp_preview_uses_one_pipeline_and_yields_to_recording(tmp_path,monkeypatch):
+    import cv2
+    from types import SimpleNamespace as NS
+    from piper_vision_grasp import live_rgb
+    pixels=np.zeros((480,640,3),dtype=np.uint8);pixels[:,:,0]=200
+    calls=[]
+    class Camera:
+        def poll_for_frames(self):
+            calls.append('poll')
+            return NS(get_color_frame=lambda:NS(get_data=lambda:pixels))
+        def stop(self):calls.append('stop')
+    pipe=Camera()
+    def start(config):
+        calls.append('start')
+        return pipe,'profile'
+    monkeypatch.setattr(live_rgb,'start',start)
+    with live_rgb.during_grasp({},tmp_path):
+        stream=live_rgb.active_stream.get()
+        for _ in range(2):
+            with live_rgb.recording({}) as camera:
+                assert camera==(pipe,'profile')
+                stream.publish()
+        stream.publish()
+        preview=cv2.imread(str(tmp_path/'live-rgb.jpg'))
+        assert preview.shape==(240,320,3) and preview[0,0,2]>190 and preview[0,0,0]<5
+    assert calls==['start','poll','stop']
+    assert live_rgb.active_stream.get() is None

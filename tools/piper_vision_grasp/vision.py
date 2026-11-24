@@ -189,34 +189,32 @@ def load_capture(directory, config):
     return dict(metadata=metadata, observations=observations, observation=combine(observations, config['detector']))
 
 
-def capture_rgbd(config, out_dir, count=3, detect=True, snapshot=None):
+def capture_rgbd(config, out_dir, count=3, detect=True, snapshot=None, on_ready=None):
     import pyrealsense2 as rs
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=False)
-    # Viewer global context may be an empty string; use the established capture-local settings.
-    context = rs.context('{"inherit":false}')
-    pipeline, settings = rs.pipeline(context), rs.config()
-    settings.enable_device(config['camera_serial'])
-    camera = config['camera']
-    settings.enable_stream(rs.stream.color, camera['width'], camera['height'], rs.format.rgb8, camera['fps'])
-    settings.enable_stream(rs.stream.depth, camera['width'], camera['height'], rs.format.z16, camera['fps'])
+    from . import live_rgb
     def intr(profile):
         i = profile.as_video_stream_profile().get_intrinsics()
         return dict(width=i.width, height=i.height, fx=i.fx, fy=i.fy, ppx=i.ppx, ppy=i.ppy,
                     coeffs=list(i.coeffs), model=str(i.model))
-    try:
-        profile = pipeline.start(settings)
+    with live_rgb.recording(config) as (pipeline, profile):
         color_profile, depth_profile = profile.get_stream(rs.stream.color), profile.get_stream(rs.stream.depth)
         ex = depth_profile.get_extrinsics_to(color_profile)
         metadata = dict(serial=config['camera_serial'], depth_scale=profile.get_device().first_depth_sensor().get_depth_scale(),
                         color_intrinsics=intr(color_profile), depth_intrinsics=intr(depth_profile),
                         depth_to_color=dict(rotation=list(ex.rotation), translation=list(ex.translation)), frames=[])
         align = rs.align(rs.stream.color)
-        for _ in range(camera['warmup_frames']): pipeline.wait_for_frames(3000)
         previous = None
+        if on_ready is not None:
+            on_ready(pipeline)
         for index in range(count):
             before_read_unix=time.time()
             before=snapshot() if snapshot else None
+            if on_ready is not None or live_rgb.active_stream.get() is not None:
+                # Discard a queued frameset after the feedback read; both saved stream IDs must advance.
+                queued = pipeline.wait_for_frames(3000)
+                previous = (queued.get_color_frame().get_frame_number(), queued.get_depth_frame().get_frame_number())
             deadline = time.monotonic() + 3.
             numbers = previous
             while True:
@@ -251,8 +249,4 @@ def capture_rgbd(config, out_dir, count=3, detect=True, snapshot=None):
                 metadata['frames'][-1]['robot_pairing']=dict(before_read_unix=before_read_unix,
                     after_read_unix=after_read_unix,span_s=after_read_unix-before_read_unix)
         (out_dir/'metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
-    finally:
-        try: pipeline.stop()
-        except RuntimeError: pass  # start may have failed before the pipeline became active
-
     return load_capture(out_dir, config) if detect else dict(metadata=metadata,capture_dir=str(out_dir.resolve()))

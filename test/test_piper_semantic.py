@@ -16,6 +16,31 @@ def module():
     return importlib.import_module('piper_vision_grasp.semantic')
 
 
+def test_model_connection_pairs_project_credentials_with_their_endpoint(monkeypatch):
+    from piper_vision_grasp.semantic_server import model_connection
+    settings = dict(base_url='https://fallback.example/v1', model='configured-model')
+    for name in ('DASHSCOPE_API_KEY', 'DASHSCOPE_BASE_URL', 'DASHSCOPE_WORKSPACE_ID', 'DASHSCOPE_MODEL',
+                 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL', 'PIPER_VLM_API_KEY'):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ValueError, match='API_KEY'):
+        model_connection(settings)
+    monkeypatch.setenv('PIPER_VLM_API_KEY', 'legacy')
+    assert model_connection(settings) == ('legacy', settings['base_url'], settings['model'])
+    monkeypatch.setenv('OPENAI_API_KEY', 'compatible')
+    with pytest.raises(ValueError, match='OPENAI_BASE_URL'):
+        model_connection(settings)
+    monkeypatch.setenv('OPENAI_BASE_URL', 'https://project.example/v1')
+    monkeypatch.setenv('OPENAI_MODEL', 'project-model')
+    assert model_connection(settings) == ('compatible', 'https://project.example/v1', 'project-model')
+    monkeypatch.setenv('DASHSCOPE_API_KEY', 'provider')
+    monkeypatch.setenv('DASHSCOPE_WORKSPACE_ID', 'ws-test')
+    assert model_connection(settings) == (
+        'provider', 'https://ws-test.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', settings['model'])
+    monkeypatch.setenv('DASHSCOPE_BASE_URL', 'https://provider.example/v1')
+    monkeypatch.setenv('DASHSCOPE_MODEL', 'provider-model')
+    assert model_connection(settings) == ('provider', 'https://provider.example/v1', 'provider-model')
+
+
 def test_default_entry_selects_heuristic_at_updated_speed(tmp_path, monkeypatch):
     from piper_vision_grasp import main, geometry, graspnet
     loaded=[]
@@ -331,14 +356,22 @@ def test_historical_extrinsic_applies_recorded_translation_once_and_preserves_ro
     assert historical['physical_validation']=='NOT_PERFORMED'
 
 
-def test_current_extrinsic_uses_full_r3_100mm_result():
+def test_current_extrinsic_uses_id25_depth_fit_and_selected_tcp():
     from piper_vision_grasp import geometry as g
     cfg=g.load_config(ROOT/'config/piper_vision_grasp/semantic-camera-avoid.json')
-    result=json.loads((ROOT/'docs/multi_agent/piper_handeye_r3_100mm_20plus8_result.json').read_text())
+    result=json.loads((ROOT/'config/piper_vision_grasp/provenance/board25_r4_20261122_offset30_result.json').read_text())
     assert cfg['extrinsics']['T_base_color_optical']==result['T_base_color_optical']
-    assert cfg['extrinsics']['physical_validation']==result['physical_validation']
-    assert result['board']['marker_size_mm']==100
-    assert (result['training']['count'],result['validation']['count'])==(20,8)
+    assert cfg['semantic']['tcp_offset_m']==[0,0,.135]
+    assert result['board']['black_side_m']==.100
+    model=cfg['kinematics']
+    q=np.array([4.,50.,-40.,3.,5.,15.])
+    nominal=dict(model)
+    del nominal['joint_offset_deg']
+    expected=g.fk(q+np.array(result['joint_offset_deg']),nominal)
+    assert np.allclose(g.fk(q,model),expected)
+    assert np.allclose(g.solve_ik(expected,q+.2,model)['angles_deg'],q,atol=.02)
+    assert result['training']['count']==30
+    assert list(result['validation']['per_pose_mm_deg'])==[f'pose{i}' for i in range(31,36)]
 
 
 def angle_scene():

@@ -122,7 +122,7 @@ def render(config, source, output, urdf):
         poses = [g.fk(plan['initial_joints_deg'],config['kinematics'])]
         poses.extend(np.asarray(s['T_base_flange']) for s in plan['stages'])
         line('Planned TCP waypoints', np.array([p[:3,3]+p[:3,:3]@config['semantic']['tcp_offset_m'] for p in poses]), '#2266cc', 4)
-    meshes=robot_meshes(urdf,q,config['gripper']['open_mm']/1000)
+    meshes=robot_meshes(urdf,g.model_angles(q,config['kinematics']),config['gripper']['open_mm']/1000)
     for name, triangles in meshes:
         mesh('Piper '+name,triangles,'#8899aa',.4)
     title = 'GraspNet offline: '+plan['status']+' — extrinsics/TCP and physical path clearance unverified'

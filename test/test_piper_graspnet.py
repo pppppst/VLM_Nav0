@@ -42,10 +42,11 @@ def test_tip_depth_axes_extrinsics_and_tcp_applied_once():
 
 def test_rotated_camera_extrinsic_maps_tip_and_tool_together():
     cfg = config()
+    cfg['semantic']['tcp_offset_m'] = [-.0015, -.0395, .151]
     cfg['extrinsics']['T_base_color_optical'] = [[0,-1,0,.4],[1,0,0,.1],[0,0,1,.2],[0,0,0,1]]
     target=adapter().absolute_target(candidate(),cfg)
     assert np.allclose(np.array(target['T_base_tcp'])[:3,3],[.2,.23,.5])
-    assert np.allclose(np.array(target['T_base_flange'])[:3,3],[.2,.095,.5])
+    assert np.allclose(np.array(target['T_base_flange'])[:3,3],[.1605,.079,.4985])
 
 
 def test_no_candidates_waits_in_prepare_without_sending_commands(tmp_path, monkeypatch):
@@ -210,11 +211,12 @@ def test_plan_freezes_calibration_and_tcp_for_later_visualization(monkeypatch):
     monkeypatch.setattr(m.request,'urlopen',lambda *args,**kwargs:io.BytesIO(json.dumps(payload).encode()))
     plan=m.plan_capture(cfg,[0]*6,dict(metadata=dict(frames=[dict(stem='frame02')])))
     frozen=plan['graspnet']['planning_config']
+    expected_tcp=cfg['semantic']['tcp_offset_m'].copy()
     expected=copy.deepcopy(cfg['extrinsics'])
     cfg['extrinsics']['T_base_color_optical'][0][3]+=1
     cfg['semantic']['tcp_offset_m'][2]=.3
     assert frozen['extrinsics']==expected
-    assert frozen['semantic']['tcp_offset_m']==[0,0,.135]
+    assert frozen['semantic']['tcp_offset_m']==expected_tcp
 
 
 def test_cached_preview_rejects_new_color_override(tmp_path):

@@ -90,7 +90,7 @@ def absolute_target(candidate, config):
     return dict(T_base_tcp=tip.tolist(), T_base_flange=flange.tolist(),
                 grasp_width_m=width / 1.2, candidate=dict(candidate), reference_id='semantic-graspnet-v1',
                 tcp_offset_m=config['semantic']['tcp_offset_m'],
-                tcp_status='legacy tip offset; physical calibration unverified')
+                tcp_status='configured tool offset; physical calibration unverified')
 
 
 def select_plan(config, joints, candidates):
@@ -111,7 +111,7 @@ def select_plan(config, joints, candidates):
             plan = dict(status='WAIT_IK', reason=str(exc))
         if plan['status'] == 'PLANNED':
             plan['reference_id'] = 'semantic-graspnet-v1'
-            plan['scope'] = 'GraspNet pose; existing Piper path and legacy TCP'
+            plan['scope'] = 'GraspNet pose; existing Piper path and configured TCP'
             plan['graspnet'] = dict(selected_index=index, rejected=rejected, candidates=candidates)
             return plan
         rejected.append(dict(index=index, reason=plan.get('reason', plan['status'])))

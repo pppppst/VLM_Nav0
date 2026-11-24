@@ -148,7 +148,7 @@ def render(source,output,config,urdf):
         overlay[pixels[:,1],pixels[:,0]]=[0,255,0]
         if not cv2.imwrite(str(Path(output)/(stem+'-rgb.png')),overlay):raise OSError('outline overlay write failed')
         snapshot=record['robot_snapshot']
-        poses=urdf_transforms(robot,snapshot['joints_deg'],snapshot['gripper_width_mm'])
+        poses=urdf_transforms(robot,g.model_angles(snapshot['joints_deg'],config['kinematics']),snapshot['gripper_width_mm'])
         group=[]
         def add(trace):
             group.append(len(figure.data));trace.visible=index==0;figure.add_trace(trace)

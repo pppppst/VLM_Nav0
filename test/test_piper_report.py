@@ -227,7 +227,8 @@ def test_arm_urdf_fk_matches_flange_and_uses_measured_gripper_opening():
     cfg=geometry.load_config(ROOT/'config/piper_vision_grasp/semantic.json')
     robot=ET.parse(ROOT/'config/piper_vision_grasp/provenance/piper_description.urdf').getroot()
     q=[10,40,-30,20,15,-10]
-    closed=urdf_transforms(robot,q,0);opened=urdf_transforms(robot,q,48.3)
+    actual=geometry.model_angles(q,cfg['kinematics'])
+    closed=urdf_transforms(robot,actual,0);opened=urdf_transforms(robot,actual,48.3)
     assert np.allclose(opened['link6'],geometry.fk(q,cfg['kinematics']))
     assert np.allclose(closed['link6'],opened['link6'])
     for finger in ('link7','link8'):

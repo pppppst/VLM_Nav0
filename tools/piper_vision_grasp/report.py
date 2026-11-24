@@ -45,7 +45,7 @@ def joint_comparison(plan, events):
 
 def link_points(angles, model, tcp_offset_m=None):
     pose=np.eye(4);points=[pose[:3,3].copy()]
-    for angle,joint in zip(angles,model['joints']):
+    for angle,joint in zip(g.model_angles(angles,model),model['joints']):
         origin=np.eye(4);origin[:3,3]=joint['xyz_m']
         origin[:3,:3]=g.rotation_matrix(g.Rotation.from_euler('xyz',joint['rpy_rad']))
         motion=np.eye(4)
